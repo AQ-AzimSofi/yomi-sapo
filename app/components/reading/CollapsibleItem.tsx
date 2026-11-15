@@ -8,7 +8,7 @@ import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
 import TTSButton from "@/app/components/reading/TTSButton";
 import { useSearchParams } from "next/navigation";
-import { COLORS, EXPLANATION_CONFIG, DARK_COLORS } from "@/lib/constants";
+import { COLORS, EXPLANATION_CONFIG, DARK_COLORS, READER_THEME } from "@/lib/constants";
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
@@ -118,6 +118,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   const accentColor = isDarkMode ? DARK_COLORS.PRIMARY : COLORS.PRIMARY;
   const mutedTextColor = isDarkMode ? DARK_COLORS.TEXT_MUTED : COLORS.SECONDARY_DARK;
   const ruleColor = isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL;
+  const glossBackground = isDarkMode ? DARK_COLORS.SURFACE : READER_THEME.SURFACE_MUTED;
 
   const toggleOpen = () => {
     setIsOpen(!isOpen);
@@ -639,7 +640,10 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
           </div>
         </div>
         {isOpen && (
-          <div className="mt-0.5 flex flex-col gap-2">
+          <div
+            className="mt-1 px-3 py-2.5 flex flex-col gap-2"
+            style={{ backgroundColor: glossBackground }}
+          >
             {subItems.map((subItem, index) => (
               <div
                 key={index}
