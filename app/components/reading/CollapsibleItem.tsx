@@ -117,6 +117,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
 
   const accentColor = isDarkMode ? DARK_COLORS.PRIMARY : COLORS.PRIMARY;
   const mutedTextColor = isDarkMode ? DARK_COLORS.TEXT_MUTED : COLORS.SECONDARY_DARK;
+  const ruleColor = isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL;
 
   const toggleOpen = () => {
     setIsOpen(!isOpen);
@@ -517,23 +518,49 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
         }}
         id="collapsible-item"
       >
-        <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-          <div className="flex-1 min-w-0">
-            <div
-              className="head-text font-bold text-lg whitespace-pre-wrap"
-              onMouseUp={handleTextSelection}
-              onClickCapture={handleTripleClickSelect}
-              style={{
-                color: isDarkMode ? DARK_COLORS.TEXT : COLORS.INK,
-                ...(vocabularyMode || !aiExplanationEnabled
-                  ? { userSelect: "text" as const, cursor: "text" }
-                  : {}),
+        <div
+          className="head-text font-bold text-lg whitespace-pre-wrap"
+          onMouseUp={handleTextSelection}
+          onClickCapture={handleTripleClickSelect}
+          style={{
+            color: isDarkMode ? DARK_COLORS.TEXT : COLORS.INK,
+            ...(vocabularyMode || !aiExplanationEnabled
+              ? { userSelect: "text" as const, cursor: "text" }
+              : {}),
+          }}
+        >
+          {renderHeadWithImages()}
+        </div>
+        <div className="mt-1.5 flex items-center gap-2 h-9">
+          {subItems.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleOpen();
               }}
+              aria-expanded={isOpen}
+              className="interactive-link cursor-pointer h-9 flex items-center gap-1 font-gothic text-[11px] font-bold tracking-[0.14em]"
+              style={{ color: accentColor, background: "none", border: "none", padding: 0 }}
             >
-              {renderHeadWithImages()}
-            </div>
-          </div>
-          <div className="flex items-center gap-0.5 flex-shrink-0 pt-0.5 self-end sm:self-auto">
+              やさしく
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 640 640"
+                width="12"
+                height="12"
+                aria-hidden="true"
+                style={{
+                  fill: accentColor,
+                  transition: "transform 200ms ease",
+                  transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+                }}
+              >
+                <path d="M297.4 470.6C309.9 483.1 330.2 483.1 342.7 470.6L534.7 278.6C547.2 266.1 547.2 245.8 534.7 233.3C522.2 220.8 501.9 220.8 489.4 233.3L320 402.7L150.6 233.4C138.1 220.9 117.8 220.9 105.3 233.4C92.8 245.9 92.8 266.2 105.3 278.7L297.3 470.7z" />
+              </svg>
+            </button>
+          )}
+          <span aria-hidden="true" className="flex-1 h-px" style={{ backgroundColor: ruleColor }} />
+          <div className="flex items-center gap-0.5 flex-shrink-0 -mr-1.5">
             {audiobookEnabled && onStartFromHere && globalIndex != null && (
               <button
                 onClick={(e) => {
@@ -609,68 +636,20 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
                 {isBookmarked ? <BookmarkFilled /> : <BookmarkUnfilled />}
               </button>
             </form>
-            {subItems.length > 0 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleOpen();
-                }}
-                style={buttonBaseStyle}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = hoverBg;
-                  const svg = e.currentTarget.querySelector("svg");
-                  if (svg) svg.style.fill = mutedTextColor;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                  const svg = e.currentTarget.querySelector("svg");
-                  if (svg) svg.style.fill = COLORS.SECONDARY;
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = "scale(0.9)";
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = "scale(1)";
-                }}
-                aria-label={isOpen ? "Collapse" : "Expand"}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 640 640"
-                  width="16"
-                  height="16"
-                  style={{
-                    fill: COLORS.SECONDARY,
-                    transition: "transform 200ms ease, fill 200ms ease",
-                    transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  }}
-                >
-                  <path d="M297.4 470.6C309.9 483.1 330.2 483.1 342.7 470.6L534.7 278.6C547.2 266.1 547.2 245.8 534.7 233.3C522.2 220.8 501.9 220.8 489.4 233.3L320 402.7L150.6 233.4C138.1 220.9 117.8 220.9 105.3 233.4C92.8 245.9 92.8 266.2 105.3 278.7L297.3 470.7z" />
-                </svg>
-              </button>
-            )}
           </div>
         </div>
         {isOpen && (
-          <div className="mt-2 flex items-baseline gap-3.5">
-            <span
-              className="flex-shrink-0 font-gothic text-[11px] font-bold tracking-[0.14em]"
-              style={{ color: accentColor }}
-            >
-              やさしく
-            </span>
-            <div className="flex-1 min-w-0 flex flex-col gap-2">
-              {subItems.map((subItem, index) => (
-                <div
-                  key={index}
-                  className="sub-item-text"
-                  onClick={handleTripleClickSelect}
-                  style={{ color: mutedTextColor }}
-                >
-                  {index === 4 ? "" : renderTextWithFurigana(subItem, false)}
-                </div>
-              ))}
-            </div>
+          <div className="mt-0.5 flex flex-col gap-2">
+            {subItems.map((subItem, index) => (
+              <div
+                key={index}
+                className="sub-item-text"
+                onClick={handleTripleClickSelect}
+                style={{ color: mutedTextColor }}
+              >
+                {index === 4 ? "" : renderTextWithFurigana(subItem, false)}
+              </div>
+            ))}
           </div>
         )}
       </div>
