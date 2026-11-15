@@ -31,6 +31,8 @@ const PAGE_CHANGE_TIMEOUT_MS = 10_000;
 const PAGE_CHANGE_POLL_MS = 250;
 const IMAGE_LOAD_TIMEOUT_MS = 10_000;
 const IMAGE_LOAD_POLL_MS = 100;
+const READER_LOAD_TIMEOUT_MS = 15_000;
+const READER_SETTLE_POLL_MS = 500;
 
 interface CliOptions {
   cdpUrl: string;
@@ -113,6 +115,21 @@ function hasTurned(before: ReaderSnapshot, current: ReaderSnapshot): boolean {
   const hasLostImages = before.imageSources !== '' && current.imageSources === '';
   if (hasLostPosition || hasLostImages) return false;
   return current.imageSources !== before.imageSources || current.position?.current !== before.position?.current;
+}
+
+function isSameSnapshot(previous: ReaderSnapshot, current: ReaderSnapshot): boolean {
+  return previous.imageSources === current.imageSources && previous.position?.current === current.position?.current;
+}
+
+/** The reader re-renders when its tab is brought to the front, so wait until it shows a page and has stopped changing. */
+async function waitForSettledReader(page: Page, deadlineMs: number, previous?: ReaderSnapshot): Promise<ReaderSnapshot | undefined> {
+  if (Date.now() > deadlineMs) return undefined;
+  await sleep(READER_SETTLE_POLL_MS);
+  const current = await readSnapshot(page);
+  const isShowingPage = current.position !== undefined || current.imageSources !== '';
+  const isSettled = previous !== undefined && isSameSnapshot(previous, current);
+  if (isShowingPage && isSettled) return current;
+  return waitForSettledReader(page, deadlineMs, current);
 }
 
 async function waitForPageChange(page: Page, before: ReaderSnapshot): Promise<ReaderSnapshot | undefined> {
@@ -248,9 +265,9 @@ async function startScreenshots(page: Page, screenshotDir: string): Promise<void
 }
 
 async function runPageTurner(page: Page, options: CliOptions): Promise<void> {
-  const start = await readSnapshot(page);
-  if (!start.position && !start.imageSources) {
-    throw new Error(`Reader not detected on ${page.url()} (looked for ${Object.values(READER_SELECTORS).join(', ')}).`);
+  const start = await waitForSettledReader(page, Date.now() + READER_LOAD_TIMEOUT_MS);
+  if (!start) {
+    throw new Error(`Reader not detected on ${page.url()} within ${READER_LOAD_TIMEOUT_MS / 1000}s (looked for ${Object.values(READER_SELECTORS).join(', ')}).`);
   }
   const direction = options.direction ?? (await detectDirection(page, start));
   const nextKey = NEXT_KEY_BY_DIRECTION[direction];
