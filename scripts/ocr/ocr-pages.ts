@@ -11,10 +11,15 @@
  * every free key has run out of its daily quota for the model or been rejected.
  * Rate limits, server errors and blocked replies are retried; other request errors fail the page at once.
  *
+ * Illustrations, photos, diagrams and tables are cropped out of the page image and left in the
+ * text as [IMAGE:<file>] markers, the same markers the EPUB extractor writes.
+ *
  * Usage: npx tsx scripts/ocr/ocr-pages.ts <image-dir> [--out-dir <dir>] [--model gemini-3.5-flash] [--concurrency <n>]
  *
  * Output (the out dir defaults to "<image-dir>-ocr" next to the image folder):
  *   <out-dir>/pages/<image-stem>.txt   one per image (0001.png -> 0001.txt); delete one to transcribe that page again
+ *   <out-dir>/images/<image-stem>-<n>.png  figures cropped from that page; copy the folder next to the book's text
+ *                                      (public/bookv2-furigana/<book>/images) so epub-to-book.ts uploads it
  *   <out-dir>/<image-dir-name>.txt     all pages joined
  */
 
@@ -25,6 +30,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ApiError, GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
+import sharp from 'sharp';
 
 dotenv.config({ path: [path.join(process.cwd(), '.env.local'), path.join(process.cwd(), '.env')] });
 
@@ -42,6 +48,14 @@ const MAX_RETRY_WAIT_SECS = 30;
 
 const CONTINUATION_MARKER = '<<CONTINUED>>';
 const NO_TEXT_MARKER = '<<NO_TEXT>>';
+const FIGURE_MARKER_START = '<<FIGURE';
+// Box edges in Gemini's own order and scale: top left bottom right, each 0-1000 of the page image.
+const FIGURE_MARKER_PATTERN = /^<<FIGURE (\d+) (\d+) (\d+) (\d+)>>$/;
+const FIGURE_BOX_SCALE = 1000;
+// Gemini's boxes can clip a figure's edge; a thin margin keeps it without reaching the text around it.
+const FIGURE_MARGIN_RATIO = 0.01;
+const IMAGE_MARKER_AT_START = /^\[IMAGE:[^\]]+\]/;
+const IMAGE_MARKER_AT_END = /\[IMAGE:[^\]]+\]$/;
 
 const OCR_PROMPT = `この画像は電子書籍リーダーで表示した本の1ページです。本文のテキストだけを書き起こしてください。
 
@@ -54,7 +68,9 @@ const OCR_PROMPT = `この画像は電子書籍リーダーで表示した本の
 - 見出しや目次の項目は、それぞれ独立した1行にする
 - 前置き、説明、マークダウン記法は付けない
 - ページが前のページの段落の途中から始まっている（最初の行に字下げがなく、文の途中から続いている）場合は、1行目に ${CONTINUATION_MARKER} とだけ書き、2行目から本文を書く
-- 本文がないページ（表紙、挿絵だけのページ、白紙など）は ${NO_TEXT_MARKER} とだけ書く`;
+- 挿絵・写真・図・グラフ・表などの図版は、読む順番どおりの位置に ${FIGURE_MARKER_START} 上端 左端 下端 右端>> と1行で書く（例: ${FIGURE_MARKER_START} 120 80 640 920>>）。座標は画像全体の縦と横をそれぞれ0〜1000とした整数で、図版全体を囲む。図版の中の文字は書き写さない。図版の外にあるキャプションは本文として書く
+- 挿絵だけのページは ${FIGURE_MARKER_START} …>> の1行だけを書く
+- 表紙や白紙など、本文も図版もないページは ${NO_TEXT_MARKER} とだけ書く`;
 
 interface CliOptions {
   imageDir: string;
@@ -80,6 +96,21 @@ interface OcrContext {
   model: string;
   imageDir: string;
   pagesDir: string;
+  figuresDir: string;
+}
+
+interface FigureBox {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+}
+
+interface PixelRegion {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
 }
 
 interface PageJob {
@@ -228,6 +259,49 @@ async function transcribePage(context: OcrContext, job: PageJob, attemptNumber =
   }
 }
 
+function parseFigureBox(markerLine: string): FigureBox {
+  const match = FIGURE_MARKER_PATTERN.exec(markerLine);
+  if (!match) throw new Error(`malformed figure marker "${markerLine}"`);
+  const [top, left, bottom, right] = match.slice(1).map(Number);
+  const isInsidePage = bottom <= FIGURE_BOX_SCALE && right <= FIGURE_BOX_SCALE;
+  const hasArea = top < bottom && left < right;
+  if (!isInsidePage || !hasArea) throw new Error(`figure marker "${markerLine}" is not a box inside the page`);
+  return { top, left, bottom, right };
+}
+
+function toPixelRegion(box: FigureBox, pageSize: { width: number; height: number }): PixelRegion {
+  const marginX = pageSize.width * FIGURE_MARGIN_RATIO;
+  const marginY = pageSize.height * FIGURE_MARGIN_RATIO;
+  const left = Math.max(0, Math.floor((box.left / FIGURE_BOX_SCALE) * pageSize.width - marginX));
+  const top = Math.max(0, Math.floor((box.top / FIGURE_BOX_SCALE) * pageSize.height - marginY));
+  const right = Math.min(pageSize.width, Math.ceil((box.right / FIGURE_BOX_SCALE) * pageSize.width + marginX));
+  const bottom = Math.min(pageSize.height, Math.ceil((box.bottom / FIGURE_BOX_SCALE) * pageSize.height + marginY));
+  return { left, top, width: right - left, height: bottom - top };
+}
+
+/** Crops each figure marker's box out of the page image and swaps the marker for an [IMAGE:] marker naming the crop. */
+async function saveFigures(transcript: string, imagePath: string, figuresDir: string): Promise<string> {
+  const lines = transcript.split('\n').map((line) => line.trim());
+  const figureLineIndexes = lines.flatMap((line, lineIndex) => (line.startsWith(FIGURE_MARKER_START) ? [lineIndex] : []));
+  if (figureLineIndexes.length === 0) return transcript;
+
+  const { width, height } = await sharp(imagePath).metadata();
+  if (!width || !height) throw new Error(`could not read the size of ${imagePath}`);
+  const pageStem = path.parse(imagePath).name;
+  await mkdir(figuresDir, { recursive: true });
+  const savedLines = await Promise.all(
+    lines.map(async (line, lineIndex) => {
+      const figureNumber = figureLineIndexes.indexOf(lineIndex) + 1;
+      if (figureNumber === 0) return line;
+      const figureFileName = `${pageStem}-${figureNumber}.png`;
+      const region = toPixelRegion(parseFigureBox(line), { width, height });
+      await sharp(imagePath).extract(region).toFile(path.join(figuresDir, figureFileName));
+      return `[IMAGE:${figureFileName}]`;
+    }),
+  );
+  return savedLines.join('\n');
+}
+
 /** Returns the names of the images that could not be transcribed. */
 async function transcribePages(context: OcrContext, imageNames: string[], concurrency: number): Promise<string[]> {
   const queue: PageJob[] = imageNames.map((imageName, keyIndex) => ({ imageName, keyIndex }));
@@ -240,9 +314,10 @@ async function transcribePages(context: OcrContext, imageNames: string[], concur
       if (!job) return;
       try {
         const transcript = await transcribePage(context, job);
-        await writeFile(pageTextPath(context.pagesDir, job.imageName), transcript);
+        const pageText = await saveFigures(transcript, path.join(context.imageDir, job.imageName), context.figuresDir);
+        await writeFile(pageTextPath(context.pagesDir, job.imageName), pageText);
         finishedImageNames.push(job.imageName);
-        console.log(`[${finishedImageNames.length}/${imageNames.length}] ${job.imageName}: ${transcript.length} chars`);
+        console.log(`[${finishedImageNames.length}/${imageNames.length}] ${job.imageName}: ${pageText.length} chars`);
       } catch (error) {
         finishedImageNames.push(job.imageName);
         failedImageNames.push(job.imageName);
@@ -272,7 +347,10 @@ function joinPages(pages: PageText[]): string {
     if (!page.text) return joinedText;
     if (!joinedText) return page.text;
     // A paragraph split by the page break is glued back together; Japanese needs no space at the seam.
-    return joinedText + (page.continuesPreviousPage ? '' : '\n\n') + page.text;
+    // A figure at the seam stays its own paragraph, so the text continues after it instead.
+    const isFigureAtSeam = IMAGE_MARKER_AT_END.test(joinedText) || IMAGE_MARKER_AT_START.test(page.text);
+    const isGlued = page.continuesPreviousPage && !isFigureAtSeam;
+    return joinedText + (isGlued ? '' : '\n\n') + page.text;
   }, '');
 }
 
@@ -292,7 +370,8 @@ async function main(): Promise<void> {
       `(${options.model}, ${concurrency} at a time, ${keyPool.freeKeys.length} free key(s)${paidKeyNote})`,
   );
 
-  const context: OcrContext = { keyPool, model: options.model, imageDir: options.imageDir, pagesDir };
+  const figuresDir = path.join(options.outDir, 'images');
+  const context: OcrContext = { keyPool, model: options.model, imageDir: options.imageDir, pagesDir, figuresDir };
   const failedImageNames = await transcribePages(context, pendingImageNames, concurrency);
 
   const joinedText = joinPages(await readPageTexts(pagesDir, imageNames));
