@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { API_ROUTES, COLORS, PAGE_ROUTES } from '@/lib/constants';
+import { clearBookTextCache } from '@/lib/bookTextCache';
 
 type AppPage = 'library' | 'vocabulary';
 
@@ -21,6 +22,7 @@ export const NAV_ITEM_CLASS = 'py-3 cursor-pointer interactive-link';
 
 async function signOut(): Promise<void> {
   await fetch(API_ROUTES.AUTH_LOGOUT, { method: 'POST' });
+  await clearBookTextCache();
   window.location.href = PAGE_ROUTES.LOGIN;
 }
 
