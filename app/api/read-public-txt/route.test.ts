@@ -113,6 +113,13 @@ describe('GET /api/read-public-txt', () => {
     expect(response.status).toBe(400);
   });
 
+  it('rejects a request that names no book without touching the database', async () => {
+    const response = await GET(new Request('http://localhost/api/read-public-txt', { headers: OWNER_HEADERS }));
+
+    expect(response.status).toBe(400);
+    expect(getTextEntryVersion).not.toHaveBeenCalled();
+  });
+
   it('answers 304 to the weak form of its ETag that CloudFront sends, and repeats the ETag', async () => {
     const response = await GET(readRequest(OWNER_PATH, { 'if-none-match': 'W/"1200-1700000000000-full-v1"' }));
 

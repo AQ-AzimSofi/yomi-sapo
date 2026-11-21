@@ -6,7 +6,7 @@
  * by the page-route middleware and by the content API routes.
  */
 
-import { parseBookKey, sameBook, type BookRef } from '@/lib/books/bookRef';
+import { sameBook, type BookRef } from '@/lib/books/bookRef';
 
 export interface PublicBook extends BookRef {
   maxPreviewPages: number;
@@ -39,18 +39,6 @@ export function findPublicBook(
   if (!directory || !fileName) return null;
   const requested = { directory, fileName };
   return PUBLIC_BOOKS.find((book) => sameBook(book, requested)) ?? null;
-}
-
-/**
- * Match a book by its combined "directory/fileName" path. The reader fetches
- * content with the two parts joined, so API routes resolve the book this way.
- */
-export function findPublicBookByPath(
-  fullPath: string | null | undefined
-): PublicBook | null {
-  if (!fullPath) return null;
-  const { directory, fileName } = parseBookKey(fullPath);
-  return findPublicBook(directory, fileName);
 }
 
 /**
