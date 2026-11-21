@@ -29,10 +29,10 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { GoogleGenAI } from '@google/genai';
-import * as dotenv from 'dotenv';
 import sharp from 'sharp';
 import { CONTINUATION_MARKER, findStrayMarker } from './page-markers';
 import { isEntryPoint } from '../shared/entryPoint';
+import { loadRepoEnv } from '../shared/repoPaths';
 import { AI_MODELS } from '../../lib/constants';
 import {
   PAID_API_KEY_ENV_NAME,
@@ -326,7 +326,7 @@ async function main(): Promise<void> {
 }
 
 if (isEntryPoint(import.meta.url)) {
-  dotenv.config({ path: [path.join(process.cwd(), '.env.local'), path.join(process.cwd(), '.env')] });
+  loadRepoEnv();
   main().catch((error: unknown) => {
     console.error(describeError(error));
     // process.exit() while Gemini's sockets are still closing trips a libuv assertion on Windows; let the event loop drain instead.
