@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAllTextEntries } from '@/lib/db/queries';
 import { withAuth } from '@/lib/auth/guards';
 import { PUBLIC_BOOKS } from '@/lib/publicBooks';
+import { toBookKey } from '@/lib/books/bookRef';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
       filesByDirectory: Object.fromEntries(
         available.map((book) => [book.directory, [book.fileName]])
       ),
-      files: available.map((book) => `${book.directory}/${book.fileName}`),
+      files: available.map(toBookKey),
     });
   }
 
@@ -25,7 +26,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
   directories.forEach(dir => {
     const files = filesByDirectory[dir] || [];
     files.forEach(file => {
-      flatFiles.push(`${dir}/${file}`);
+      flatFiles.push(toBookKey({ directory: dir, fileName: file }));
     });
   });
 
