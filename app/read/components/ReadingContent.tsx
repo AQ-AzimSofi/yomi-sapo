@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import { parseReaderItems } from "@/lib/utils/buildPlayableUnits";
+import { parseReaderItems } from "@/lib/content/bookModel";
 import { stripFurigana } from "@/lib/utils/furiganaParser";
 import { COLORS, PRIORITY_LEVELS, type PriorityScore } from "@/lib/constants";
 import CollapsibleItem from "@/app/components/reading/CollapsibleItem";

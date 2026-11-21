@@ -1,7 +1,7 @@
 import { sql } from './connection';
 import type { QueryResult } from './schema';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
-import { parseReaderItems, type ReaderItem } from '@/lib/utils/buildPlayableUnits';
+import { parseReaderItems, type ReaderItem } from '@/lib/content/bookModel';
 import { PAGINATION_CONFIG } from '@/lib/constants';
 
 /**

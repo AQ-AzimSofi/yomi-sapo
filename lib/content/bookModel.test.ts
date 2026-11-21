@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectContentType, parseReaderItems, buildPlayableUnits } from './buildPlayableUnits';
+import { detectContentType, parseReaderItems, buildPlayableUnits } from './bookModel';
 
 describe('detectContentType', () => {
   it('detects rephrase text by a >> sub item together with a < heading', () => {

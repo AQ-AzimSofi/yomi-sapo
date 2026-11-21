@@ -24,7 +24,7 @@ import { useBookMetadata } from '@/app/hooks/useBookMetadata';
 import { useGuestMode } from '@/app/hooks/useGuestMode';
 import GuestModeBanner from '@/app/components/ui/GuestModeBanner';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
-import { buildPlayableUnits } from '@/lib/utils/buildPlayableUnits';
+import { buildPlayableUnits } from '@/lib/content/bookModel';
 import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';

@@ -11,7 +11,7 @@
  */
 
 import * as fs from 'fs';
-import { buildPlayableUnits } from '@/lib/utils/buildPlayableUnits';
+import { buildPlayableUnits } from '@/lib/content/bookModel';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
 import type { NarrationCue } from '@/lib/types';
 

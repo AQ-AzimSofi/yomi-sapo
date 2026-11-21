@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { truncateToPreviewPages } from './truncatePreview';
-import { buildPlayableUnits } from './buildPlayableUnits';
+import { buildPlayableUnits } from '@/lib/content/bookModel';
 import { PAGINATION_CONFIG } from '@/lib/constants';
 
 const ITEMS_PER_PAGE = 2;
