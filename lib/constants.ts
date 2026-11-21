@@ -104,7 +104,6 @@ export const PRIORITY_LEVELS: Record<PriorityScore, PriorityLevel> = {
 export const PAGE_ROUTES = {
   HOME: '/',
   LIBRARY: '/library',
-  BOOK_READER: '/book-reader',
   VOCABULARY: '/vocabulary',
   LOGIN: '/login',
   RUBY_REGISTRY: '/ruby-registry',

@@ -106,11 +106,6 @@ export interface CollapsibleItemProps {
   onSubmitSuccess: () => void;
 }
 
-export interface SidebarProps {
-  dropdownAlwaysOpen: boolean;
-  setDropdownAlwaysOpen: (value: boolean) => void;
-}
-
 // クエリパラメータ型
 export interface PageQueryParams {
   directory?: string;
