@@ -71,11 +71,12 @@ components/
 │   ├── StartHereIcon.tsx
 │   └── TranslateIcon.tsx
 ├── reading/            # Reader components
-│   ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
+│   ├── ReaderItem.tsx          # One reading unit: rephrase head with やさしく sub-items, or a paragraph
+│   ├── ParagraphText.tsx       # Book text with furigana, optionally one clickable span per sentence
+│   ├── IconButton.tsx          # 32px item action button
 │   ├── ExplanationSidebar.tsx  # AI explanations panel
-│   ├── ParagraphItem.tsx       # Individual paragraph
 │   ├── RubyLookupSidebar.tsx   # Furigana lookup
-│   ├── TTSButton.tsx           # Text-to-speech button
+│   ├── TTSButton.tsx           # Read-aloud button, drawn from the reader's one player
 │   ├── GuestApiKeyModal.tsx    # Guest Gemini key prompt
 │   └── BookImage.tsx           # Book illustration
 └── ui/                 # Shared UI components
