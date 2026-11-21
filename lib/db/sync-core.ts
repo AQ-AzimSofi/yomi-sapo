@@ -30,49 +30,11 @@ export interface TableConfig {
 
 export const TABLES: TableConfig[] = [
   {
-    name: '"Book"',
-    // Conflict on id (cuid), not fileName: BookImage, UserBookmark, and
-    // ProcessingHistory FK to Book.id. Resolving conflicts on fileName would
-    // keep the target's id while incoming child rows still reference the
-    // source's id, leaving child FK references dangling. In this app's
-    // workflow books are only ingested via the EPUB pipeline on a single
-    // machine, so cuids stay consistent across DBs and id-conflict is safe.
-    conflictKey: { kind: 'column', col: 'id' },
-    orderBy: '"createdAt"',
-    identity: { kind: 'column', col: '"fileName"' },
-    strategy: { kind: 'last-write-wins', timestampCol: '"updatedAt"' },
-  },
-  {
-    name: '"BookImage"',
-    conflictKey: { kind: 'column', col: 'id' },
-    orderBy: '"createdAt"',
-    identity: { kind: 'column', col: '"fileName"' },
-    strategy: { kind: 'insert-only' },
-  },
-  {
-    name: '"ProcessingHistory"',
-    conflictKey: { kind: 'column', col: 'id' },
-    orderBy: '"processedAt"',
-    identity: { kind: 'column', col: 'id' },
-    strategy: { kind: 'insert-only' },
-  },
-  {
     name: 'bookmarks',
     conflictKey: { kind: 'composite', cols: FILE_DIR_PAIR },
     orderBy: 'updated_at',
     identity: { kind: 'composite', cols: FILE_DIR_PAIR, sep: '|' },
     strategy: { kind: 'last-write-wins', timestampCol: 'updated_at' },
-  },
-  {
-    name: '"UserBookmark"',
-    // userId is technically nullable, and a row-wise IN never matches a NULL,
-    // so a legacy NULL row is selected but never fetched and is reported as
-    // failed on every sync. The Prisma schema sets a default of "default", so
-    // any row inserted via the app is safe — but backfill if NULLs appear.
-    conflictKey: { kind: 'composite', cols: ['bookId', 'userId'] },
-    orderBy: '"updatedAt"',
-    identity: { kind: 'column', col: 'id' },
-    strategy: { kind: 'last-write-wins', timestampCol: '"updatedAt"' },
   },
   {
     name: 'vocabulary_entries',
