@@ -174,6 +174,14 @@ export interface RubyRegistryResponse {
 }
 
 // /api/vocabulary
+export interface SaveVocabularyRequest extends BookRef {
+  word: string;
+  reading?: string;
+  sentence: string;
+  paragraphText?: string;
+  notes?: string;
+}
+
 export interface VocabularyListResponse {
   success: true;
   entries: VocabularyEntry[];

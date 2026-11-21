@@ -3,19 +3,9 @@ import { getVocabularyEntries, createVocabularyEntry } from '@/lib/db/vocabulary
 import { withAuth } from '@/lib/auth/guards';
 import { errorBody, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
-import type { VocabularyEntryResponse, VocabularyListResponse } from '@/lib/api/contracts';
+import type { SaveVocabularyRequest, VocabularyEntryResponse, VocabularyListResponse } from '@/lib/api/contracts';
 
-interface VocabularyDraft {
-  word: string;
-  reading?: string;
-  sentence: string;
-  fileName: string;
-  directory: string;
-  paragraphText?: string;
-  notes?: string;
-}
-
-function isVocabularyDraft(body: unknown): body is VocabularyDraft {
+function isSaveVocabularyRequest(body: unknown): body is SaveVocabularyRequest {
   return (
     isRecord(body) &&
     isNonEmptyString(body.word) &&
@@ -60,7 +50,7 @@ export const GET = withAuth('owner', async (request) => {
 export const POST = withAuth('owner', async (request) => {
   const body = await parseJsonBody(
     request,
-    isVocabularyDraft,
+    isSaveVocabularyRequest,
     'Missing required fields: word, sentence, fileName, directory'
   );
   if (body instanceof Response) return body;
