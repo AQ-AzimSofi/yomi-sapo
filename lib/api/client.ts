@@ -13,6 +13,7 @@ import type { BookMetadata, NarrationManifest } from '@/lib/types';
 import type {
   ApiErrorResponse,
   BookmarkResponse,
+  DeleteVocabularyResponse,
   ExplanationRequest,
   ExplanationResponse,
   LibraryProgressResponse,
@@ -28,6 +29,7 @@ import type {
   TranslateResponse,
   TTSRequest,
   TTSResponse,
+  VocabularyListResponse,
   WriteResponse,
 } from './contracts';
 
@@ -223,6 +225,14 @@ export async function synthesizeSpeech(speech: TTSRequest): Promise<TTSResponse>
     body: speech,
     guestKey: { kind: 'tts', promptOn: 'any-failure' },
   });
+}
+
+export async function fetchVocabulary(): Promise<VocabularyListResponse> {
+  return request<VocabularyListResponse>(API_ROUTES.VOCABULARY);
+}
+
+export async function deleteVocabularyEntry(id: string): Promise<DeleteVocabularyResponse> {
+  return request<DeleteVocabularyResponse>(API_ROUTES.VOCABULARY, { method: 'DELETE', pathSegment: id });
 }
 
 function rubyRegistryParams({ directory, bookName }: RubyRegistryKey): Record<string, string> {

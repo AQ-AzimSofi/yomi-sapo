@@ -5,6 +5,7 @@ import { bookQuery } from '@/lib/books/bookRef';
 import { bookAssetPath, bookAssetUrl } from '@/lib/utils/bookAssetPath';
 import {
   ApiError,
+  deleteVocabularyEntry,
   explainSentence,
   fetchBookMetadata,
   fetchBookText,
@@ -12,6 +13,7 @@ import {
   fetchLibraryProgress,
   fetchNarration,
   fetchRubyRegistry,
+  fetchVocabulary,
   listTextFiles,
   prioritize,
   removeRubyRegistryItem,
@@ -548,5 +550,32 @@ describe('library calls', () => {
 
     expect(await fetchLibraryProgress()).toEqual(progress);
     expect(lastCall().url).toBe('/api/library-progress');
+  });
+});
+
+describe('vocabulary calls', () => {
+  it('lists the vocabulary entries', async () => {
+    const list = { success: true, entries: [], count: 0 };
+    fetchMock.mockResolvedValue(jsonResponse(list));
+
+    expect(await fetchVocabulary()).toEqual(list);
+    expect(lastCall().url).toBe('/api/vocabulary');
+    expect(lastCall().init).toMatchObject({ method: 'GET', headers: {} });
+  });
+
+  it('deletes one entry by id', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ success: true, message: 'Vocabulary entry deleted' }));
+
+    await deleteVocabularyEntry('42');
+
+    expect(lastCall().url).toBe('/api/vocabulary/42');
+    expect(lastCall().init).toMatchObject({ method: 'DELETE', headers: {}, body: undefined });
+  });
+
+  it('keeps the top-level message the vocabulary page shows', async () => {
+    const message = 'Failed to fetch vocabulary entries';
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'internal_error', message }, message }, 500));
+
+    await expect(fetchVocabulary()).rejects.toMatchObject({ body: { message } });
   });
 });

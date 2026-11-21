@@ -8,6 +8,14 @@ import { COLORS, PAGE_ROUTES, STORAGE_KEYS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { parseFurigana, segmentsToHTML } from '@/lib/utils/furiganaParser';
 import type { VocabularyEntry } from '@/lib/types';
+import { ApiError, deleteVocabularyEntry, fetchVocabulary } from '@/lib/api/client';
+
+// The list route repeats its error message at the top level for this page.
+function describeLoadFailure(error: unknown): string {
+  if (error instanceof ApiError) return error.body?.message || 'Failed to fetch vocabulary';
+  if (error instanceof Error) return error.message;
+  return 'Failed to load vocabulary';
+}
 
 export default function VocabularyPage() {
   const router = useRouter();
@@ -37,17 +45,11 @@ export default function VocabularyPage() {
     setError('');
 
     try {
-      const response = await fetch('/api/vocabulary');
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch vocabulary');
-      }
-
+      const data = await fetchVocabulary();
       setEntries(data.entries || []);
     } catch (err) {
       console.error('Error fetching vocabulary:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load vocabulary');
+      setError(describeLoadFailure(err));
     } finally {
       setLoading(false);
     }
@@ -57,13 +59,7 @@ export default function VocabularyPage() {
     if (!confirm('この単語を削除しますか？')) return;
 
     try {
-      const response = await fetch(`/api/vocabulary/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete entry');
-      }
+      await deleteVocabularyEntry(id);
 
       // Remove from list
       setEntries(entries.filter((e) => e.id !== id));
