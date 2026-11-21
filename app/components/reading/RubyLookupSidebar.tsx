@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { THEME } from '@/lib/constants';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
 import { useStarredWords } from '@/app/hooks/useStarredWords';
+import { useEscapeKey } from '@/app/hooks/useEscapeKey';
 import type { RubyEntry } from '@/lib/types';
 import Link from 'next/link';
 
@@ -53,15 +54,7 @@ export default function RubyLookupSidebar({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(isOpen, onClose);
 
   const handleBackdropClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {

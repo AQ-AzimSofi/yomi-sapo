@@ -69,9 +69,15 @@ export type ImageMap = Record<string, string>;
 // 説明キャッシュ型
 export interface CachedExplanation {
   sentence: string;
+  // The passage sent with the request. Missing on entries saved before it was
+  // stored: /read sent the sentence alone, the removed /book-reader sent nearby
+  // sentences.
+  context?: string;
   explanation: string;
   contextSize: number;
-  mode: import('./constants').ExplanationMode;
+  // Missing on entries saved before explanation modes existed.
+  mode?: import('./constants').ExplanationMode;
+  // When the answer was requested, so a late answer never replaces a newer one.
   timestamp: number;
 }
 
