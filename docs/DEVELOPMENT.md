@@ -316,19 +316,9 @@ curl http://localhost:3333/api/migrate-text-files
 
 ### Test Bookmarks
 1. Go to http://localhost:3333
-2. Select a text file from dropdown
+2. Open a book from the library
 3. Click the bookmark icon on any paragraph
 4. Refresh the page - bookmark should persist
-
-### Test AI Processing
-1. Go to http://localhost:3333/text-input-ai
-2. Enter Japanese text
-3. Submit - should see AI-rephrased versions
-
-### Test Visual Novel Mode
-1. Go to http://localhost:3333/visual-novel
-2. Copy Japanese text to clipboard
-3. Should appear and get processed
 
 ## Database Schema
 

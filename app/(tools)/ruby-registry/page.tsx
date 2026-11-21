@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import AppHeader from '@/app/components/ui/AppHeader';
 import { COLORS, API_ROUTES } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
@@ -134,9 +135,11 @@ function RubyRegistryContent() {
   const filteredEntries = searchQuery ? searchEntries(searchQuery) : (registry?.entries || []);
 
   return (
-    <div className="min-h-screen pt-24 pb-8 px-4" style={{ color: COLORS.INK }}>
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
+    <div className="min-h-screen pb-8" style={{ color: COLORS.INK }}>
+      <div className="max-w-[1120px] mx-auto px-5 sm:px-8">
+        <AppHeader />
+      </div>
+      <div className="max-w-4xl mx-auto px-5 sm:px-8 pt-10">
         <div className="mb-8">
           <h1 className="font-mincho font-bold text-3xl mb-2">Ruby Registry</h1>
           <p className="text-sm" style={{ color: COLORS.SECONDARY }}>
@@ -406,7 +409,7 @@ function RubyRegistryContent() {
 
 export default function RubyRegistryPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen pt-24 pb-8 px-4 text-center">Loading...</div>}>
+    <Suspense fallback={<div className="min-h-screen pt-10 pb-8 px-4 text-center">Loading...</div>}>
       <RubyRegistryContent />
     </Suspense>
   );

@@ -35,14 +35,11 @@ yomi-sapo/
 | `/api/vocabulary` | GET, POST | Vocabulary entries |
 | `/api/vocabulary/[id]` | GET, PUT, DELETE | Single vocabulary entry |
 | `/api/read-public-txt` | GET | Read text file content |
-| `/api/write-public-txt` | POST | Write text file |
-| `/api/write-public-txt-ai` | POST | Write AI-processed text |
 | `/api/read-bookmark` | GET | Get bookmark position |
 | `/api/write-bookmark` | POST | Update bookmark |
 | `/api/list-text-files` | GET | List available text files |
 | `/api/text-entries` | GET, DELETE, PUT | Database text entries |
 | `/api/text-entries/reset` | POST | Reset text entries |
-| `/api/gemini-api` | POST | Direct Gemini API |
 | `/api/explain-sentence` | POST | Sentence explanations |
 | `/api/tts` | POST | Text-to-speech |
 | `/api/ruby-registry` | GET, POST | Furigana registry |
@@ -59,32 +56,27 @@ components/
 │   ├── BookmarkUnfilled.tsx
 │   ├── ChevronDown.tsx
 │   ├── ChevronUp.tsx
-│   └── SpeakerIcon.tsx
-└── ui/                 # UI components
-    ├── TopNavigation.tsx       # Main navigation (file selector, toggles)
-    ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
-    ├── Sidebar.tsx             # Reading progress sidebar
-    ├── ExplanationSidebar.tsx  # AI explanations panel
-    ├── ParagraphItem.tsx       # Individual paragraph
-    ├── Pagination.tsx          # Page navigation
-    ├── FileSelector.tsx        # File dropdown
-    ├── ReadingControls.tsx     # Font/line height controls
-    ├── TTSButton.tsx           # Text-to-speech button
-    ├── TTSPlayerBar.tsx        # TTS player UI
-    ├── VocabularySidebar.tsx   # Vocabulary panel
-    ├── VocabularySaveDialog.tsx
-    ├── RubyLookupSidebar.tsx   # Furigana lookup
-    └── BookImage.tsx           # Book cover display
+│   ├── SpeakerIcon.tsx
+│   ├── StartHereIcon.tsx
+│   └── TranslateIcon.tsx
+├── reading/            # Reader components
+│   ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
+│   ├── ExplanationSidebar.tsx  # AI explanations panel
+│   ├── ParagraphItem.tsx       # Individual paragraph
+│   ├── RubyLookupSidebar.tsx   # Furigana lookup
+│   ├── TTSButton.tsx           # Text-to-speech button
+│   ├── GuestApiKeyModal.tsx    # Guest Gemini key prompt
+│   └── BookImage.tsx           # Book illustration
+└── ui/                 # Shared UI components
+    ├── AppHeader.tsx           # Shared header (logo, 本棚/単語帳 nav, ログアウト)
+    ├── BottomSheet.tsx         # Mobile bottom sheet
+    └── GuestModeBanner.tsx     # Guest preview banner
 ```
 
 ### Hooks (`/app/hooks`)
 
 | Hook | Purpose |
 |------|---------|
-| `useBookmark` | Manage bookmark state |
-| `useTextContent` | Load/manage text file content |
-| `useTextFileList` | Fetch available text files |
-| `useReadingProgress` | Track reading progress |
 | `useExplanationCache` | Cache AI explanations in localStorage |
 | `useBookMetadata` | Load book metadata from JSON |
 | `useTTS` | Text-to-speech control |
@@ -93,23 +85,21 @@ components/
 **Barrel Export:** Import from `@/app/hooks`
 
 ```typescript
-import { useBookmark, useTextContent } from '@/app/hooks';
+import { useExplanationCache, useBookMetadata } from '@/app/hooks';
 ```
 
 ### Pages
 
 | Page | Path | Description |
 |------|------|-------------|
-| Home | `/` | Main reading interface |
+| Home | `/` | Redirects to /library |
 | Read | `/read` | Enhanced reader |
 | Library | `/library` | Book library |
-| Visual Novel | `/visual-novel` | Real-time VN text capture |
-| OCR | `/ocr` | Image text extraction |
-| Text Input | `/text-input` | Manual text entry |
-| Text Input AI | `/text-input-ai` | AI-processed text entry |
 | Vocabulary | `/vocabulary` | Vocabulary tracker |
 | Ruby Registry | `/ruby-registry` | Furigana management |
 | Login | `/login` | Authentication |
+
+`/library`, `/vocabulary` and `/ruby-registry` share `AppHeader` (`app/components/ui/AppHeader.tsx`): the logo links to `/library`, the nav holds 本棚, 単語帳 and ログアウト, and a page can add its own actions (the library adds 同期).
 
 ---
 
@@ -123,18 +113,16 @@ Handles all Gemini AI integration.
 ai/
 ├── index.ts            # Barrel export
 ├── client.ts           # AI client singleton (server-only)
-├── generate.ts         # Content generation function
 └── prompts/
     ├── index.ts        # Prompts barrel export
     ├── rephrase.ts     # Text rephrasing prompts
-    ├── ocr.ts          # OCR extraction prompt
     └── explanation.ts  # Sentence explanation prompts (5 modes)
 ```
 
 **Usage:**
 ```typescript
 // Server-only (API routes)
-import { getAIClient, generateGeminiContent } from '@/lib/ai';
+import { getAIClient } from '@/lib/ai';
 
 // Client-safe (prompts only)
 import { ai_instructions, ai_instructions_quick } from '@/lib/ai';
@@ -161,7 +149,6 @@ db/
 **Usage:**
 ```typescript
 import { getBookmark, upsertBookmark } from '@/lib/db';
-import { getBooks, createBook } from '@/lib/db';
 import { getVocabularyEntries } from '@/lib/db';
 ```
 
@@ -186,23 +173,26 @@ services/
 ```
 utils/
 ├── index.ts                # Barrel export
-├── furiganaParser.ts       # Parse kanji[furigana] and <ruby> tags
-├── dictionaryParser.ts     # Parse word[reading・meaning] format
-├── progressCalculator.ts   # Calculate reading progress
+├── furiganaParser.ts       # Parse kanji[furigana] and <ruby> tags, render escaped HTML
+├── html.ts                 # HTML escaping
+├── safeMarkdown.ts         # Render AI markdown with raw HTML escaped
+├── buildPlayableUnits.ts   # Split book text into reader units
+├── truncatePreview.ts      # Guest preview cut
 ├── ttsTextCleaner.ts       # Clean text for TTS
-├── markdownParser/         # AI response parser
-│   ├── index.ts
-│   ├── validator.ts
-│   ├── normalizer.ts
-│   └── splitter.ts
-└── validation/             # Input validation
+├── ttsCache.ts             # Cache synthesized TTS audio
+├── colorTint.ts            # toTint(): tint a theme color
+├── bookAssetPath.ts        # Paths and URLs of book images and metadata
+├── bookTitle.ts            # Display title from a file name
+└── markdownParser/         # Rephrase-format parser
     ├── index.ts
-    └── pathValidator.ts    # Path traversal prevention
+    ├── validator.ts
+    ├── normalizer.ts
+    └── splitter.ts
 ```
 
 **Usage:**
 ```typescript
-import { parseFurigana, parseMarkdown, validateFileName } from '@/lib/utils';
+import { parseFurigana, parseMarkdown } from '@/lib/utils';
 ```
 
 ### Other Lib Modules
@@ -277,19 +267,19 @@ Use barrel exports for cleaner imports:
 
 ```typescript
 // Database
-import { getBookmark, getBooks, getVocabularyEntries } from '@/lib/db';
+import { getBookmark, getVocabularyEntries } from '@/lib/db';
 
 // Services
-import { readTextFile, listTextFiles } from '@/lib/services';
+import { readTextFile } from '@/lib/services';
 
 // Utilities
-import { parseFurigana, parseMarkdown, validateFileName } from '@/lib/utils';
+import { parseFurigana, parseMarkdown } from '@/lib/utils';
 
 // AI
 import { getAIClient, ai_instructions } from '@/lib/ai';
 
 // Hooks
-import { useBookmark, useTextContent } from '@/app/hooks';
+import { useExplanationCache, useBookMetadata } from '@/app/hooks';
 ```
 
 ---

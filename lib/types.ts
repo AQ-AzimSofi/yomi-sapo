@@ -84,10 +84,6 @@ export interface BookmarkRequest {
   page?: number;    // 現在のページ番号
 }
 
-export interface TextRequest {
-  text: string;
-}
-
 export interface GeminiRequest {
   text?: string;
   image?: File;
@@ -108,11 +104,6 @@ export interface CollapsibleItemProps {
   initialDropdownState?: boolean;
   id?: string;
   onSubmitSuccess: () => void;
-}
-
-export interface SidebarProps {
-  dropdownAlwaysOpen: boolean;
-  setDropdownAlwaysOpen: (value: boolean) => void;
 }
 
 // クエリパラメータ型

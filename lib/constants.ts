@@ -5,20 +5,12 @@
 // ファイル保存パス
 export const BOOKMARK_FILE = 'bookmark.json';
 
-// デフォルトのテキストファイル（サブディレクトリ対応）
-export const DEFAULT_TEXT_FILES = {
-  TEXT_1: 'temp/text-1',
-  TEXT_2: 'temp/text-2',
-  TEMP: 'temp/text',
-} as const;
-
 // デフォルト値（サブディレクトリ対応）
-// Note: No default file is set. App auto-redirects to first available file.
+// No default file: pages opened without a book go to the library.
 export const DEFAULT_FILE_NAME = null;
 export const DEFAULT_DROPDOWN_STATE = false;
 
 // テキスト処理
-export const MAX_CHUNK_SIZE = 4000;
 export const ENGLISH_REGEX = /[a-zA-Z]/;
 
 // AIモデルの設定
@@ -54,11 +46,8 @@ export const DICTIONARY_PATTERNS = {
 
 // APIルート
 export const API_ROUTES = {
-  GEMINI: '/api/gemini-api',
   READ_TEXT: '/api/read-public-txt',
   READ_BOOKMARK: '/api/read-bookmark',
-  WRITE_TEXT: '/api/write-public-txt',
-  WRITE_TEXT_AI: '/api/write-public-txt-ai',
   WRITE_BOOKMARK: '/api/write-bookmark',
   LIST_TEXT_FILES: '/api/list-text-files',
   EXPLAIN_SENTENCE: '/api/explain-sentence',
@@ -114,11 +103,7 @@ export const PRIORITY_LEVELS: Record<PriorityScore, PriorityLevel> = {
 // ページルート
 export const PAGE_ROUTES = {
   HOME: '/',
-  TEXT_INPUT: '/text-input',
-  TEXT_INPUT_AI: '/text-input-ai',
-  OCR: '/ocr',
-  VISUAL_NOVEL: '/visual-novel',
-  BOOK_READER: '/book-reader',
+  LIBRARY: '/library',
   VOCABULARY: '/vocabulary',
   LOGIN: '/login',
   RUBY_REGISTRY: '/ruby-registry',
@@ -201,7 +186,6 @@ export const STORAGE_KEYS = {
   CONTEXT_SIZE_EXPANDED: 'context_size_expanded',
   READER_FONT_SIZE: 'reader_font_size',
   READER_LINE_HEIGHT: 'reader_line_height',
-  VOCABULARY_MODE: 'vocabulary_mode',
   AI_EXPLANATION_ENABLED: 'ai_explanation_enabled',
   SHOW_REPHRASE: 'show_rephrase',
   STARRED_WORDS: 'starred_words', // Format: starred_words_{directory}_{bookName}

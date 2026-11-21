@@ -1,5 +1,4 @@
 export { ai_instructions, ai_instructions2 } from './rephrase';
-export { ai_instructions_picture } from './ocr';
 export {
   ai_instructions_quick,
   ai_instructions_story,
