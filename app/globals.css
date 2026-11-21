@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
-/* Theme tokens. The light values come from COLORS and READER_THEME, the dark ones from
-   DARK_COLORS (lib/constants.ts); app/globals.test.ts keeps them in step. The reader sets
-   data-theme on the document element, so everything it renders follows one theme. */
+/* Theme tokens. The colors and tints come from COLORS, READER_THEME and DARK_COLORS
+   (lib/constants.ts); app/globals.test.ts keeps them in step. The shadows and the FAB scrim
+   have no constant and are not checked. The reader sets data-theme on the document element,
+   so everything it renders follows one theme. */
 :root {
   --background: #F6F7F9;
   --foreground: #15171C;

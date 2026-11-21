@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { COLORS, DARK_COLORS, READER_THEME, THEME } from '@/lib/constants';
+import { toTint } from '@/lib/utils/colorTint';
 import type { ReaderTheme } from './read/readerTheme';
 
 const GLOBALS_CSS = readFileSync(fileURLToPath(new URL('./globals.css', import.meta.url)), 'utf8');
@@ -59,6 +60,24 @@ describe('reader theme tokens in globals.css', () => {
       '--color-secondary-dark': DARK_COLORS.TEXT_MUTED,
       '--color-progress-track': DARK_COLORS.NEUTRAL,
       '--color-toggle-thumb': DARK_COLORS.TEXT,
+    });
+  });
+
+  it('keep the light hover and scrim tints the components used inline', () => {
+    expect(LIGHT_TOKENS).toMatchObject({
+      '--color-hover': toTint(COLORS.INK, 4),
+      '--color-scrim-soft': toTint(COLORS.INK, 20),
+      '--color-scrim': toTint(COLORS.INK, 30),
+      '--color-scrim-strong': toTint(COLORS.INK, 40),
+    });
+  });
+
+  it('give the dark theme its hover and scrim tints', () => {
+    expect(DARK_TOKENS).toMatchObject({
+      '--color-hover': toTint(DARK_COLORS.TEXT, 6),
+      '--color-scrim-soft': toTint(COLORS.INK, 40),
+      '--color-scrim': toTint(COLORS.INK, 60),
+      '--color-scrim-strong': toTint(COLORS.INK, 60),
     });
   });
 
