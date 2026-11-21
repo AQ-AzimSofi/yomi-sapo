@@ -643,9 +643,12 @@ async function rephraseChunkWithGemini(chunk: string, model: string): Promise<Ch
   };
 }
 
-// A failed claude -p call (usage limit, sign-in) throws and stops the run; rerunning resumes this chunk.
+// A failed claude -p call (usage limit, sign-in) stops the run; this chunk stays unfinished, so rerunning resumes it.
 async function rephraseChunkWithClaude(chunk: string, model: string): Promise<ChunkOutput> {
-  const rephrased = await rephraseWithClaude(splitParagraphs(stripRubyTags(chunk)), model);
+  const rephrased = await rephraseWithClaude(splitParagraphs(stripRubyTags(chunk)), model).catch((error: unknown) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`${reason}\nProgress is saved. Run the same command again to resume from this chunk.`, { cause: error });
+  });
   const skippedCount = rephrased.skippedParagraphs.length;
   rephrased.skippedParagraphs.forEach((paragraph) => console.log(`    ? kept original: ${paragraph.slice(0, 60)}`));
   return {
@@ -1069,4 +1072,7 @@ Example:
 `);
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
