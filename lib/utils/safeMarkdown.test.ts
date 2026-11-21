@@ -18,7 +18,19 @@ describe('renderSafeMarkdown', () => {
   });
 
   it('escapes a block-level tag instead of rendering it', () => {
-    expect(renderSafeMarkdown('<div onclick="x">hi</div>')).not.toContain('<div');
+    expect(renderSafeMarkdown('<div onclick="x">hi</div>')).toBe('&lt;div onclick=&quot;x&quot;&gt;hi&lt;/div&gt;');
+  });
+
+  it('keeps text escaped after an inline <script> tag', () => {
+    expect(renderSafeMarkdown('a <script> <img src=x onerror=alert(1)// b')).toBe(
+      '<p>a &lt;script&gt; &lt;img src=x onerror=alert(1)// b</p>\n'
+    );
+  });
+
+  it('keeps the next paragraph escaped after an inline <pre> tag', () => {
+    expect(renderSafeMarkdown('x <pre>\n\n<img src=x onerror=alert(1)//')).toBe(
+      '<p>x &lt;pre&gt;</p>\n<p>&lt;img src=x onerror=alert(1)//</p>\n'
+    );
   });
 
   it('keeps an https link', () => {
@@ -35,11 +47,29 @@ describe('renderSafeMarkdown', () => {
     expect(renderSafeMarkdown('[押す](javascript:alert(1))')).toBe('<p>押す</p>\n');
   });
 
+  it.each([
+    "[x](javascript:fetch('https://evil'))",
+    '[x](JaVaScRiPt:alert(1))',
+    '[x](data:text/html;base64,PHNjcmlwdD4=)',
+    '[x](vbscript:msgbox(1))',
+    '[x][r]\n\n[r]: javascript:alert(1)',
+  ])('renders %j as its text only', (markdown) => {
+    expect(renderSafeMarkdown(markdown)).toBe('<p>x</p>\n');
+  });
+
+  it('keeps a mailto link', () => {
+    expect(renderSafeMarkdown('[連絡](mailto:a@example.com)')).toBe('<p><a href="mailto:a@example.com">連絡</a></p>\n');
+  });
+
   it('renders an entity-encoded javascript: link as its text only', () => {
     expect(renderSafeMarkdown('[押す](javascript&colon;alert(1))')).toBe('<p>押す</p>\n');
   });
 
   it('renders an image as its alt text so no remote image loads', () => {
     expect(renderSafeMarkdown('![図](https://example.com/a.png)')).toBe('<p>図</p>\n');
+  });
+
+  it('escapes markup in image alt text', () => {
+    expect(renderSafeMarkdown('![<img src=x onerror=alert(1)>](a.png)')).toBe('<p>&lt;img src=x onerror=alert(1)&gt;</p>\n');
   });
 });
