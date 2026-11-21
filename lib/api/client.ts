@@ -17,7 +17,11 @@ import type {
   ExplanationResponse,
   PrioritizeRequest,
   PrioritizeResponse,
+  RubyRegistryItemType,
+  RubyRegistryKey,
+  RubyRegistryResponse,
   SaveBookmarkRequest,
+  SaveRubyEntryRequest,
   TranslateRequest,
   TranslateResponse,
   TTSRequest,
@@ -208,6 +212,30 @@ export async function synthesizeSpeech(speech: TTSRequest): Promise<TTSResponse>
     method: 'POST',
     body: speech,
     guestKey: { kind: 'tts', promptOn: 'any-failure' },
+  });
+}
+
+function rubyRegistryParams({ directory, bookName }: RubyRegistryKey): Record<string, string> {
+  return { directory, bookName };
+}
+
+export async function fetchRubyRegistry(key: RubyRegistryKey): Promise<RubyRegistryResponse> {
+  return request<RubyRegistryResponse>(API_ROUTES.RUBY_REGISTRY, { query: rubyRegistryParams(key) });
+}
+
+export async function saveRubyEntry(entry: SaveRubyEntryRequest): Promise<RubyRegistryResponse> {
+  return request<RubyRegistryResponse>(API_ROUTES.RUBY_REGISTRY, { method: 'POST', body: entry });
+}
+
+/** Deletes an entry, or ignores a suggestion so it is not offered again. */
+export async function removeRubyRegistryItem(
+  key: RubyRegistryKey,
+  kanji: string,
+  type: RubyRegistryItemType
+): Promise<RubyRegistryResponse> {
+  return request<RubyRegistryResponse>(API_ROUTES.RUBY_REGISTRY, {
+    method: 'DELETE',
+    query: { ...rubyRegistryParams(key), kanji, type },
   });
 }
 

@@ -10,9 +10,12 @@ import {
   fetchBookText,
   fetchBookmark,
   fetchNarration,
+  fetchRubyRegistry,
   prioritize,
+  removeRubyRegistryItem,
   request,
   saveBookmark,
+  saveRubyEntry,
   synthesizeSpeech,
   translate,
 } from './client';
@@ -486,5 +489,43 @@ describe('fetchBookMetadata', () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'not_found', message: 'No such book asset' } }, 404));
 
     expect(await fetchBookMetadata(BOOK)).toBeNull();
+  });
+});
+
+describe('ruby registry calls', () => {
+  const KEY = { directory: 'bookv2-furigana', bookName: '本 (上)' };
+  const registryResponse = { success: true, registry: { bookTitle: '本', entries: [], suggestions: [] }, message: 'Registry loaded' };
+  const encodedBookName = encodeURIComponent('本 (上)');
+
+  it("reads a book's registry by directory and book name", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(registryResponse));
+
+    expect(await fetchRubyRegistry(KEY)).toEqual(registryResponse);
+    expect(lastCall().url).toBe(`/api/ruby-registry?directory=bookv2-furigana&bookName=${encodedBookName}`);
+  });
+
+  it('posts an entry under the registry key', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(registryResponse));
+    const entry = { kanji: '本', reading: 'ほん', source: 'user', note: '' } as const;
+
+    await saveRubyEntry({ ...KEY, entry });
+
+    expect(lastCall().url).toBe('/api/ruby-registry');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory: KEY.directory, bookName: KEY.bookName, entry }),
+    });
+  });
+
+  it.each(['entry', 'suggestion'] as const)('deletes a %s by kanji', async (type) => {
+    fetchMock.mockResolvedValue(jsonResponse(registryResponse));
+
+    await removeRubyRegistryItem(KEY, '本', type);
+
+    expect(lastCall().url).toBe(
+      `/api/ruby-registry?directory=bookv2-furigana&bookName=${encodedBookName}&kanji=${encodeURIComponent('本')}&type=${type}`
+    );
+    expect(lastCall().init).toMatchObject({ method: 'DELETE', headers: {}, body: undefined });
   });
 });
