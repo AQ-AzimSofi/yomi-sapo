@@ -32,6 +32,8 @@ import { GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
 import { alignRephrase, parseMarkdown, type AlignReport } from './utils/rephrase-output';
 import { isClaudeModel, rephraseWithClaude, splitParagraphs } from './utils/claude-rephrase';
+import { chunkText, stripRubyTags } from './pipeline/chunking';
+import { createProgress, getProgressPath, loadProgress, saveProgress, simpleHash } from './pipeline/progress';
 
 // Load environment variables
 const envLocalPath = path.join(process.cwd(), '.env.local');
@@ -116,57 +118,9 @@ interface CLIOptions {
   apiUrl: string;
 }
 
-interface ProgressFile {
-  version: number;
-  source: {
-    fileName: string;
-    directory: string;
-    totalCharacters: number;
-    hash: string;
-  };
-  chunks: {
-    total: number;
-    completed: number;
-    items: ChunkProgress[];
-  };
-  settings: {
-    chunkSize: number;
-    delaySeconds: number;
-    model: string;
-  };
-  startedAt: string;
-  lastUpdatedAt: string;
-}
-
-interface ChunkProgress {
-  index: number;
-  startChar: number;
-  endChar: number;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  attempts: number;
-  completedAt?: string;
-  error?: string;
-}
-
 // ============================================================================
 // Utility Functions
 // ============================================================================
-
-// Removing readings tag by tag keeps every base character of multi-part ruby such as
-// <ruby>一<rt>いつ</rt>色<rt>しき</rt></ruby>, which EPUBs use for names.
-function stripRubyTags(text: string): string {
-  return text.replace(/<rp>[^<]*<\/rp>|<rt>[^<]*<\/rt>/g, '').replace(/<\/?(ruby|rb)>/g, '');
-}
-
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16);
-}
 
 function validateResponse(response: string): boolean {
   const items = parseMarkdown(response);
@@ -356,141 +310,6 @@ function uploadBookImages(outputDir: string, bookName: string, isDryRun: boolean
     return;
   }
   console.log(`${isDryRun ? 'Would upload' : 'Uploaded'} illustrations to s3://${bucket}/${bookPrefix}/`);
-}
-
-// ============================================================================
-// Text Chunking
-// ============================================================================
-
-function chunkText(text: string, targetSize: number = 5000): { chunks: string[]; boundaries: { start: number; end: number }[] } {
-  const paragraphs = text.split(/\n\s*\n/);
-
-  const chunks: string[] = [];
-  const boundaries: { start: number; end: number }[] = [];
-
-  let currentChunk = '';
-  let currentChunkStripped = '';
-  let chunkStart = 0;
-  let currentPos = 0;
-
-  for (let i = 0; i < paragraphs.length; i++) {
-    const paragraph = paragraphs[i].trim();
-    if (!paragraph) continue;
-
-    const paragraphStripped = stripRubyTags(paragraph);
-    const separator = currentChunk ? '\n\n' : '';
-
-    if (currentChunkStripped.length + paragraphStripped.length + separator.length > targetSize) {
-      if (currentChunk) {
-        chunks.push(currentChunk);
-        boundaries.push({ start: chunkStart, end: currentPos });
-        chunkStart = currentPos;
-        currentChunk = '';
-        currentChunkStripped = '';
-      }
-
-      if (paragraphStripped.length > targetSize) {
-        const sentences = paragraph.split(/(?<=[。！？])/);
-        let sentenceChunk = '';
-        let sentenceChunkStripped = '';
-
-        for (const sentence of sentences) {
-          const sentenceStripped = stripRubyTags(sentence);
-
-          if (sentenceChunkStripped.length + sentenceStripped.length > targetSize && sentenceChunk) {
-            chunks.push(sentenceChunk);
-            boundaries.push({ start: chunkStart, end: currentPos });
-            chunkStart = currentPos;
-            sentenceChunk = sentence;
-            sentenceChunkStripped = sentenceStripped;
-          } else {
-            sentenceChunk += sentence;
-            sentenceChunkStripped += sentenceStripped;
-          }
-        }
-
-        if (sentenceChunk) {
-          currentChunk = sentenceChunk;
-          currentChunkStripped = sentenceChunkStripped;
-        }
-      } else {
-        currentChunk = paragraph;
-        currentChunkStripped = paragraphStripped;
-      }
-    } else {
-      currentChunk += separator + paragraph;
-      currentChunkStripped += separator + paragraphStripped;
-    }
-
-    currentPos += paragraph.length + 2;
-  }
-
-  if (currentChunk) {
-    chunks.push(currentChunk);
-    boundaries.push({ start: chunkStart, end: currentPos });
-  }
-
-  return { chunks, boundaries };
-}
-
-// ============================================================================
-// Progress Management
-// ============================================================================
-
-function getProgressPath(sourceDir: string, bookName: string): string {
-  return path.join(sourceDir, `${bookName}-rephrase-progress.json`);
-}
-
-function loadProgress(progressPath: string): ProgressFile | null {
-  if (!fs.existsSync(progressPath)) return null;
-  try {
-    const content = fs.readFileSync(progressPath, 'utf-8');
-    return JSON.parse(content) as ProgressFile;
-  } catch {
-    return null;
-  }
-}
-
-function saveProgress(progressPath: string, progress: ProgressFile): void {
-  progress.lastUpdatedAt = new Date().toISOString();
-  fs.writeFileSync(progressPath, JSON.stringify(progress, null, 2), 'utf-8');
-}
-
-function createProgress(
-  bookName: string,
-  directory: string,
-  sourceText: string,
-  chunks: string[],
-  boundaries: { start: number; end: number }[],
-  settings: { chunkSize: number; delaySeconds: number; model: string }
-): ProgressFile {
-  return {
-    version: 1,
-    source: {
-      fileName: bookName,
-      directory: directory,
-      totalCharacters: stripRubyTags(sourceText).length,
-      hash: simpleHash(sourceText),
-    },
-    chunks: {
-      total: chunks.length,
-      completed: 0,
-      items: chunks.map((_, index) => ({
-        index,
-        startChar: boundaries[index].start,
-        endChar: boundaries[index].end,
-        status: 'pending' as const,
-        attempts: 0,
-      })),
-    },
-    settings: {
-      chunkSize: settings.chunkSize,
-      delaySeconds: settings.delaySeconds,
-      model: settings.model,
-    },
-    startedAt: new Date().toISOString(),
-    lastUpdatedAt: new Date().toISOString(),
-  };
 }
 
 // ============================================================================
@@ -810,14 +629,13 @@ async function batchRephrase(
     console.log(`Database sync: ${options.apiUrl}`);
     console.log(`Furigana: enabled (adding after each chunk)`);
 
-    progress = createProgress(
+    progress = createProgress({
       bookName,
-      `${options.outputDir}/${bookName}`,
+      directory: `${options.outputDir}/${bookName}`,
       sourceText,
-      chunks,
-      result.boundaries,
-      { chunkSize: options.chunkSize, delaySeconds, model: options.model }
-    );
+      boundaries: result.boundaries,
+      settings: { chunkSize: options.chunkSize, delaySeconds, model: options.model },
+    });
   }
 
   if (options.dryRun) {
