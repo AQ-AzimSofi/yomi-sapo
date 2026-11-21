@@ -14,7 +14,8 @@ function serializeItem(item: ReaderItem): string {
  * text with the same book model, so the returned text must parse back to the same
  * unit boundaries: rephrase items are re-serialized in canonical `<head` / `>>sub`
  * form and paragraphs are joined by blank lines.
- * The rest of the book is never included in the output.
+ * The output is always rebuilt from the parsed items, even when the book is
+ * shorter than the cap, so text the parser did not keep never reaches a guest.
  */
 export function truncateToPreviewPages(
   content: string,
@@ -24,7 +25,5 @@ export function truncateToPreviewPages(
   // Clamp defensively: a mis-edited (zero/negative/non-integer) cap must never
   // widen the preview via slice(0, negative) or a fractional boundary.
   const maxUnits = Math.max(0, Math.floor(maxPages)) * itemsPerPage;
-  const items = parseReaderItems(content);
-  if (items.length <= maxUnits) return content;
-  return items.slice(0, maxUnits).map(serializeItem).join('\n\n');
+  return parseReaderItems(content).slice(0, maxUnits).map(serializeItem).join('\n\n');
 }
