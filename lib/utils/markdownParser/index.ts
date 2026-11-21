@@ -155,8 +155,6 @@ export {
 } from './validator';
 export {
   removeSubItemPrefix,
-  normalizeHeading,
   removeHeadingPrefix,
   removeBoldFormatting
 } from './normalizer';
-export { hasEmbeddedHeading } from './splitter';

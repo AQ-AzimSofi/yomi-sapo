@@ -3,7 +3,7 @@
  */
 
 // デフォルト値（サブディレクトリ対応）
-// Note: No default file is set. App auto-redirects to first available file.
+// No default file: pages opened without a book go to the library.
 export const DEFAULT_FILE_NAME = null;
 // AIモデルの設定
 export const AI_MODELS = {

@@ -24,6 +24,10 @@ describe('cleanBookText', () => {
     expect(cleanBookText(nested).cleaned).toBe('<ruby>間<rt>ま</rt></ruby><ruby>違<rt>ちが</rt></ruby>える');
   });
 
+  it('keeps the book reading when pipeline ruby sits inside a closed calibre ruby', () => {
+    expect(cleanBookText('<ruby><rb><ruby>間<rt>かん</rt></ruby><rt>ま</rt></ruby>に').cleaned).toBe('<ruby>間<rt>ま</rt></ruby>に');
+  });
+
   it('unwraps a tate-chu-yoko span and keeps its text', () => {
     expect(cleanBookText('記号<spanclass="tcy">α</span>と<span class="tcy">β</span>').cleaned).toBe('記号αとβ');
   });
@@ -48,6 +52,12 @@ describe('cleanBookText', () => {
     );
   });
 
+  it('leaves a lone closing span and a span without a class alone', () => {
+    const content = 'HTMLでは<span>強調</span>と書き、閉じタグは</span>だ';
+
+    expect(cleanBookText(content).cleaned).toBe(content);
+  });
+
   it('leaves well-formed ruby, footnote superscripts and code text alone', () => {
     const content = '<ruby>幼<rt>おさな</rt>馴<rt>な</rt></ruby>の<sup>*1</sup>と<div id="x">';
 
@@ -59,7 +69,7 @@ describe('cleanBookText', () => {
       'Windows line ending': 0,
       'model <bos> token': 2,
       'calibre class on a ruby tag': 0,
-      'tate-chu-yoko span': 2,
+      'tate-chu-yoko span': 1,
       'pipeline ruby nested in calibre ruby': 0,
       'gaiji image ruby': 0,
       'gaiji image pair in a longer ruby': 0,

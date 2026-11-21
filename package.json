@@ -9,7 +9,7 @@
     "dev-lan:nosync": "next dev --hostname 192.168.1.15 --port 3001",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "next lint --dir app --dir lib --file middleware.ts --file middleware.test.ts --file next.config.ts --file vitest.config.ts",
     "db:start": "docker-compose up -d",
     "db:stop": "docker-compose down",
     "db:restart": "docker-compose restart",

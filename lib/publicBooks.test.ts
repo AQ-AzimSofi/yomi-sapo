@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  DEFAULT_PREVIEW_PAGES,
   PUBLIC_BOOKS,
   findPublicBook,
   findPublicBookByPath,
@@ -20,6 +21,11 @@ describe('PUBLIC_BOOKS', () => {
     );
 
     expect(PUBLIC_BOOKS.map((book) => book.directory)).toEqual(expectedDirectories);
+  });
+
+  it('caps every preview book at the default preview length of 5 pages', () => {
+    expect(DEFAULT_PREVIEW_PAGES).toBe(5);
+    expect(PUBLIC_BOOKS.map((book) => book.maxPreviewPages)).toEqual(PUBLIC_BOOKS.map(() => DEFAULT_PREVIEW_PAGES));
   });
 });
 

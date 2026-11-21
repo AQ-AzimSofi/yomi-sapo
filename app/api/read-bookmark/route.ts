@@ -17,7 +17,6 @@ export async function GET(request: Request): Promise<NextResponse<BookmarkRespon
   const fileName = searchParams.get('fileName') || DEFAULT_FILE_NAME;
 
   // バリデーション（ディレクトリトラバーサル攻撃を防ぐ）
-  // Note: No default file set - app will auto-redirect to first available file
   if (!fileName || fileName.includes('..')) {
     console.error(`無効なファイル名: "${fileName}"`);
     return NextResponse.json({ text: '' }, { status: 400 });

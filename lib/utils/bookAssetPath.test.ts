@@ -18,6 +18,19 @@ describe('bookAssetPath', () => {
     expect(bookAssetPath('bookv2-furigana', '春の本', '.json')).toBe('/bookv2-furigana/春の本/春の本.json');
   });
 
+  // No stored book has the next two shapes (flat directories hold original files,
+  // nested ones hold rephrase files). Pinned because bookImagePath picks a
+  // different folder for both.
+  it('puts the sidecar of a rephrase file in a flat directory directly under that directory', () => {
+    expect(bookAssetPath('bookv2-furigana', '春の本-rephrase-furigana', '.json')).toBe('/bookv2-furigana/春の本.json');
+  });
+
+  it('adds the book name as another subfolder for an original file in a nested directory', () => {
+    expect(bookAssetPath('bookv2-furigana/春の本', '春の本', '.json')).toBe(
+      '/bookv2-furigana/春の本/春の本/春の本.json'
+    );
+  });
+
   it('treats a rephrase suffix that is not at the end as part of the book name', () => {
     expect(bookAssetPath('d', '本-rephrase-メモ', '.json')).toBe('/d/本-rephrase-メモ/本-rephrase-メモ.json');
   });

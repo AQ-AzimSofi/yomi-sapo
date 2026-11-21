@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { truncateToPreviewPages } from './truncatePreview';
-import { buildPlayableUnits } from '@/lib/content/bookModel';
+import { parseReaderItems } from '@/lib/content/bookModel';
 import { PAGINATION_CONFIG } from '@/lib/constants';
 
 const ITEMS_PER_PAGE = 2;
@@ -26,11 +26,21 @@ describe('truncateToPreviewPages', () => {
     expect(truncateToPreviewPages(content, 1, ITEMS_PER_PAGE)).toBe(content);
   });
 
-  it('cuts rephrase content to text that parses back to the first N pages of units', () => {
+  it('cuts rephrase content to text that parses back to the first N pages of items', () => {
     const preview = truncateToPreviewPages(FIVE_UNIT_REPHRASE, 2, ITEMS_PER_PAGE);
-    const firstFourUnits = buildPlayableUnits(FIVE_UNIT_REPHRASE).slice(0, 2 * ITEMS_PER_PAGE);
 
-    expect(buildPlayableUnits(preview)).toEqual(firstFourUnits);
+    expect(parseReaderItems(preview)).toEqual(parseReaderItems(FIVE_UNIT_REPHRASE).slice(0, 2 * ITEMS_PER_PAGE));
+  });
+
+  it('round-trips rephrase heads that start with ruby markup', () => {
+    const content =
+      '＜<ruby>序<rt>じょ</rt></ruby>章\n>> はじまり\n\n' +
+      '<ruby>本<rt>ほん</rt></ruby>の話\n>> 本のこと\n>> もう一つ\n\n' +
+      '< 三\n>> さん';
+    const preview = truncateToPreviewPages(content, 1, ITEMS_PER_PAGE);
+
+    expect(parseReaderItems(content)).toHaveLength(3);
+    expect(parseReaderItems(preview)).toEqual(parseReaderItems(content).slice(0, ITEMS_PER_PAGE));
   });
 
   it('writes cut rephrase content in < head and >> sub form', () => {
@@ -43,11 +53,10 @@ describe('truncateToPreviewPages', () => {
     expect(truncateToPreviewPages(content, 1, 1)).toBe('<一\n>>い\n>>イ');
   });
 
-  it('cuts plain content to text that parses back to the first N pages of units', () => {
+  it('cuts plain content to text that parses back to the first N pages of items', () => {
     const preview = truncateToPreviewPages(FIVE_UNIT_PLAIN, 2, ITEMS_PER_PAGE);
-    const firstFourUnits = buildPlayableUnits(FIVE_UNIT_PLAIN).slice(0, 2 * ITEMS_PER_PAGE);
 
-    expect(buildPlayableUnits(preview)).toEqual(firstFourUnits);
+    expect(parseReaderItems(preview)).toEqual(parseReaderItems(FIVE_UNIT_PLAIN).slice(0, 2 * ITEMS_PER_PAGE));
   });
 
   it('cuts plain content by paragraph and joins the kept ones with one blank line', () => {
@@ -92,4 +101,6 @@ describe('truncateToPreviewPages', () => {
   it('cuts CRLF plain content by paragraph instead of returning the whole book', () => {
     expect(truncateToPreviewPages(FIVE_UNIT_PLAIN.replace(/\n/g, '\r\n'), 1, ITEMS_PER_PAGE)).toBe('一。\n\n二。');
   });
+
+  it.todo('never returns more than the cap when the parser finds fewer units than the book has, e.g. furigana prose with a stray ">>" (bug)');
 });
