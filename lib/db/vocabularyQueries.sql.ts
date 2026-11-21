@@ -3,6 +3,7 @@ import { sql } from './connection';
 import type { VocabularyRow } from './schema';
 import type { VocabularyEntry } from '@/lib/types';
 import { toVocabularyDto } from './vocabularyDto';
+import { runWriteTransaction } from './writeTransaction';
 import { nanoid } from 'nanoid';
 
 export interface VocabularyFilter {
@@ -81,10 +82,12 @@ export async function createVocabularyEntry(input: CreateVocabularyInput): Promi
     const id = nanoid();
     const now = new Date();
 
-    await sql`
-      INSERT INTO vocabulary_entries (id, word, reading, sentence, file_name, directory, paragraph_text, notes, created_at, updated_at)
-      VALUES (${id}, ${input.word}, ${input.reading || null}, ${input.sentence}, ${input.fileName}, ${input.directory}, ${input.paragraphText || null}, ${input.notes || null}, ${now}, ${now})
-    `;
+    await runWriteTransaction(sql, async (tx) => {
+      await tx`
+        INSERT INTO vocabulary_entries (id, word, reading, sentence, file_name, directory, paragraph_text, notes, created_at, updated_at)
+        VALUES (${id}, ${input.word}, ${input.reading || null}, ${input.sentence}, ${input.fileName}, ${input.directory}, ${input.paragraphText || null}, ${input.notes || null}, ${now}, ${now})
+      `;
+    });
 
     const entry = await getVocabularyEntryById(id);
     if (!entry) {
@@ -103,16 +106,18 @@ export async function updateVocabularyEntry(id: string, input: UpdateVocabularyI
 
     // postgres.js rejects undefined, so a field the update leaves out is sent as
     // NULL and COALESCE keeps the stored value.
-    await sql`
-      UPDATE vocabulary_entries
-      SET word = COALESCE(${input.word ?? null}, word),
-          reading = COALESCE(${input.reading ?? null}, reading),
-          sentence = COALESCE(${input.sentence ?? null}, sentence),
-          paragraph_text = COALESCE(${input.paragraphText ?? null}, paragraph_text),
-          notes = COALESCE(${input.notes ?? null}, notes),
-          updated_at = ${now}
-      WHERE id = ${id}
-    `;
+    await runWriteTransaction(sql, async (tx) => {
+      await tx`
+        UPDATE vocabulary_entries
+        SET word = COALESCE(${input.word ?? null}, word),
+            reading = COALESCE(${input.reading ?? null}, reading),
+            sentence = COALESCE(${input.sentence ?? null}, sentence),
+            paragraph_text = COALESCE(${input.paragraphText ?? null}, paragraph_text),
+            notes = COALESCE(${input.notes ?? null}, notes),
+            updated_at = ${now}
+        WHERE id = ${id}
+      `;
+    });
 
     return getVocabularyEntryById(id);
   } catch (error) {
@@ -123,7 +128,9 @@ export async function updateVocabularyEntry(id: string, input: UpdateVocabularyI
 
 export async function deleteVocabularyEntry(id: string): Promise<void> {
   try {
-    await sql`DELETE FROM vocabulary_entries WHERE id = ${id}`;
+    await runWriteTransaction(sql, async (tx) => {
+      await tx`DELETE FROM vocabulary_entries WHERE id = ${id}`;
+    });
   } catch (error) {
     console.error('Error deleting vocabulary entry:', error);
     throw error;
