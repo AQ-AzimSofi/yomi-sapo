@@ -56,7 +56,7 @@ Every handler is declared as `export const GET = withAuth(policy, handler)` (`li
 
 `app/api/routeInventory.test.ts` lists the expected policy of every handler and fails on a handler that is missing from the list or declares another policy.
 
-A route that takes a book reads it as a `BookRef` (`lib/books/bookRef.ts`) from separate `directory` and `fileName` params (`write-bookmark`: body fields), and rejects one that fails `isSafeBookRef` with 400. `read-public-txt`, `read-bookmark` and `write-bookmark` still accept the combined form (`fileName=dir/file`, or `target` in the bookmark body), because a browser can hold the reader from before a deploy. `read-public-txt` keeps its old lookup for that form: every directory/file split, most nested first, then the legacy `public` folder.
+`read-public-txt`, `read-bookmark`, `write-bookmark`, `narration`, `covers` and `text-entries` read their book as a `BookRef` (`lib/books/bookRef.ts`) from separate `directory` and `fileName` params (`write-bookmark` and `text-entries`: body fields), and reject one that fails `isSafeBookRef` with 400. `ruby-registry` checks its `directory` and `bookName` the same way. `vocabulary` and `admin` still take a raw `fileName` and `directory` with no check; both only pass them to parameterized SQL. `read-public-txt`, `read-bookmark` and `write-bookmark` still accept the combined form (`fileName=dir/file`, or `target` in the bookmark body), because a browser can hold the reader from before a deploy. `read-public-txt` keeps its old lookup for that form: every directory/file split, most nested first, then the legacy `public` folder.
 
 Errors are `{ error: { code, message } }` from `apiError()` (`lib/api/respond.ts`), plus any field a client reads (`requiresGuestKey`, the login page's `message`). `parseJsonBody(request, check, requirement)` answers 400 for a body that is not JSON or fails `check`. An error a handler does not handle is logged and answered with a generic 500.
 
@@ -184,7 +184,7 @@ services/
 - `toBookKey(book)` / `parseBookKey(key)`: the joined `"directory/fileName"` key, whose last segment is the file. A key with no slash names a book in the legacy `public` folder. Bookmark rows, library progress (`/api/library-progress` keys) and the old combined query param all use this key.
 - `bookRefFromParams(directory, fileName)`: the book named by URL or query params, or by a combined `fileName` alone. Both go through the joined key, so both forms resolve to the same book, and to the same bookmark row as before the split.
 - `sameBook(a, b)`: the same directory and file name.
-- `isSafeBookRef(book)`: no `..` part, no empty part (so no leading, doubled or trailing slash) and no backslash. Every route that takes a book checks it.
+- `isSafeBookRef(book)`: no `..` part, no empty part (so no leading, doubled or trailing slash) and no backslash. Every route that reads a book as a `BookRef` checks it, as does `ruby-registry` (see API Routes).
 - `bookQuery(book)`: the `directory=...&fileName=...` query string clients send.
 - `rubyRegistryKey(book)`: the top-level directory and the rest of the book's directory, the key ruby registries and starred words are stored under.
 
