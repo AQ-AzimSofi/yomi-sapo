@@ -9,6 +9,7 @@ import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
 import { isAuthenticated } from '@/lib/auth/apiSession';
 import { findPublicBookByPath } from '@/lib/publicBooks';
 import { truncateToPreviewPages } from '@/lib/utils/truncatePreview';
+import { ifNoneMatchIncludes } from '@/lib/utils/etag';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,15 +45,15 @@ function cacheHeaders(etag: string): HeadersInit {
 }
 
 export async function GET(request: Request): Promise<NextResponse> {
+  const { searchParams } = new URL(request.url);
+  const fileName = searchParams.get('fileName');
+  const directory = searchParams.get('directory');
+
+  if (!fileName || fileName.includes('..') || directory?.includes('..')) {
+    return NextResponse.json({ text: '' }, { status: 400 });
+  }
+
   try {
-    const { searchParams } = new URL(request.url);
-    const fileName = searchParams.get('fileName');
-    const directory = searchParams.get('directory');
-
-    if (!fileName || fileName.includes('..') || directory?.includes('..')) {
-      return NextResponse.json({ text: '' }, { status: 400 });
-    }
-
     // Guests may only read allowlisted books, and only a short page preview.
     const requestedPath = directory ? `${directory}/${fileName}` : fileName;
     const authed = await isAuthenticated();
@@ -68,16 +69,19 @@ export async function GET(request: Request): Promise<NextResponse> {
 
     const variant = publicBook ? `preview${publicBook.maxPreviewPages}` : 'full';
     const etag = `"${location.version}-${variant}"`;
-    if (request.headers.get('if-none-match') === etag) {
+    if (ifNoneMatchIncludes(request.headers.get('if-none-match'), etag)) {
       return new NextResponse(null, { status: 304, headers: cacheHeaders(etag) });
     }
 
     const content = await getTextEntry(location.file, location.directory);
+    // A book removed between the two reads must not be cached under its old version.
+    if (!content) {
+      return NextResponse.json({ text: '' });
+    }
     const text = publicBook ? truncateToPreviewPages(content, publicBook.maxPreviewPages) : content;
     return NextResponse.json({ text }, { headers: cacheHeaders(etag) });
   } catch (error) {
-    console.error('Failed to read book text:', error);
-    // An empty 200 keeps the reader's error handling simple; it shows its own empty state.
-    return NextResponse.json({ text: '' });
+    console.error('Failed to read book text:', { fileName, directory }, error);
+    return NextResponse.json({ text: '' }, { status: 500 });
   }
 }

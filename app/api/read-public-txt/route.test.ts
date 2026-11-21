@@ -9,6 +9,9 @@ vi.mock('@/lib/db/queries', () => ({ getTextEntry: vi.fn(), getTextEntryVersion:
 
 const OWNER_BOOK = { directory: 'bookv2-furigana/ほん', fileName: 'ほん-rephrase-furigana' };
 const BOOK_TEXT = '< 一文目\n>> やさしい一文目';
+const OWNER_PATH = `${OWNER_BOOK.directory}/${OWNER_BOOK.fileName}`;
+const PUBLIC_BOOK = PUBLIC_BOOKS[0];
+const PUBLIC_PATH = `${PUBLIC_BOOK.directory}/${PUBLIC_BOOK.fileName}`;
 
 function readRequest(fileName: string, headers: Record<string, string> = {}): Request {
   return new Request(`http://localhost/api/read-public-txt?fileName=${encodeURIComponent(fileName)}`, { headers });
@@ -95,5 +98,85 @@ describe('GET /api/read-public-txt', () => {
     const response = await GET(readRequest('../secret'));
 
     expect(response.status).toBe(400);
+  });
+
+  it('answers 304 to the weak form of its ETag that CloudFront sends, and repeats the ETag', async () => {
+    const response = await GET(readRequest(OWNER_PATH, { 'if-none-match': 'W/"1200-1700000000000-full"' }));
+
+    expect(response.status).toBe(304);
+    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full"');
+  });
+
+  it('answers 304 when its ETag is one of several in the header', async () => {
+    const response = await GET(readRequest(OWNER_PATH, { 'if-none-match': '"old", "1200-1700000000000-full"' }));
+
+    expect(response.status).toBe(304);
+  });
+
+  it('sends a signed-in reader the full text of an allowlisted book', async () => {
+    vi.mocked(getTextEntryVersion).mockResolvedValue('5000-1700000000000');
+
+    const response = await GET(readRequest(PUBLIC_PATH));
+
+    expect(await response.json()).toEqual({ text: BOOK_TEXT });
+    expect(response.headers.get('etag')).toBe('"5000-1700000000000-full"');
+  });
+
+  it('sends the full text to a reader who signed in after reading the guest preview', async () => {
+    vi.mocked(getTextEntryVersion).mockResolvedValue('5000-1700000000000');
+
+    const response = await GET(
+      readRequest(PUBLIC_PATH, { 'if-none-match': `"5000-1700000000000-preview${PUBLIC_BOOK.maxPreviewPages}"` })
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it('cuts the text a guest receives to the preview', async () => {
+    vi.mocked(isAuthenticated).mockResolvedValue(false);
+    vi.mocked(getTextEntryVersion).mockResolvedValue('5000-1700000000000');
+    vi.mocked(getTextEntry).mockResolvedValue(Array.from({ length: 400 }, (_, paragraph_i) => `段落${paragraph_i}。`).join('\n\n'));
+
+    const { text } = await (await GET(readRequest(PUBLIC_PATH))).json();
+
+    expect(text).toContain('段落0。');
+    expect(text).not.toContain('段落399。');
+  });
+
+  it('finds a book whose file name continues after a slash', async () => {
+    vi.mocked(getTextEntryVersion).mockImplementation(async (file, directory) => (directory === 'a' && file === 'b/c' ? '10-20' : null));
+
+    await GET(readRequest('a/b/c'));
+
+    expect(getTextEntry).toHaveBeenCalledWith('b/c', 'a');
+  });
+
+  it('falls back to the legacy public folder', async () => {
+    vi.mocked(getTextEntryVersion).mockImplementation(async (file, directory) => (directory === 'public' && file === 'a/c' ? '10-20' : null));
+
+    await GET(readRequest('a/c'));
+
+    expect(getTextEntry).toHaveBeenCalledWith('a/c', 'public');
+  });
+
+  it('answers 500 without an ETag and logs the book when the database fails', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(getTextEntryVersion).mockRejectedValue(new Error('connection lost'));
+
+    const response = await GET(readRequest(OWNER_PATH));
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get('etag')).toBeNull();
+    expect(error).toHaveBeenCalledWith('Failed to read book text:', { fileName: OWNER_PATH, directory: null }, expect.any(Error));
+    error.mockRestore();
+  });
+
+  it('sends no ETag when the book disappears between the version check and the read', async () => {
+    vi.mocked(getTextEntry).mockResolvedValue('');
+
+    const response = await GET(readRequest(OWNER_PATH));
+
+    expect(await response.json()).toEqual({ text: '' });
+    expect(response.headers.get('etag')).toBeNull();
   });
 });
