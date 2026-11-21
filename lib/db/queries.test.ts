@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from '@/lib/db/connection';
-import { getBookmark, getTextEntryVersion, upsertBookmark, upsertTextEntry } from './queries';
+import { getBookmark, getTextEntryVersion, initializeBookmarksForFiles, upsertBookmark, upsertTextEntry } from './queries';
 
-vi.mock('@/lib/db/connection', () => ({ sql: vi.fn() }));
+vi.mock('@/lib/db/connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }) }));
 
 function queryValues(): unknown[] {
   const [, ...values] = vi.mocked(sql).mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
@@ -58,6 +58,18 @@ describe('upsertTextEntry', () => {
 
     expect(queryValues()).toContain('< 本文\n>> やさしい文\n');
     expect(queryValues().some((value) => typeof value === 'string' && value.includes('\r'))).toBe(false);
+  });
+});
+
+describe('initializeBookmarksForFiles', () => {
+  it('reads the existing bookmarks and inserts the missing ones in one transaction', async () => {
+    const transaction = vi.fn().mockResolvedValueOnce([{ file_name: 'ある本' }]).mockResolvedValue([]);
+    vi.mocked(sql.begin).mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+
+    await initializeBookmarksForFiles(['ある本', '新しい本', '次の本'], 'd');
+
+    expect(sql).not.toHaveBeenCalled();
+    expect(transaction.mock.calls.map(([, ...values]) => values)).toEqual([['d'], ['新しい本', 'd'], ['次の本', 'd']]);
   });
 });
 

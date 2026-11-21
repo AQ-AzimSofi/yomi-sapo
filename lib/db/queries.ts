@@ -60,21 +60,23 @@ export async function initializeBookmarksForFiles(
   directory: string = 'public'
 ): Promise<void> {
   try {
-    const existing = await sql<Pick<Bookmark, 'file_name'>[]>`
-      SELECT file_name FROM bookmarks WHERE directory = ${directory}
-    `;
+    await sql.begin(async (tx) => {
+      const existing = await tx<Pick<Bookmark, 'file_name'>[]>`
+        SELECT file_name FROM bookmarks WHERE directory = ${directory}
+      `;
 
-    const existingFiles = new Set(existing.map((row) => row.file_name));
+      const existingFiles = new Set(existing.map((row) => row.file_name));
 
-    for (const fileName of fileNames) {
-      if (!existingFiles.has(fileName)) {
-        await sql`
-          INSERT INTO bookmarks (file_name, directory, bookmark_text)
-          VALUES (${fileName}, ${directory}, '')
-          ON CONFLICT (file_name, directory) DO NOTHING
-        `;
+      for (const fileName of fileNames) {
+        if (!existingFiles.has(fileName)) {
+          await tx`
+            INSERT INTO bookmarks (file_name, directory, bookmark_text)
+            VALUES (${fileName}, ${directory}, '')
+            ON CONFLICT (file_name, directory) DO NOTHING
+          `;
+        }
       }
-    }
+    });
   } catch (error) {
     console.error('Error initializing bookmarks:', error);
     throw error;
