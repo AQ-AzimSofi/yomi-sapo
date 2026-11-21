@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { THEME } from '@/lib/constants';
+import { useEscapeKey } from '@/app/hooks/useEscapeKey';
 
 interface BottomSheetProps {
   isOpen: boolean;
@@ -36,13 +37,7 @@ export default function BottomSheet({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose();
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
+  useEscapeKey(isOpen, onClose);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     dragStartRef.current = e.touches[0].clientY;

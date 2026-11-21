@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG, THEME } from '@/lib/constants';
 import { useExplanationCache } from '@/app/hooks/useExplanationCache';
+import { useEscapeKey } from '@/app/hooks/useEscapeKey';
 import { parseFurigana, segmentsToHTML, stripAiFurigana } from '@/lib/utils/furiganaParser';
 import { renderSafeMarkdown } from '@/lib/utils/safeMarkdown';
 import { toTint } from '@/lib/utils/colorTint';
@@ -60,18 +61,7 @@ export default function ExplanationSidebar({
     setContextSizeExpanded,
   } = useExplanationCache();
 
-  React.useEffect(() => {
-    const handleEscKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleEscKey);
-    return () => {
-      document.removeEventListener('keydown', handleEscKey);
-    };
-  }, [isOpen, onClose]);
+  useEscapeKey(isOpen, onClose);
 
   // After a guest saves their API key, retry the explanation automatically.
   React.useEffect(() => {
