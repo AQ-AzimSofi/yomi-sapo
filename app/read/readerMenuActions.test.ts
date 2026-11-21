@@ -32,6 +32,10 @@ function labelsFor(state: Partial<MenuState>) {
   return readerMenuActions({ ...QUIET_STATE, ...state }, noopHandlers()).map((action) => action.label);
 }
 
+function idsFor(state: Partial<MenuState>) {
+  return readerMenuActions({ ...QUIET_STATE, ...state }, noopHandlers()).map((action) => action.id);
+}
+
 function activeLabelsFor(state: Partial<MenuState>) {
   return readerMenuActions({ ...QUIET_STATE, ...state }, noopHandlers())
     .filter((action) => action.active)
@@ -62,7 +66,7 @@ describe('readerMenuActions', () => {
   });
 
   it.each([null, 0])('leaves the bookmark entry out when the bookmark page is %s', (bookmarkPage) => {
-    expect(labelsFor({ bookmarkPage })).not.toContain('栞の位置へ');
+    expect(idsFor({ bookmarkPage })).not.toContain('bookmark');
   });
 
   it('labels and marks the switches that are on', () => {
