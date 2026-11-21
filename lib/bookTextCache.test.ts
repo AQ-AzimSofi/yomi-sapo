@@ -120,6 +120,13 @@ describe('readBookTextThroughCache', () => {
     expect(await readThroughCache(URL)).toBe('本文');
   });
 
+  it('reads from the network when Cache Storage refuses to list the older caches', async () => {
+    vi.stubGlobal('caches', { open: vi.fn(), keys: async () => Promise.reject(new Error('SecurityError')), delete: vi.fn() });
+    download.mockResolvedValue(bookResponse('本文', '"10-1-full"'));
+
+    expect(await readThroughCache(URL)).toBe('本文');
+  });
+
   it('keeps books out of the cache that older readers filled under the combined-path URLs', async () => {
     useCacheStorage([ORPHANED_CACHE]);
     download.mockResolvedValue(bookResponse('本文', '"10-1-full"'));
