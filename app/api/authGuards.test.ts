@@ -8,6 +8,7 @@ import {
   updateVocabularyEntry,
 } from '@/lib/db/vocabularyQueries.sql';
 import { getBookmark, upsertTextEntry } from '@/lib/db/queries';
+import { BookTextTooLargeError } from '@/lib/db/bookTextSize';
 import { getNarration } from '@/lib/db/narrationQueries.sql';
 import { readTextFile } from '@/lib/services/fileService';
 import { GET as initDb } from './init-db/route';
@@ -239,5 +240,19 @@ describe('PUT /api/text-entries', () => {
     expect(response.status).toBe(200);
     expect(readTextFile).toHaveBeenCalledWith('bookv2-furigana/ほん/ほん-rephrase-furigana');
     expect(upsertTextEntry).toHaveBeenCalledWith(BOOK.fileName, '< 本文\n>> やさしい文', BOOK.directory);
+  });
+
+  it('answers 413 naming the book when its text is too large to store', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.mocked(readTextFile).mockResolvedValue('< 本文');
+    const tooLarge = new BookTextTooLargeError(1_100_000);
+    vi.mocked(upsertTextEntry).mockRejectedValue(tooLarge);
+
+    const response = await putTextEntry(jsonRequest('PUT', BOOK));
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toStrictEqual({
+      error: { code: 'text_too_large', message: `bookv2-furigana/ほん/ほん-rephrase-furigana: ${tooLarge.message}` },
+    });
   });
 });

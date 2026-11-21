@@ -24,6 +24,7 @@ export type ApiErrorCode =
   | 'not_configured'
   | 'upstream_failed'
   | 'upstream_timeout'
+  | 'text_too_large'
   | 'internal_error';
 
 export interface ApiErrorBody {

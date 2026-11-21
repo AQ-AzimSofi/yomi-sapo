@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initializeBookmarksForFiles, upsertBookmark, upsertTextEntry } from '@/lib/db/queries';
+import { BookTextTooLargeError } from '@/lib/db/bookTextSize';
 import { ownerSessionHeaders, TEST_SESSION_SECRET } from '@/lib/auth/testSession';
 import { POST } from './route';
 
@@ -51,6 +52,33 @@ describe('POST /api/admin', () => {
       stats: { fileName: 'ほん', directory: 'bookv2-furigana/ほん', contentLength: 2 },
     });
     expect(initializeBookmarksForFiles).toHaveBeenCalledWith(['ほん'], 'bookv2-furigana/ほん');
+  });
+
+  it('answers 413 naming the book when its text is too large to store, and adds no bookmark', async () => {
+    const tooLarge = new BookTextTooLargeError(1_100_000);
+    vi.mocked(upsertTextEntry).mockRejectedValueOnce(tooLarge);
+
+    const response = await POST(adminRequest('text-entries', UPLOAD));
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toStrictEqual({
+      error: { code: 'text_too_large', message: `bookv2-furigana/ほん/ほん: ${tooLarge.message}` },
+    });
+    expect(initializeBookmarksForFiles).not.toHaveBeenCalled();
+  });
+
+  it('reports a bulk entry too large to store with the size it would need', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const tooLarge = new BookTextTooLargeError(1_100_000);
+    vi.mocked(upsertTextEntry).mockRejectedValueOnce(tooLarge);
+
+    const response = await POST(adminRequest('bulk-seed', { entries: [UPLOAD] }));
+
+    expect((await response.json()).results).toStrictEqual([
+      { fileName: 'ほん', directory: 'bookv2-furigana/ほん', success: false, error: tooLarge.message },
+    ]);
+    expect(initializeBookmarksForFiles).not.toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it('answers 400 without saving a text entry that has no content', async () => {

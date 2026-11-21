@@ -3,6 +3,7 @@ import { withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import { upsertTextEntry, upsertBookmark, initializeBookmarksForFiles, backfillTextMetadata } from '@/lib/db/queries';
+import { BookTextTooLargeError } from '@/lib/db/bookTextSize';
 
 interface TextEntryUpload {
   fileName: string;
@@ -74,7 +75,12 @@ async function handleTextEntry(request: Request) {
   if (body instanceof Response) return body;
   const { fileName, directory = 'bookv2-furigana', content } = body;
 
-  await upsertTextEntry(fileName, content, directory);
+  try {
+    await upsertTextEntry(fileName, content, directory);
+  } catch (error) {
+    if (!(error instanceof BookTextTooLargeError)) throw error;
+    return apiError(413, 'text_too_large', `${directory}/${fileName}: ${error.message}`);
+  }
 
   await initializeBookmarksForFiles([fileName], directory);
 
@@ -171,7 +177,7 @@ async function handleBulkSeed(request: Request) {
         fileName,
         directory,
         success: false,
-        error: 'Failed to save this entry',
+        error: error instanceof BookTextTooLargeError ? error.message : 'Failed to save this entry',
       });
       failed++;
     }

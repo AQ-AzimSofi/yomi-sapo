@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { upsertTextEntry } from '@/lib/db/queries';
+import { BookTextTooLargeError } from '@/lib/db/bookTextSize';
 import { readTextFile } from '@/lib/services/fileService';
 import { withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
@@ -52,8 +53,12 @@ export const PUT = withAuth('public', async (request) => {
     return apiError(404, 'not_found', `File not found or empty: ${filePath}`);
   }
 
-  // Update database entry
-  await upsertTextEntry(fileName, content, directory);
+  try {
+    await upsertTextEntry(fileName, content, directory);
+  } catch (error) {
+    if (!(error instanceof BookTextTooLargeError)) throw error;
+    return apiError(413, 'text_too_large', `${filePath}: ${error.message}`);
+  }
   console.log(`Updated text entry: ${directory}/${fileName} (${content.length} chars)`);
 
   return NextResponse.json({
