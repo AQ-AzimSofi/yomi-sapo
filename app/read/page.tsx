@@ -719,7 +719,6 @@ function ReaderContent({
           displayMode={displayMode}
           aiExplanationEnabled={aiExplanationEnabled}
           currentPage={currentPage}
-          isDarkMode={isDarkMode}
           onBookmarkSuccess={refetchBookmark}
           onSentenceClick={handleSentenceClick}
           imageMap={imageMap}

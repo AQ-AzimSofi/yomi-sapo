@@ -8,7 +8,7 @@ import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
 import TTSButton from "@/app/components/reading/TTSButton";
 import { useSearchParams } from "next/navigation";
-import { COLORS, EXPLANATION_CONFIG, DARK_COLORS, READER_THEME } from "@/lib/constants";
+import { COLORS, EXPLANATION_CONFIG, THEME } from "@/lib/constants";
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
@@ -26,7 +26,6 @@ interface CollapsibleItemProps {
   onSubmitSuccess: () => void;
   showFurigana?: boolean;
   aiExplanationEnabled?: boolean;
-  isDarkMode?: boolean;
   onSentenceClick?: (sentence: string) => void;
   imageMap?: Record<string, string>;
   book: BookRef;
@@ -47,7 +46,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   onSubmitSuccess,
   showFurigana = false,
   aiExplanationEnabled = true,
-  isDarkMode = false,
   onSentenceClick,
   imageMap,
   book,
@@ -78,11 +76,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
       return () => clearTimeout(timer);
     }
   }, [highlightWord, head]);
-
-  const accentColor = isDarkMode ? DARK_COLORS.PRIMARY : COLORS.PRIMARY;
-  const mutedTextColor = isDarkMode ? DARK_COLORS.TEXT_MUTED : COLORS.SECONDARY_DARK;
-  const ruleColor = isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL;
-  const glossBackground = isDarkMode ? DARK_COLORS.SURFACE : READER_THEME.SURFACE_MUTED;
 
   const toggleOpen = () => {
     setIsOpen(!isOpen);
@@ -205,7 +198,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
               }
               onMouseEnter={(e) => {
                 if (onSentenceClick) {
-                  e.currentTarget.style.backgroundColor = toTint(accentColor, 10);
+                  e.currentTarget.style.backgroundColor = toTint(THEME.PRIMARY, 10);
                 }
               }}
               onMouseLeave={(e) => {
@@ -267,7 +260,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   const renderHeadWithImages = () => {
     if (showTranslation && translatedText) {
       return (
-        <span style={{ color: mutedTextColor }}>
+        <span style={{ color: THEME.SECONDARY_DARK }}>
           {translatedText}
         </span>
       );
@@ -314,7 +307,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
       }
     : shouldHighlight
     ? {
-        backgroundColor: toTint(accentColor, 10),
+        backgroundColor: toTint(THEME.PRIMARY, 10),
         borderLeft: "none",
         transition: "background-color 3s ease, border-left 3s ease",
       }
@@ -325,8 +318,8 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
         }
       : isBookmarked
         ? {
-            borderLeft: `2px solid ${accentColor}`,
-            backgroundColor: toTint(accentColor, 7),
+            borderLeft: `2px solid ${THEME.PRIMARY}`,
+            backgroundColor: toTint(THEME.PRIMARY, 7),
           }
         : {};
 
@@ -343,10 +336,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     transition: "transform 0.15s ease, background-color 0.15s ease",
     flexShrink: 0,
   };
-
-  const hoverBg = isDarkMode
-    ? toTint(DARK_COLORS.TEXT, 6)
-    : toTint(COLORS.INK, 4);
 
   // A line whose original is only illustrations, none of which exist, would be an empty card.
   const headParts = hasImage ? parseContentWithImages(head) : [];
@@ -373,7 +362,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
           className="head-text font-bold text-lg whitespace-pre-wrap"
           onClickCapture={handleTripleClickSelect}
           style={{
-            color: isDarkMode ? DARK_COLORS.TEXT : COLORS.INK,
+            color: THEME.INK,
             ...(!aiExplanationEnabled
               ? { userSelect: "text" as const, cursor: "text" }
               : {}),
@@ -390,7 +379,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
               }}
               aria-expanded={isOpen}
               className="interactive-link cursor-pointer h-9 flex items-center gap-1 font-gothic text-[11px] font-bold tracking-[0.14em]"
-              style={{ color: accentColor, background: "none", border: "none", padding: 0 }}
+              style={{ color: THEME.PRIMARY, background: "none", border: "none", padding: 0 }}
             >
               やさしく
               <svg
@@ -400,7 +389,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
                 height="12"
                 aria-hidden="true"
                 style={{
-                  fill: accentColor,
+                  fill: THEME.PRIMARY,
                   transition: "transform 200ms ease",
                   transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
                 }}
@@ -409,7 +398,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
               </svg>
             </button>
           )}
-          <span aria-hidden="true" className="flex-1 h-px" style={{ backgroundColor: ruleColor }} />
+          <span aria-hidden="true" className="flex-1 h-px" style={{ backgroundColor: THEME.NEUTRAL }} />
           <div className="flex items-center gap-0.5 flex-shrink-0 -mr-1.5">
             {audiobookEnabled && onStartFromHere && globalIndex != null && (
               <button
@@ -419,7 +408,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
                 }}
                 style={buttonBaseStyle}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = hoverBg;
+                  e.currentTarget.style.backgroundColor = THEME.HOVER;
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = "transparent";
@@ -445,7 +434,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
                 opacity: translating ? 0.5 : 1,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = hoverBg;
+                e.currentTarget.style.backgroundColor = THEME.HOVER;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = "transparent";
@@ -470,7 +459,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
                 type="submit"
                 style={buttonBaseStyle}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = hoverBg;
+                  e.currentTarget.style.backgroundColor = THEME.HOVER;
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = "transparent";
@@ -491,14 +480,14 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
         {isOpen && (
           <div
             className="mt-1 px-3 py-2.5 flex flex-col gap-2"
-            style={{ backgroundColor: glossBackground }}
+            style={{ backgroundColor: THEME.SURFACE_MUTED }}
           >
             {subItems.map((subItem, index) => (
               <div
                 key={index}
                 className="sub-item-text"
                 onClick={handleTripleClickSelect}
-                style={{ color: mutedTextColor }}
+                style={{ color: THEME.SECONDARY_DARK }}
               >
                 {index === 4 ? "" : renderTextWithFurigana(subItem, false)}
               </div>

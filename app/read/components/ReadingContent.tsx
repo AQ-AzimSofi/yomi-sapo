@@ -2,7 +2,7 @@
 
 import { useMemo, type CSSProperties } from "react";
 import { pageStartIndex, type ContentType, type ReaderItem } from "@/lib/content/bookModel";
-import { COLORS, PRIORITY_LEVELS, type PriorityScore } from "@/lib/constants";
+import { PRIORITY_LEVELS, THEME, type PriorityScore } from "@/lib/constants";
 import CollapsibleItem from "@/app/components/reading/CollapsibleItem";
 import ParagraphItem from "@/app/components/reading/ParagraphItem";
 import type { BookRef } from "@/lib/books/bookRef";
@@ -16,7 +16,6 @@ interface ReadingContentProps {
   displayMode: "collapsed" | "expanded";
   aiExplanationEnabled: boolean;
   currentPage: number;
-  isDarkMode: boolean;
   onBookmarkSuccess: () => void;
   onSentenceClick?: (sentence: string) => void;
   imageMap?: Record<string, string>;
@@ -75,7 +74,6 @@ export default function ReadingContent({
   displayMode,
   aiExplanationEnabled,
   currentPage,
-  isDarkMode,
   onBookmarkSuccess,
   onSentenceClick,
   imageMap,
@@ -96,9 +94,9 @@ export default function ReadingContent({
     return (
       <div
         className="p-8 text-center font-gothic text-sm"
-        style={{ border: `1px solid ${COLORS.NEUTRAL}` }}
+        style={{ border: `1px solid ${THEME.NEUTRAL}` }}
       >
-        <p style={{ color: COLORS.SECONDARY }}>No content to display</p>
+        <p style={{ color: THEME.SECONDARY }}>No content to display</p>
       </div>
     );
   }
@@ -122,7 +120,6 @@ export default function ReadingContent({
               initialDropdownState={displayMode === "expanded"}
               showFurigana={showFurigana}
               aiExplanationEnabled={aiExplanationEnabled}
-              isDarkMode={isDarkMode}
               onSubmitSuccess={onBookmarkSuccess}
               onSentenceClick={onSentenceClick}
               imageMap={imageMap}

@@ -6,7 +6,7 @@ import BookmarkFilled from "@/app/components/icons/BookmarkFilled";
 import TranslateIcon from "@/app/components/icons/TranslateIcon";
 import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
-import { COLORS, EXPLANATION_CONFIG } from "@/lib/constants";
+import { COLORS, EXPLANATION_CONFIG, THEME } from "@/lib/constants";
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
@@ -202,7 +202,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
                 transition: "background-color 0.2s ease",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = toTint(COLORS.PRIMARY, 10);
+                e.currentTarget.style.backgroundColor = toTint(THEME.PRIMARY, 10);
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = "transparent";
@@ -219,7 +219,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
       return (
         <div
           className="head-text font-bold text-lg whitespace-pre-wrap"
-          style={{ color: COLORS.SECONDARY_DARK }}
+          style={{ color: THEME.SECONDARY_DARK }}
         >
           {translatedText}
         </div>
@@ -303,14 +303,14 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
             : isStartCursor
               ? toTint(COLORS.START_CURSOR, 7)
               : isBookmarked
-                ? toTint(COLORS.PRIMARY, 7)
+                ? toTint(THEME.PRIMARY, 7)
                 : "transparent",
           borderLeft: isPlaying
             ? `2px solid ${COLORS.PLAYING}`
             : isStartCursor
               ? `2px solid ${COLORS.START_CURSOR}`
               : isBookmarked
-                ? `2px solid ${COLORS.PRIMARY}`
+                ? `2px solid ${THEME.PRIMARY}`
                 : "none",
         }}
       >
@@ -325,7 +325,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
             }}
             style={buttonBaseStyle}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = toTint(COLORS.INK, 4);
+              e.currentTarget.style.backgroundColor = THEME.HOVER;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";
@@ -350,7 +350,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
             opacity: translating ? 0.5 : 1,
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = toTint(COLORS.INK, 4);
+            e.currentTarget.style.backgroundColor = THEME.HOVER;
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.backgroundColor = "transparent";
@@ -374,7 +374,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
             type="submit"
             style={buttonBaseStyle}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = toTint(COLORS.INK, 4);
+              e.currentTarget.style.backgroundColor = THEME.HOVER;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";
