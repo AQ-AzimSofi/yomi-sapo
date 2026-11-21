@@ -28,6 +28,8 @@ const OPTIONS: RephraseOptions = {
   apiUrl: 'http://127.0.0.1:9',
 };
 const CHUNK_COUNT = chunkText(SOURCE_TEXT, OPTIONS.chunkSize).chunks.length;
+// Two full runs per write the book makes, which a loaded machine can take well over the default 5s for.
+const KILL_LOOP_TIMEOUT_MS = 60_000;
 
 class KillSignal extends Error {}
 
@@ -180,7 +182,7 @@ describe('batchRephrase', () => {
       expect(await batchRephrase(book, OPTIONS, createFakeDeps().deps)).toBe(true);
       expect(readOutputs(), `killed after ${writeCount} writes`).toEqual(reference);
     }
-  });
+  }, KILL_LOOP_TIMEOUT_MS);
 
   it('Test_batchRephrase_ResumeSkipsSavedChunks', async () => {
     writeSource();
@@ -276,7 +278,7 @@ describe('batchRephrase', () => {
         const { rawText, furiganaText } = readOutputs();
         expect({ rawText, furiganaText }, `killed after ${writeCount} writes`).toEqual({ rawText: reference.rawText, furiganaText: reference.furiganaText });
       }
-    });
+    }, KILL_LOOP_TIMEOUT_MS);
 
     it('Test_batchRephrase_V1ProgressThatCannotBeSplitIsLeftAlone', async () => {
       writeV1StoppedInSecondChunk();
