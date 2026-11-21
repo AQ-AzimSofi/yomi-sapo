@@ -1,6 +1,6 @@
 # よみサポ
 
-よみサポ is a full-stack web app for Japanese language learners. It started as a tool for reading Visual Novels (capturing in-game text via Textractor and AI-rephrasing it for comprehension) and has grown into a complete reading app for books, with furigana, AI assistance, text-to-speech, and vocabulary tracking.
+よみサポ is a full-stack web app for Japanese language learners. It started as a tool for reading Visual Novels (capturing in-game text via Textractor and AI-rephrasing it for comprehension). That capture page has since been retired, and it is now a complete reading app for books, with furigana, AI assistance, text-to-speech, and a vocabulary list.
 
 Live at **https://yomi-sapo.click** (password login, with a guest preview of a few books).
 
@@ -31,7 +31,7 @@ https://github.com/user-attachments/assets/16d81533-e417-4123-b764-a0066d0b6c84
 *   **Text-to-speech & audiobook mode** — read pages aloud with adjustable speed and voice, continuous playback, keyboard controls on desktop, and a replay-current-sentence button on mobile (Google Cloud TTS).
 
 ### Study
-*   **Vocabulary tracker** — save words together with their sentence context.
+*   **Vocabulary list** — browse, search and delete saved words, and jump back to each word's sentence. Saving words from the reader returns in a later update.
 *   **Ruby lookup** — per-book kanji→reading registry.
 
 ### Access
@@ -58,7 +58,7 @@ pip install -r scripts/requirements.txt --break-system-packages
 Basic usage:
 
 ```bash
-python3 scripts/epub-to-text-furigana.py path/to/your-book.epub
+python3 scripts/core/epub-to-text-furigana.py path/to/your-book.epub
 ```
 
 Options:
@@ -70,13 +70,13 @@ Examples:
 
 ```bash
 # Process with all kanji getting furigana (default)
-python3 scripts/epub-to-text-furigana.py book.epub
+python3 scripts/core/epub-to-text-furigana.py book.epub
 
 # Only add furigana to advanced kanji
-python3 scripts/epub-to-text-furigana.py book.epub --filter n3
+python3 scripts/core/epub-to-text-furigana.py book.epub --filter n3
 
 # Custom output location
-python3 scripts/epub-to-text-furigana.py book.epub --output ./my-books/
+python3 scripts/core/epub-to-text-furigana.py book.epub --output ./my-books/
 ```
 
 ### What the script does:
@@ -103,7 +103,7 @@ Files are created in: `public/bookv2-furigana/[book-name]/`
 
 ### Using processed books in the app:
 
-Once processed, the book will automatically appear in the library.
+The library lists books from the database, so load the text there to read it in the app: run with `--output-mode api` (see below) or use the all-in-one `scripts/epub-to-book.ts` pipeline.
 
 ---
 
@@ -170,7 +170,7 @@ npm run db:init     # Initialize tables
 **Option A: Via EPUB Script** (Recommended for EPUB files)
 ```bash
 export ADMIN_API_KEY=your_key_here
-python3 scripts/epub-to-text-furigana.py book.epub --output-mode api
+python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
 ```
 
 **Option B: Via Direct API Call**
@@ -241,12 +241,12 @@ The EPUB processing script supports direct upload to the database:
 export ADMIN_API_KEY=your_key_here
 
 # Process and upload directly to database (no files created)
-python3 scripts/epub-to-text-furigana.py book.epub --output-mode api
+python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
 
 # Optional: target another local/LAN dev server (defaults to http://localhost:3333).
 # Production rejects API mode: it has no ADMIN_API_KEY.
 export API_URL=http://192.168.1.15:3001
-python3 scripts/epub-to-text-furigana.py book.epub --output-mode api
+python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
 ```
 
 **API Mode Features:**
