@@ -76,8 +76,11 @@ describe('POST /api/auth?action=login', () => {
     });
   });
 
-  it('answers 400 with the top-level message when there is no password', async () => {
-    const response = await POST(loginRequest({}));
+  it.each([
+    ['no password', {}],
+    ['a password that is not a string', { password: 123 }],
+  ])('answers 400 with the top-level message for %s', async (_case, body) => {
+    const response = await POST(loginRequest(body));
 
     expect(response.status).toBe(400);
     expect((await response.json()).message).toBe('Password is required');

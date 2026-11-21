@@ -130,4 +130,11 @@ describe('POST /api/vocabulary', () => {
     expect(response.status).toBe(400);
     expect(createVocabularyEntry).not.toHaveBeenCalled();
   });
+
+  it('rejects a reading that is not a string without saving', async () => {
+    const response = await POST(createRequest({ ...CREATE_BODY, reading: 5 }));
+
+    expect(response.status).toBe(400);
+    expect(createVocabularyEntry).not.toHaveBeenCalled();
+  });
 });

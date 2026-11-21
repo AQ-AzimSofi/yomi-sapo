@@ -208,6 +208,15 @@ describe('PUT /api/text-entries', () => {
     expect(upsertTextEntry).not.toHaveBeenCalled();
   });
 
+  it('answers 400 without reading a file when the directory is not a string', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+
+    const response = await putTextEntry(jsonRequest('PUT', { fileName: BOOK.fileName, directory: 5 }));
+
+    expect(response.status).toBe(400);
+    expect(readTextFile).not.toHaveBeenCalled();
+  });
+
   it('copies a book file into the database on the local dev server', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     vi.mocked(readTextFile).mockResolvedValue('< 本文\n>> やさしい文');

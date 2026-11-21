@@ -77,8 +77,11 @@ describe('POST /api/ruby-registry', () => {
     expect(upsertRubyEntry).not.toHaveBeenCalled();
   });
 
-  it('answers 400 without saving for an entry with no reading', async () => {
-    const response = await POST(saveRequest({ directory: 'bookv2-furigana', bookName: 'ほん', entry: { kanji: '本' } }));
+  it.each([
+    ['no reading', { kanji: '本' }],
+    ['an unknown source', { ...ENTRY, source: 'admin' }],
+  ])('answers 400 without saving for an entry with %s', async (_case, entry) => {
+    const response = await POST(saveRequest({ directory: 'bookv2-furigana', bookName: 'ほん', entry }));
 
     expect(response.status).toBe(400);
     expect(upsertRubyEntry).not.toHaveBeenCalled();
