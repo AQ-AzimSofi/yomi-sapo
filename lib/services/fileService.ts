@@ -1,3 +1,4 @@
+import 'server-only';
 import * as fs from 'fs/promises';
 import path from 'path';
 import type { RubyRegistry, RubyEntry } from '@/lib/types';

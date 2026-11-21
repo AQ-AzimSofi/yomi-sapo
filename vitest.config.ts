@@ -5,6 +5,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('.', import.meta.url)),
+      // Next.js resolves server-only to this empty module on the server; under node it throws.
+      'server-only': fileURLToPath(new URL('./node_modules/server-only/empty.js', import.meta.url)),
     },
   },
   test: {
