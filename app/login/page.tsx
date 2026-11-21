@@ -1,11 +1,18 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_ROUTES, COLORS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
+import { clearBookTextCache } from '@/lib/bookTextCache';
 
 export default function LoginPage() {
+  // An expired session lands here too, not only the sign-out button, so drop
+  // any stored book text before someone else signs in on this browser.
+  useEffect(() => {
+    clearBookTextCache();
+  }, []);
+
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
