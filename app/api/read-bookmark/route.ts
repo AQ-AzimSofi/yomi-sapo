@@ -6,38 +6,31 @@
 import { NextResponse } from 'next/server';
 import { getBookmark } from '@/lib/db/queries';
 import { DEFAULT_FILE_NAME } from '@/lib/constants';
-import { isAuthenticated } from '@/lib/auth/apiSession';
+import { withAuth } from '@/lib/auth/guards';
+import { apiError } from '@/lib/api/respond';
 import type { BookmarkResponse } from '@/lib/types';
 
 // Mark as dynamic to prevent static generation during build
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request): Promise<NextResponse<BookmarkResponse>> {
+// Guests have no personal bookmarks and must not see the owner's saved position.
+// The reader and the library treat any failed response as "no bookmark".
+export const GET = withAuth('owner', async (request) => {
   const { searchParams } = new URL(request.url);
   const fileName = searchParams.get('fileName') || DEFAULT_FILE_NAME;
 
   // バリデーション（ディレクトリトラバーサル攻撃を防ぐ）
   if (!fileName || fileName.includes('..')) {
     console.error(`無効なファイル名: "${fileName}"`);
-    return NextResponse.json({ text: '' }, { status: 400 });
+    return apiError(400, 'invalid_request', 'Invalid file name');
   }
 
-  // Guests have no personal bookmarks; do not expose the owner's saved position.
-  if (!(await isAuthenticated())) {
-    return NextResponse.json({ text: '' });
-  }
+  // Extract directory and filename - last segment is file, rest is directory
+  // e.g., "bookv2-furigana/book-name/file-name" -> dir="bookv2-furigana/book-name", file="file-name"
+  const parts = fileName.split('/');
+  const directory = parts.length > 1 ? parts.slice(0, -1).join('/') : 'public';
+  const file = parts[parts.length - 1];
 
-  try {
-    // Extract directory and filename - last segment is file, rest is directory
-    // e.g., "bookv2-furigana/book-name/file-name" -> dir="bookv2-furigana/book-name", file="file-name"
-    const parts = fileName.split('/');
-    const directory = parts.length > 1 ? parts.slice(0, -1).join('/') : 'public';
-    const file = parts[parts.length - 1];
-
-    const bookmark = await getBookmark(file, directory);
-    return NextResponse.json(bookmark);
-  } catch (error) {
-    console.error('ブックマークの読み込み中にエラーが発生しました:', error);
-    return NextResponse.json({ text: '' });
-  }
-}
+  const bookmark = await getBookmark(file, directory);
+  return NextResponse.json<BookmarkResponse>(bookmark);
+});

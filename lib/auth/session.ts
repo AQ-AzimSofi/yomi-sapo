@@ -1,5 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose';
 
+export const SESSION_COOKIE = 'session';
+
 // Resolved per call rather than at module load so a missing secret fails on use
 // with a clear error, instead of silently signing everything with a constant.
 function sessionKey(): Uint8Array {

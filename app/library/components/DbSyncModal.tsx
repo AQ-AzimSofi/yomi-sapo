@@ -39,7 +39,7 @@ export default function DbSyncModal({ onClose }: { onClose: () => void }) {
       const res = await fetch(API_ROUTES.DB_SYNC);
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(data.error?.message || `HTTP ${res.status}`);
       }
       const data = await res.json();
       setDiffs(data.diffs);
@@ -62,7 +62,7 @@ export default function DbSyncModal({ onClose }: { onClose: () => void }) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(data.error?.message || `HTTP ${res.status}`);
       }
       const data = await res.json();
       setSyncResults(data.results);

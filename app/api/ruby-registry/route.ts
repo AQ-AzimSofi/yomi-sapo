@@ -5,118 +5,110 @@ import {
   deleteRubyEntry,
   ignoreSuggestion
 } from '@/lib/services/fileService';
-import { isAuthenticated } from '@/lib/auth/apiSession';
+import { guestPreviewOnly, withAuth } from '@/lib/auth/guards';
+import { apiError, parseJsonBody } from '@/lib/api/respond';
+import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import { isPublicDirectory } from '@/lib/publicBooks';
 import type { RubyRegistryResponse, RubyEntry } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request): Promise<NextResponse<RubyRegistryResponse>> {
+interface RubyEntryDraft {
+  kanji: string;
+  reading: string;
+  source?: RubyEntry['source'];
+  note?: string;
+}
+
+interface RubyEntryRequest {
+  directory: string;
+  bookName: string;
+  entry: RubyEntryDraft;
+}
+
+function isRubyEntryDraft(entry: unknown): entry is RubyEntryDraft {
+  return (
+    isRecord(entry) &&
+    isNonEmptyString(entry.kanji) &&
+    isNonEmptyString(entry.reading) &&
+    (entry.source === undefined || entry.source === 'epub' || entry.source === 'user') &&
+    isOptionalString(entry.note)
+  );
+}
+
+function isRubyEntryRequest(body: unknown): body is RubyEntryRequest {
+  return (
+    isRecord(body) &&
+    isNonEmptyString(body.directory) &&
+    isNonEmptyString(body.bookName) &&
+    isRubyEntryDraft(body.entry)
+  );
+}
+
+export const GET = withAuth('viewer', async (request, viewer) => {
   const { searchParams } = new URL(request.url);
   const directory = searchParams.get('directory');
   const bookName = searchParams.get('bookName');
 
   if (!directory || !bookName) {
-    return NextResponse.json({
-      success: false,
-      message: 'directory and bookName are required'
-    }, { status: 400 });
+    return apiError(400, 'invalid_request', 'directory and bookName are required');
   }
 
   if (directory.includes('..') || bookName.includes('..')) {
-    return NextResponse.json({
-      success: false,
-      message: 'Invalid path'
-    }, { status: 400 });
+    return apiError(400, 'invalid_request', 'Invalid path');
   }
 
   // Guests may read the vocabulary index of an allowlisted preview book. This is
   // the whole-book ruby registry (a kanji->reading index), intentionally not
   // capped to the 5-page text preview -- it is derived metadata, not prose.
-  if (!(await isAuthenticated()) && !isPublicDirectory(`${directory}/${bookName}`)) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
+  if (viewer === 'guest' && !isPublicDirectory(`${directory}/${bookName}`)) {
+    return guestPreviewOnly();
   }
 
-  try {
-    const registry = await readRubyRegistry(directory, bookName);
-    if (!registry) {
-      return NextResponse.json({
-        success: true,
-        registry: {
-          bookTitle: bookName,
-          entries: [],
-          suggestions: []
-        },
-        message: 'No registry found, returning empty'
-      });
-    }
-
-    return NextResponse.json({
+  const registry = await readRubyRegistry(directory, bookName);
+  if (!registry) {
+    return NextResponse.json<RubyRegistryResponse>({
       success: true,
-      registry,
-      message: 'Registry loaded'
+      registry: {
+        bookTitle: bookName,
+        entries: [],
+        suggestions: []
+      },
+      message: 'No registry found, returning empty'
     });
-  } catch (error) {
-    console.error('Error reading ruby registry:', error);
-    return NextResponse.json({
-      success: false,
-      message: 'Failed to read registry'
-    }, { status: 500 });
-  }
-}
-
-export async function POST(request: Request): Promise<NextResponse<RubyRegistryResponse>> {
-  if (!(await isAuthenticated())) {
-    return NextResponse.json({ success: false, message: 'Sign in required' }, { status: 401 });
   }
 
-  try {
-    const body = await request.json();
-    const { directory, bookName, entry } = body as {
-      directory: string;
-      bookName: string;
-      entry: RubyEntry;
-    };
+  return NextResponse.json<RubyRegistryResponse>({
+    success: true,
+    registry,
+    message: 'Registry loaded'
+  });
+});
 
-    if (!directory || !bookName || !entry) {
-      return NextResponse.json({
-        success: false,
-        message: 'directory, bookName, and entry are required'
-      }, { status: 400 });
-    }
+export const POST = withAuth('owner', async (request) => {
+  const body = await parseJsonBody(
+    request,
+    isRubyEntryRequest,
+    'directory, bookName, and an entry with kanji and reading are required'
+  );
+  if (body instanceof Response) return body;
+  const { directory, bookName, entry } = body;
 
-    if (!entry.kanji || !entry.reading) {
-      return NextResponse.json({
-        success: false,
-        message: 'entry must have kanji and reading'
-      }, { status: 400 });
-    }
+  const registry = await upsertRubyEntry(directory, bookName, {
+    kanji: entry.kanji,
+    reading: entry.reading,
+    source: entry.source || 'user',
+    note: entry.note || ''
+  });
 
-    const registry = await upsertRubyEntry(directory, bookName, {
-      ...entry,
-      source: entry.source || 'user',
-      note: entry.note || ''
-    });
+  return NextResponse.json<RubyRegistryResponse>({
+    success: true,
+    registry,
+    message: 'Entry saved'
+  });
+});
 
-    return NextResponse.json({
-      success: true,
-      registry,
-      message: 'Entry saved'
-    });
-  } catch (error) {
-    console.error('Error saving ruby entry:', error);
-    return NextResponse.json({
-      success: false,
-      message: 'Failed to save entry'
-    }, { status: 500 });
-  }
-}
-
-export async function DELETE(request: Request): Promise<NextResponse<RubyRegistryResponse>> {
-  if (!(await isAuthenticated())) {
-    return NextResponse.json({ success: false, message: 'Sign in required' }, { status: 401 });
-  }
-
+export const DELETE = withAuth('owner', async (request) => {
   const { searchParams } = new URL(request.url);
   const directory = searchParams.get('directory');
   const bookName = searchParams.get('bookName');
@@ -124,37 +116,20 @@ export async function DELETE(request: Request): Promise<NextResponse<RubyRegistr
   const type = searchParams.get('type') || 'entry';
 
   if (!directory || !bookName || !kanji) {
-    return NextResponse.json({
-      success: false,
-      message: 'directory, bookName, and kanji are required'
-    }, { status: 400 });
+    return apiError(400, 'invalid_request', 'directory, bookName, and kanji are required');
   }
 
-  try {
-    let registry;
-    if (type === 'suggestion') {
-      registry = await ignoreSuggestion(directory, bookName, kanji);
-    } else {
-      registry = await deleteRubyEntry(directory, bookName, kanji);
-    }
+  const registry = type === 'suggestion'
+    ? await ignoreSuggestion(directory, bookName, kanji)
+    : await deleteRubyEntry(directory, bookName, kanji);
 
-    if (!registry) {
-      return NextResponse.json({
-        success: false,
-        message: 'Registry not found'
-      }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      registry,
-      message: type === 'suggestion' ? 'Suggestion ignored' : 'Entry deleted'
-    });
-  } catch (error) {
-    console.error('Error deleting ruby entry:', error);
-    return NextResponse.json({
-      success: false,
-      message: 'Failed to delete'
-    }, { status: 500 });
+  if (!registry) {
+    return apiError(404, 'not_found', 'Registry not found');
   }
-}
+
+  return NextResponse.json<RubyRegistryResponse>({
+    success: true,
+    registry,
+    message: type === 'suggestion' ? 'Suggestion ignored' : 'Entry deleted'
+  });
+});

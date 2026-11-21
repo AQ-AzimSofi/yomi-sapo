@@ -1,5 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/middleware/auth';
+import { NextResponse } from 'next/server';
+import { withAuth } from '@/lib/auth/guards';
+import { apiError, parseJsonBody } from '@/lib/api/respond';
+import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import { upsertTextEntry, upsertBookmark, initializeBookmarksForFiles, backfillTextMetadata } from '@/lib/db/queries';
 
 interface TextEntryUpload {
@@ -8,11 +10,34 @@ interface TextEntryUpload {
   content: string;
 }
 
+interface BookmarkUpload {
+  fileName: string;
+  directory?: string;
+  bookmarkText: string;
+}
+
+// Entries are checked one by one so a bad entry fails alone instead of the whole batch.
+interface BulkSeedUpload {
+  entries: unknown[];
+}
+
 interface UploadResult {
   fileName: string;
   directory: string;
   success: boolean;
   error?: string;
+}
+
+function isTextEntryUpload(body: unknown): body is TextEntryUpload {
+  return isRecord(body) && isNonEmptyString(body.fileName) && isNonEmptyString(body.content) && isOptionalString(body.directory);
+}
+
+function isBookmarkUpload(body: unknown): body is BookmarkUpload {
+  return isRecord(body) && isNonEmptyString(body.fileName) && typeof body.bookmarkText === 'string' && isOptionalString(body.directory);
+}
+
+function isBulkSeedUpload(body: unknown): body is BulkSeedUpload {
+  return isRecord(body) && Array.isArray(body.entries) && body.entries.length > 0;
 }
 
 /**
@@ -23,10 +48,7 @@ interface UploadResult {
  * POST /api/admin?action=bookmarks - Create/update bookmark
  * POST /api/admin?action=bulk-seed - Bulk upload multiple entries
  */
-export async function POST(request: NextRequest) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
-
+export const POST = withAuth('admin-key', async (request) => {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
 
@@ -40,234 +62,129 @@ export async function POST(request: NextRequest) {
     return handleBackfillMetadata();
   }
 
-  return NextResponse.json(
-    {
-      success: false,
-      message: 'Invalid action. Use action=text-entries, action=bookmarks, action=bulk-seed, or action=backfill-metadata',
-    },
-    { status: 400 }
+  return apiError(
+    400,
+    'invalid_request',
+    'Invalid action. Use action=text-entries, action=bookmarks, action=bulk-seed, or action=backfill-metadata'
   );
+});
+
+async function handleTextEntry(request: Request) {
+  const body = await parseJsonBody(request, isTextEntryUpload, 'fileName and content are required strings');
+  if (body instanceof Response) return body;
+  const { fileName, directory = 'bookv2-furigana', content } = body;
+
+  await upsertTextEntry(fileName, content, directory);
+
+  await initializeBookmarksForFiles([fileName], directory);
+
+  return NextResponse.json({
+    success: true,
+    message: `Text entry for ${directory}/${fileName} created/updated successfully`,
+    stats: {
+      fileName,
+      directory,
+      contentLength: content.length,
+    },
+  });
 }
 
-async function handleTextEntry(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { fileName, directory = 'bookv2-furigana', content } = body;
+async function handleBookmark(request: Request) {
+  const body = await parseJsonBody(
+    request,
+    isBookmarkUpload,
+    'fileName is required and bookmarkText must be a string (can be empty)'
+  );
+  if (body instanceof Response) return body;
+  const { fileName, directory = 'bookv2-furigana', bookmarkText } = body;
 
-    if (!fileName || typeof fileName !== 'string') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Validation Error',
-          message: 'fileName is required and must be a string',
-        },
-        { status: 400 }
-      );
-    }
+  await upsertBookmark({ fileName, directory, bookmarkText });
 
-    if (!content || typeof content !== 'string') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Validation Error',
-          message: 'content is required and must be a string',
-        },
-        { status: 400 }
-      );
-    }
-
-    await upsertTextEntry(fileName, content, directory);
-
-    await initializeBookmarksForFiles([fileName], directory);
-
-    return NextResponse.json({
-      success: true,
-      message: `Text entry for ${directory}/${fileName} created/updated successfully`,
-      stats: {
-        fileName,
-        directory,
-        contentLength: content.length,
-      },
-    });
-  } catch (error) {
-    console.error('Error in handleTextEntry:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Server Error',
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
-      },
-      { status: 500 }
-    );
-  }
-}
-
-async function handleBookmark(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { fileName, directory = 'bookv2-furigana', bookmarkText } = body;
-
-    if (!fileName || typeof fileName !== 'string') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Validation Error',
-          message: 'fileName is required and must be a string',
-        },
-        { status: 400 }
-      );
-    }
-
-    if (bookmarkText === undefined || typeof bookmarkText !== 'string') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Validation Error',
-          message: 'bookmarkText is required and must be a string (can be empty)',
-        },
-        { status: 400 }
-      );
-    }
-
-    await upsertBookmark({ fileName, directory, bookmarkText });
-
-    return NextResponse.json({
-      success: true,
-      message: `Bookmark for ${directory}/${fileName} created/updated successfully`,
-      bookmark: {
-        fileName,
-        directory,
-        bookmarkText,
-      },
-    });
-  } catch (error) {
-    console.error('Error in handleBookmark:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Server Error',
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
-      },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({
+    success: true,
+    message: `Bookmark for ${directory}/${fileName} created/updated successfully`,
+    bookmark: {
+      fileName,
+      directory,
+      bookmarkText,
+    },
+  });
 }
 
 async function handleBackfillMetadata() {
-  try {
-    const count = await backfillTextMetadata();
-    return NextResponse.json({
-      success: true,
-      message: `Backfilled metadata for ${count} entries`,
-    });
-  } catch (error) {
-    console.error('Error in handleBackfillMetadata:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Server Error',
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
-      },
-      { status: 500 }
-    );
-  }
+  const count = await backfillTextMetadata();
+  return NextResponse.json({
+    success: true,
+    message: `Backfilled metadata for ${count} entries`,
+  });
 }
 
-async function handleBulkSeed(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { entries } = body;
+async function handleBulkSeed(request: Request) {
+  const body = await parseJsonBody(request, isBulkSeedUpload, 'entries must be a non-empty array');
+  if (body instanceof Response) return body;
+  const { entries } = body;
 
-    if (!Array.isArray(entries)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Validation Error',
-          message: 'entries must be an array',
-        },
-        { status: 400 }
-      );
-    }
+  const results: UploadResult[] = [];
+  let succeeded = 0;
+  let failed = 0;
 
-    if (entries.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Validation Error',
-          message: 'entries array cannot be empty',
-        },
-        { status: 400 }
-      );
-    }
+  for (const entry of entries) {
+    const upload: Record<string, unknown> = isRecord(entry) ? entry : {};
+    const { fileName, content } = upload;
+    const directory = isNonEmptyString(upload.directory) ? upload.directory : 'bookv2-furigana';
 
-    const results: UploadResult[] = [];
-    let succeeded = 0;
-    let failed = 0;
-
-    for (const entry of entries) {
-      const { fileName, directory = 'bookv2-furigana', content } = entry as TextEntryUpload;
-
-      if (!fileName || typeof fileName !== 'string') {
-        results.push({
-          fileName: fileName || 'unknown',
-          directory: directory || 'bookv2-furigana',
-          success: false,
-          error: 'fileName is required and must be a string',
-        });
-        failed++;
-        continue;
-      }
-
-      if (!content || typeof content !== 'string') {
-        results.push({
-          fileName,
-          directory: directory || 'bookv2-furigana',
-          success: false,
-          error: 'content is required and must be a string',
-        });
-        failed++;
-        continue;
-      }
-
-      try {
-        await upsertTextEntry(fileName, content, directory);
-        await initializeBookmarksForFiles([fileName], directory);
-        results.push({
-          fileName,
-          directory,
-          success: true,
-        });
-        succeeded++;
-      } catch (error) {
-        results.push({
-          fileName,
-          directory,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-        failed++;
-      }
-    }
-
-    return NextResponse.json({
-      success: failed === 0,
-      message: `Bulk upload completed: ${succeeded} succeeded, ${failed} failed`,
-      stats: {
-        total: entries.length,
-        succeeded,
-        failed,
-      },
-      results,
-    });
-  } catch (error) {
-    console.error('Error in handleBulkSeed:', error);
-    return NextResponse.json(
-      {
+    if (!isNonEmptyString(fileName)) {
+      results.push({
+        fileName: 'unknown',
+        directory,
         success: false,
-        error: 'Server Error',
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
-      },
-      { status: 500 }
-    );
+        error: 'fileName is required and must be a string',
+      });
+      failed++;
+      continue;
+    }
+
+    if (!isNonEmptyString(content)) {
+      results.push({
+        fileName,
+        directory,
+        success: false,
+        error: 'content is required and must be a string',
+      });
+      failed++;
+      continue;
+    }
+
+    try {
+      await upsertTextEntry(fileName, content, directory);
+      await initializeBookmarksForFiles([fileName], directory);
+      results.push({
+        fileName,
+        directory,
+        success: true,
+      });
+      succeeded++;
+    } catch (error) {
+      // The result reaches the caller, so it names the failure without the database's own text.
+      console.error(`Bulk seed failed for ${directory}/${fileName}:`, error);
+      results.push({
+        fileName,
+        directory,
+        success: false,
+        error: 'Failed to save this entry',
+      });
+      failed++;
+    }
   }
+
+  return NextResponse.json({
+    success: failed === 0,
+    message: `Bulk upload completed: ${succeeded} succeeded, ${failed} failed`,
+    stats: {
+      total: entries.length,
+      succeeded,
+      failed,
+    },
+    results,
+  });
 }

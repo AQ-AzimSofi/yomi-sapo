@@ -7,7 +7,8 @@
 
 import { NextResponse } from 'next/server';
 import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
-import { isAuthenticated } from '@/lib/auth/apiSession';
+import { guestPreviewOnly, withAuth } from '@/lib/auth/guards';
+import { apiError, internalError } from '@/lib/api/respond';
 import { findPublicBookByPath } from '@/lib/publicBooks';
 import { truncateToPreviewPages } from '@/lib/utils/truncatePreview';
 import { PAGINATION_CONFIG } from '@/lib/constants';
@@ -50,22 +51,21 @@ function cacheHeaders(etag: string): HeadersInit {
   return { ETag: etag, 'Cache-Control': 'private, no-cache' };
 }
 
-export async function GET(request: Request): Promise<NextResponse> {
+export const GET = withAuth('viewer', async (request, viewer) => {
   const { searchParams } = new URL(request.url);
   const fileName = searchParams.get('fileName');
   const directory = searchParams.get('directory');
 
   if (!fileName || fileName.includes('..') || directory?.includes('..')) {
-    return NextResponse.json({ text: '' }, { status: 400 });
+    return apiError(400, 'invalid_request', 'fileName is required and must stay inside the book folders');
   }
 
   try {
     // Guests may only read allowlisted books, and only a short page preview.
     const requestedPath = directory ? `${directory}/${fileName}` : fileName;
-    const authed = await isAuthenticated();
-    const publicBook = authed ? null : findPublicBookByPath(requestedPath);
-    if (!authed && !publicBook) {
-      return NextResponse.json({ text: '' }, { status: 403 });
+    const publicBook = viewer === 'owner' ? null : findPublicBookByPath(requestedPath);
+    if (viewer === 'guest' && !publicBook) {
+      return guestPreviewOnly();
     }
 
     const location = await locateBook(candidateLocations(fileName, directory));
@@ -91,6 +91,6 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ text }, { headers: cacheHeaders(etag) });
   } catch (error) {
     console.error('Failed to read book text:', { fileName, directory }, error);
-    return NextResponse.json({ text: '' }, { status: 500 });
+    return internalError();
   }
-}
+});

@@ -11,7 +11,8 @@
 
 import { NextResponse } from 'next/server';
 import { GetObjectCommand, NoSuchKey, S3Client } from '@aws-sdk/client-s3';
-import { isAuthenticated } from '@/lib/auth/apiSession';
+import { guestPreviewOnly, withAuth } from '@/lib/auth/guards';
+import { apiError } from '@/lib/api/respond';
 import { isPublicBookAsset } from '@/lib/publicBooks';
 
 export const dynamic = 'force-dynamic';
@@ -35,21 +36,21 @@ function isWellFormedAssetPath(assetPath: string): boolean {
   return assetPath.startsWith('/') && !assetPath.includes('\\') && !assetPath.split('/').includes('..');
 }
 
-export async function GET(request: Request) {
+export const GET = withAuth('viewer', async (request, viewer) => {
   const assetPath = new URL(request.url).searchParams.get('path');
   const contentType = assetPath ? contentTypeOf(assetPath) : undefined;
   if (!assetPath || !contentType || !isWellFormedAssetPath(assetPath)) {
-    return NextResponse.json({ error: 'path must point to a book image or metadata file' }, { status: 400 });
+    return apiError(400, 'invalid_request', 'path must point to a book image or metadata file');
   }
 
-  if (!isPublicBookAsset(assetPath) && !(await isAuthenticated())) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (viewer === 'guest' && !isPublicBookAsset(assetPath)) {
+    return guestPreviewOnly();
   }
 
   const bucket = process.env.BOOK_IMAGES_BUCKET;
   if (!bucket) {
     console.error('BOOK_IMAGES_BUCKET is not configured');
-    return NextResponse.json({ error: 'Book image storage is not configured' }, { status: 500 });
+    return apiError(500, 'not_configured', 'Book image storage is not configured');
   }
 
   try {
@@ -65,10 +66,7 @@ export async function GET(request: Request) {
       headers: { 'Content-Type': contentType, 'Cache-Control': ASSET_CACHE_CONTROL },
     });
   } catch (error) {
-    if (error instanceof NoSuchKey) {
-      return NextResponse.json({ error: 'No such book asset' }, { status: 404 });
-    }
-    console.error('Failed to load book asset:', error);
-    return NextResponse.json({ error: 'Failed to load book asset' }, { status: 500 });
+    if (!(error instanceof NoSuchKey)) throw error;
+    return apiError(404, 'not_found', 'No such book asset');
   }
-}
+});
