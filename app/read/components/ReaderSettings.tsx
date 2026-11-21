@@ -4,22 +4,17 @@ import { READER_CONFIG } from '@/lib/constants';
 import { usePreference } from '@/app/hooks/usePreference';
 import { READER_PREFERENCES } from '../readerPreferences';
 
-interface ReaderSettingsProps {
-  // Turning the audiobook off also stops playback, which the page owns.
-  onAudiobookChange: (enabled: boolean) => void;
-}
-
 function sliderGradient(value: number, min: number, max: number): string {
   const percent = ((value - min) / (max - min)) * 100;
   return `linear-gradient(to right, var(--range-fill) 0%, var(--range-fill) ${percent}%, var(--range-track) ${percent}%, var(--range-track) 100%)`;
 }
 
-export default function ReaderSettings({ onAudiobookChange }: ReaderSettingsProps) {
+export default function ReaderSettings() {
   const [fontSize, setFontSize] = usePreference(READER_PREFERENCES.fontSize);
   const [lineHeight, setLineHeight] = usePreference(READER_PREFERENCES.lineHeight);
   const [displayMode, setDisplayMode] = usePreference(READER_PREFERENCES.displayMode);
   const [aiExplanationEnabled, setAiExplanationEnabled] = usePreference(READER_PREFERENCES.aiExplanationEnabled);
-  const [audiobookEnabled] = usePreference(READER_PREFERENCES.audiobookEnabled);
+  const [audiobookEnabled, setAudiobookEnabled] = usePreference(READER_PREFERENCES.audiobookEnabled);
 
   return (
     <div className="space-y-6">
@@ -106,7 +101,7 @@ export default function ReaderSettings({ onAudiobookChange }: ReaderSettingsProp
           </div>
           <button
             className={`apple-toggle ${audiobookEnabled ? 'on' : ''}`}
-            onClick={() => onAudiobookChange(!audiobookEnabled)}
+            onClick={() => setAudiobookEnabled(!audiobookEnabled)}
           >
             <span className="thumb" />
           </button>

@@ -421,12 +421,12 @@ function ReaderContent({
     [totalPages, navigateToPage, stopAudioBook]
   );
 
-  const handleAudiobookChange = (enabled: boolean) => {
-    setAudiobookEnabled(enabled);
-    if (enabled) return;
+  // Following the stored switch, not the click, also stops playback when another tab turns the audiobook off.
+  useEffect(() => {
+    if (audiobookEnabled) return;
     stopAudioBook();
     setKeyboardMode(false);
-  };
+  }, [audiobookEnabled, stopAudioBook]);
 
   const handleToggleKeyboardMode = () => {
     setKeyboardMode(prev => !prev);
@@ -731,7 +731,7 @@ function ReaderContent({
         onClose={() => setActivePanel(active => closePanel(active, 'settings'))}
         title="Display"
       >
-        <ReaderSettings onAudiobookChange={handleAudiobookChange} />
+        <ReaderSettings />
       </BottomSheet>
 
       {hasOpenedExplanation && (
@@ -773,7 +773,7 @@ function ReaderContent({
           onContentModeChange={setContentMode}
           onSpeedChange={setAudioSpeed}
           onToggleKeyboardMode={handleToggleKeyboardMode}
-          onClose={() => handleAudiobookChange(false)}
+          onClose={() => setAudiobookEnabled(false)}
         />
       )}
 
