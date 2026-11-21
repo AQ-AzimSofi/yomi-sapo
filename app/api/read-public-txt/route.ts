@@ -1,41 +1,59 @@
 /**
- * publicディレクトリからテキストファイルを読み込むためのAPIルート
- * All text content now stored in Vercel Postgres database
+ * Serves a book's text from the database to the reader.
+ * The response carries an ETag of the stored version, so reopening an
+ * unchanged book costs a 304 instead of re-sending the whole text.
  */
 
 import { NextResponse } from 'next/server';
-import { getTextEntry } from '@/lib/db/queries';
-import { DEFAULT_FILE_NAME } from '@/lib/constants';
+import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
 import { isAuthenticated } from '@/lib/auth/apiSession';
 import { findPublicBookByPath } from '@/lib/publicBooks';
 import { truncateToPreviewPages } from '@/lib/utils/truncatePreview';
-import type { TextResponse } from '@/lib/types';
+import { ifNoneMatchIncludes } from '@/lib/utils/etag';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request): Promise<NextResponse<TextResponse>> {
+interface BookLocation {
+  directory: string;
+  file: string;
+}
+
+/**
+ * The reader sends one combined path. Try every directory/file split, most
+ * nested first ("a/b/c" -> a/b + c, then a + b/c), then the legacy public folder.
+ */
+function candidateLocations(fileName: string, directory: string | null): BookLocation[] {
+  if (directory) return [{ directory, file: fileName }];
+  const parts = fileName.split('/');
+  const splits = Array.from({ length: parts.length - 1 }, (_, offset) => parts.length - 1 - offset).map((splitAt) => ({
+    directory: parts.slice(0, splitAt).join('/'),
+    file: parts.slice(splitAt).join('/'),
+  }));
+  return [...splits, { directory: 'public', file: fileName }];
+}
+
+async function locateBook(candidates: BookLocation[]): Promise<(BookLocation & { version: string }) | null> {
+  for (const candidate of candidates) {
+    const version = await getTextEntryVersion(candidate.file, candidate.directory);
+    if (version) return { ...candidate, version };
+  }
+  return null;
+}
+
+function cacheHeaders(etag: string): HeadersInit {
+  return { ETag: etag, 'Cache-Control': 'private, no-cache' };
+}
+
+export async function GET(request: Request): Promise<NextResponse> {
+  const { searchParams } = new URL(request.url);
+  const fileName = searchParams.get('fileName');
+  const directory = searchParams.get('directory');
+
+  if (!fileName || fileName.includes('..') || directory?.includes('..')) {
+    return NextResponse.json({ text: '' }, { status: 400 });
+  }
+
   try {
-    const { searchParams } = new URL(request.url);
-    const fileName = searchParams.get('fileName') || DEFAULT_FILE_NAME;
-
-    console.log(`テキストファイル読み込み: fileName="${fileName}"`);
-
-    // ファイル名のバリデーション（ディレクトリトラバーサル攻撃を防ぐ）
-    // サブディレクトリ対応のため "/" は許可する（例: "bookv1-rephrase/readable-code"）
-    // Note: No default file set - app will auto-redirect to first available file
-    if (!fileName || fileName.includes('..')) {
-      console.error(`無効なファイル名: "${fileName}"`);
-      return NextResponse.json(
-        { text: '' },
-        { status: 400 }
-      );
-    }
-
-    // Support separate directory parameter for nested directories
-    // URL format: /api/read-public-txt?directory=bookv2-furigana/subdir&fileName=file-name
-    // OR legacy: /api/read-public-txt?fileName=dir/file-name
-    let directory = searchParams.get('directory');
-
     // Guests may only read allowlisted books, and only a short page preview.
     const requestedPath = directory ? `${directory}/${fileName}` : fileName;
     const authed = await isAuthenticated();
@@ -44,57 +62,26 @@ export async function GET(request: Request): Promise<NextResponse<TextResponse>>
       return NextResponse.json({ text: '' }, { status: 403 });
     }
 
-    let file: string;
-    let content = '';
-
-    if (directory) {
-      // New format: separate directory and fileName
-      file = fileName;
-      content = await getTextEntry(file, directory);
-    } else {
-      // Legacy format: try multiple directory splits (most nested first)
-      // For path "a/b/c", try: (dir="a/b", file="c"), then (dir="a", file="b/c")
-      const parts = fileName.split('/');
-
-      if (parts.length > 1) {
-        // Try from most nested to least nested
-        for (let i = parts.length - 1; i > 0; i--) {
-          const tryDir = parts.slice(0, i).join('/');
-          const tryFile = parts.slice(i).join('/');
-          content = await getTextEntry(tryFile, tryDir);
-          if (content) {
-            directory = tryDir;
-            file = tryFile;
-            console.log(`Found content with directory="${tryDir}", file="${tryFile}"`);
-            break;
-          }
-        }
-      }
-
-      // If still not found, try with default public directory
-      if (!content) {
-        directory = 'public';
-        file = fileName;
-        content = await getTextEntry(file, directory);
-      }
+    const location = await locateBook(candidateLocations(fileName, directory));
+    if (!location) {
+      return NextResponse.json({ text: '' });
     }
 
-    console.log(`テキストエントリ読み込み (データベース): fileName="${fileName}", directory="${directory}", length=${content.length}`);
+    const variant = publicBook ? `preview${publicBook.maxPreviewPages}` : 'full';
+    const etag = `"${location.version}-${variant}"`;
+    if (ifNoneMatchIncludes(request.headers.get('if-none-match'), etag)) {
+      return new NextResponse(null, { status: 304, headers: cacheHeaders(etag) });
+    }
 
-    const text = publicBook
-      ? truncateToPreviewPages(content, publicBook.maxPreviewPages)
-      : content;
-
-    return NextResponse.json({ text });
+    const content = await getTextEntry(location.file, location.directory);
+    // A book removed between the two reads must not be cached under its old version.
+    if (!content) {
+      return NextResponse.json({ text: '' });
+    }
+    const text = publicBook ? truncateToPreviewPages(content, publicBook.maxPreviewPages) : content;
+    return NextResponse.json({ text }, { headers: cacheHeaders(etag) });
   } catch (error) {
-    console.error('テキストファイルの読み込み中にエラーが発生しました:', error);
-    console.error('エラー詳細:', error instanceof Error ? error.message : String(error));
-    console.error('スタックトレース:', error instanceof Error ? error.stack : 'スタックトレースなし');
-
-    // エラーの場合でも200で空文字列を返す（フロントエンドのエラーハンドリングを簡素化）
-    return NextResponse.json(
-      { text: '' },
-      { status: 200 }
-    );
+    console.error('Failed to read book text:', { fileName, directory }, error);
+    return NextResponse.json({ text: '' }, { status: 500 });
   }
 }

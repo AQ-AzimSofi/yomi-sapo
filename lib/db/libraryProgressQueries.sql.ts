@@ -12,7 +12,7 @@ import { PAGINATION_CONFIG } from '@/lib/constants';
  * cache is stale when text_entries.content_bytes (the size it was counted at) differs
  * from octet_length(content): any edit or appended chunk changes the size, and
  * octet_length reads it without decompressing the text, unlike char_length. A moved
- * bookmark is stale because upsertBookmark clears bookmark_page. Only stale books'
+ * bookmark is stale when it was saved without a page (bookmark_page is NULL). Only stale books'
  * text is fetched, recounted and written back.
  */
 export interface LibraryRow {
@@ -95,7 +95,7 @@ async function saveRecountedRows(recounted: LibraryRow[], bookmarkRows: LibraryR
   `;
   if (bookmarkRows.length === 0) return;
   // Matching bookmark_text skips a bookmark that moved while this request ran, so
-  // the page of its old position never overwrites the NULL upsertBookmark set.
+  // the page of its old position never overwrites the page saved with the new one.
   await sql`
     UPDATE bookmarks AS b
     SET bookmark_page = u.bookmark_page

@@ -1,20 +1,11 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import dynamic from "next/dynamic";
 import { parseReaderItems } from "@/lib/utils/buildPlayableUnits";
 import { stripFurigana } from "@/lib/utils/furiganaParser";
 import { COLORS, PRIORITY_LEVELS, type PriorityScore } from "@/lib/constants";
-
-const CollapsibleItem = dynamic(
-  () => import("@/app/components/reading/CollapsibleItem"),
-  { ssr: false }
-);
-
-const ParagraphItem = dynamic(
-  () => import("@/app/components/reading/ParagraphItem"),
-  { ssr: false }
-);
+import CollapsibleItem from "@/app/components/reading/CollapsibleItem";
+import ParagraphItem from "@/app/components/reading/ParagraphItem";
 
 type ContentType = "rephrase" | "furigana" | "plain";
 

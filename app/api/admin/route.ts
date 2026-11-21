@@ -129,7 +129,7 @@ async function handleBookmark(request: NextRequest) {
       );
     }
 
-    await upsertBookmark(fileName, bookmarkText, directory);
+    await upsertBookmark({ fileName, directory, bookmarkText });
 
     return NextResponse.json({
       success: true,

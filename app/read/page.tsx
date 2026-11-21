@@ -28,6 +28,7 @@ import { buildPlayableUnits } from '@/lib/utils/buildPlayableUnits';
 import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
+import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -117,6 +118,8 @@ function ReaderContent({
 
   const { imageMap } = useBookMetadata(fileNameParam, directoryParam);
   const { isGuest } = useGuestMode();
+  const hasOpenedExplanation = useOpenedOnce(explanationOpen);
+  const hasOpenedRubyLookup = useOpenedOnce(rubyLookupOpen);
 
   const fullFilePath = useMemo(() => {
     if (directoryParam && fileNameParam) {
@@ -358,15 +361,30 @@ function ReaderContent({
     [directoryParam, fileNameParam]
   );
 
+  // The whole book is already loaded, so a page change only needs the URL.
+  // Next keeps useSearchParams in sync with the History API, and skipping the
+  // router avoids a server round trip on every page turn.
+  const navigateToPage = useCallback(
+    (page: number, { replace }: { replace: boolean }) => {
+      const href = buildReadHref(page);
+      if (replace) {
+        window.history.replaceState(null, '', href);
+        return;
+      }
+      window.history.pushState(null, '', href);
+    },
+    [buildReadHref]
+  );
+
   const [didAutoNavigate, setDidAutoNavigate] = useState(false);
 
   useEffect(() => {
     if (isLoading || didAutoNavigate) return;
     if (!hasExplicitPage && bookmarkPage && bookmarkPage > 1 && currentPage !== bookmarkPage) {
       setDidAutoNavigate(true);
-      router.replace(buildReadHref(bookmarkPage));
+      navigateToPage(bookmarkPage, { replace: true });
     }
-  }, [isLoading, hasExplicitPage, bookmarkPage, currentPage, buildReadHref, router, didAutoNavigate]);
+  }, [isLoading, hasExplicitPage, bookmarkPage, currentPage, navigateToPage, didAutoNavigate]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -387,8 +405,8 @@ function ReaderContent({
     if (!audiobookEnabled || audioIndex < 0) return;
     const targetPage = Math.floor(audioIndex / PAGINATION_CONFIG.ITEMS_PER_PAGE) + 1;
     if (targetPage === currentPage) return;
-    router.replace(buildReadHref(targetPage));
-  }, [audioIndex, audiobookEnabled, currentPage, buildReadHref, router]);
+    navigateToPage(targetPage, { replace: true });
+  }, [audioIndex, audiobookEnabled, currentPage, navigateToPage]);
 
   useEffect(() => {
     if (!audiobookEnabled || audioIndex < 0) return;
@@ -469,9 +487,10 @@ function ReaderContent({
     (newPage: number) => {
       if (newPage < 1 || newPage > totalPages) return;
       stopAudioBook();
-      router.push(buildReadHref(newPage));
+      navigateToPage(newPage, { replace: false });
+      window.scrollTo(0, 0);
     },
-    [totalPages, buildReadHref, router, stopAudioBook]
+    [totalPages, navigateToPage, stopAudioBook]
   );
 
   const handleToggleFurigana = () => {
@@ -847,21 +866,25 @@ function ReaderContent({
         />
       </BottomSheet>
 
-      <ExplanationSidebar
-        isOpen={explanationOpen}
-        onClose={() => setExplanationOpen(false)}
-        sentence={selectedSentence}
-        context={sentenceContext}
-        fileName={fullFilePath}
-        showFurigana={showFurigana}
-      />
+      {hasOpenedExplanation && (
+        <ExplanationSidebar
+          isOpen={explanationOpen}
+          onClose={() => setExplanationOpen(false)}
+          sentence={selectedSentence}
+          context={sentenceContext}
+          fileName={fullFilePath}
+          showFurigana={showFurigana}
+        />
+      )}
 
-      <RubyLookupSidebar
-        isOpen={rubyLookupOpen}
-        onClose={() => setRubyLookupOpen(false)}
-        directory={directoryParam?.split('/')[0] || ''}
-        bookName={directoryParam?.split('/').slice(1).join('/') || ''}
-      />
+      {hasOpenedRubyLookup && (
+        <RubyLookupSidebar
+          isOpen={rubyLookupOpen}
+          onClose={() => setRubyLookupOpen(false)}
+          directory={directoryParam?.split('/')[0] || ''}
+          bookName={directoryParam?.split('/').slice(1).join('/') || ''}
+        />
+      )}
 
       <FloatingStickyNotes
         directory={directoryParam?.split('/')[0] || ''}
@@ -890,6 +913,7 @@ function ReaderContent({
         />
       )}
 
+      {/* Always mounted: a failed session check reports a guest as signed in, and the key prompt must still reach them. */}
       <GuestApiKeyModal isDarkMode={isDarkMode} />
     </div>
   );
