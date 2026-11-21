@@ -32,8 +32,13 @@ describe('splitByChunkHeads', () => {
     expect(splitByChunkHeads(FURIGANA_0.replace('がいる', 'はいない'), EXPECTED_HEADS.slice(0, 1))).toBeUndefined();
   });
 
-  it('Test_splitByChunkHeads_TextBeforeAChunkStartIsNotASplit', () => {
-    expect(splitByChunkHeads(`${FURIGANA_0}\n\n以下が要約です。\n${FURIGANA_1}`, EXPECTED_HEADS)).toBeUndefined();
+  it('Test_splitByChunkHeads_PreambleGoesWithItsChunk', () => {
+    const preambled = `以下が要約です。\n${FURIGANA_1}`;
+    expect(splitByChunkHeads(`${FURIGANA_0}\n\n${preambled}`, EXPECTED_HEADS)).toEqual([FURIGANA_0, preambled]);
+  });
+
+  it('Test_splitByChunkHeads_NoSeparatorBetweenChunksIsNotASplit', () => {
+    expect(splitByChunkHeads(`${FURIGANA_0}\r\n\r\n${FURIGANA_1}`, EXPECTED_HEADS)).toBeUndefined();
   });
 
   it('Test_splitByChunkHeads_NoChunkMatchesOnlyEmptyText', () => {
