@@ -68,12 +68,6 @@ export interface WriteResponse {
 }
 
 // APIリクエストタイプ
-export interface BookmarkRequest {
-  target: string;   // ファイル名
-  content: string;  // ブックマークテキスト
-  page?: number;    // 現在のページ番号
-}
-
 export interface ExplanationRequest {
   sentence: string;
   context: string;
