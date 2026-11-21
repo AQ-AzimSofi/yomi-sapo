@@ -3,6 +3,7 @@ import { ownerSessionHeaders, TEST_SESSION_SECRET } from '@/lib/auth/testSession
 import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
 import { PUBLIC_BOOKS } from '@/lib/publicBooks';
 import { PAGINATION_CONFIG } from '@/lib/constants';
+import { bookQuery, type BookRef } from '@/lib/books/bookRef';
 import { GET } from './route';
 
 vi.mock('@/lib/db/queries', () => ({ getTextEntry: vi.fn(), getTextEntryVersion: vi.fn() }));
@@ -20,6 +21,14 @@ function guestReadRequest(fileName: string, headers: Record<string, string> = {}
 
 function readRequest(fileName: string, headers: Record<string, string> = {}): Request {
   return guestReadRequest(fileName, { ...OWNER_HEADERS, ...headers });
+}
+
+function guestBookRequest(book: BookRef, headers: Record<string, string> = {}): Request {
+  return new Request(`http://localhost/api/read-public-txt?${bookQuery(book)}`, { headers });
+}
+
+function bookRequest(book: BookRef): Request {
+  return guestBookRequest(book, OWNER_HEADERS);
 }
 
 function versionFor(location: { file: string; directory: string }): string | null {
@@ -102,6 +111,13 @@ describe('GET /api/read-public-txt', () => {
     const response = await GET(readRequest('../secret'));
 
     expect(response.status).toBe(400);
+  });
+
+  it('rejects a request that names no book without touching the database', async () => {
+    const response = await GET(new Request('http://localhost/api/read-public-txt', { headers: OWNER_HEADERS }));
+
+    expect(response.status).toBe(400);
+    expect(getTextEntryVersion).not.toHaveBeenCalled();
   });
 
   it('answers 304 to the weak form of its ETag that CloudFront sends, and repeats the ETag', async () => {
@@ -197,5 +213,68 @@ describe('GET /api/read-public-txt', () => {
 
     expect(await response.json()).toEqual({ text: '' });
     expect(response.headers.get('etag')).toBeNull();
+  });
+
+  it.each([
+    ['a leading slash', `/${OWNER_PATH}`],
+    ['a doubled slash', `${OWNER_BOOK.directory}//${OWNER_BOOK.fileName}`],
+  ])('rejects a combined path with %s without touching the database', async (_case, fileName) => {
+    const response = await GET(readRequest(fileName));
+
+    expect(response.status).toBe(400);
+    expect(getTextEntryVersion).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/read-public-txt with separate directory and fileName', () => {
+  it('returns the book with the same ETag as the combined path', async () => {
+    const response = await GET(bookRequest(OWNER_BOOK));
+
+    expect(await response.json()).toEqual({ text: BOOK_TEXT });
+    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full-v1"');
+    expect(getTextEntry).toHaveBeenCalledWith(OWNER_BOOK.fileName, OWNER_BOOK.directory);
+  });
+
+  it('looks up only the named book, without the legacy fallbacks', async () => {
+    const response = await GET(bookRequest({ directory: 'a/b', fileName: 'c' }));
+
+    expect(await response.json()).toEqual({ text: '' });
+    expect(vi.mocked(getTextEntryVersion).mock.calls).toEqual([['c', 'a/b']]);
+  });
+
+  it('gives a guest the preview of an allowlisted book', async () => {
+    vi.mocked(getTextEntryVersion).mockResolvedValue('5000-1700000000000');
+
+    const response = await GET(guestBookRequest(PUBLIC_BOOK));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('etag')).toBe(`"5000-1700000000000-preview${PUBLIC_BOOK.maxPreviewPages}x${PAGINATION_CONFIG.ITEMS_PER_PAGE}-v1\"`);
+  });
+
+  it('refuses a guest a book outside the allowlist without touching the database', async () => {
+    const response = await GET(guestBookRequest(OWNER_BOOK));
+
+    expect(response.status).toBe(403);
+    expect(getTextEntryVersion).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a .. directory segment', { directory: 'bookv2-furigana/..', fileName: 'secret' }],
+    ['a .. file name', { directory: 'bookv2-furigana', fileName: '..' }],
+    ['a leading slash', { directory: `/${OWNER_BOOK.directory}`, fileName: OWNER_BOOK.fileName }],
+  ])('rejects %s without touching the database', async (_case, book) => {
+    const response = await GET(bookRequest(book));
+
+    expect(response.status).toBe(400);
+    expect(getTextEntryVersion).not.toHaveBeenCalled();
+  });
+
+  it('reads a book whose name has dots inside it', async () => {
+    const book = { directory: 'bookv2-furigana/それは...', fileName: 'それは...-rephrase' };
+
+    const response = await GET(bookRequest(book));
+
+    expect(response.status).toBe(200);
+    expect(getTextEntryVersion).toHaveBeenCalledWith(book.fileName, book.directory);
   });
 });

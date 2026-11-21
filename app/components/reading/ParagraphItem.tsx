@@ -10,6 +10,7 @@ import { COLORS, EXPLANATION_CONFIG } from "@/lib/constants";
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
+import { toBookKey, type BookRef } from "@/lib/books/bookRef";
 import { guestKeyHeaders, promptGuestKeyOnFailure } from "@/lib/guestKeys";
 
 const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
@@ -19,7 +20,7 @@ interface ParagraphItemProps {
   globalIndex?: number;
   text: string;
   isBookmarked: boolean;
-  fileName: string;
+  book: BookRef;
   showFurigana: boolean;
   onBookmarkSuccess: () => void;
   onSentenceClick?: (sentence: string) => void;
@@ -36,7 +37,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
   globalIndex,
   text,
   isBookmarked,
-  fileName,
+  book,
   showFurigana,
   onBookmarkSuccess,
   onSentenceClick,
@@ -62,7 +63,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ target: fileName, content: text, page: currentPage }),
+        body: JSON.stringify({ ...book, content: text, page: currentPage }),
       });
       if (!response.ok) {
         throw new Error("Failed");
@@ -116,18 +117,12 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
 
   const hasImage = IMAGE_PATTERN.test(text);
 
-  // fileName is the reader's full "<directory>/<file>" path.
-  const pathSeparatorIndex = fileName.lastIndexOf("/");
   const resolveImage = (originalName: string) => {
     const actualFileName =
       imageMap?.[originalName] ||
       imageMap?.[`image/${originalName}`] ||
       originalName;
-    const imagePath = bookImagePath(
-      fileName.slice(0, pathSeparatorIndex),
-      fileName.slice(pathSeparatorIndex + 1),
-      actualFileName
-    );
+    const imagePath = bookImagePath(book.directory, book.fileName, actualFileName);
     return { actualFileName, imagePath };
   };
 
@@ -287,7 +282,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
                 key={index}
                 fileName={actualFileName}
                 imagePath={imagePath}
-                altText={`Illustration from ${fileName}`}
+                altText={`Illustration from ${toBookKey(book)}`}
                 onUnavailable={() => markImageUnavailable(imagePath)}
               />
             );

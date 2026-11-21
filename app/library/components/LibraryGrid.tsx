@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { API_ROUTES, COLORS } from '@/lib/constants';
 import { useGuestMode } from '@/app/hooks/useGuestMode';
+import { toBookKey } from '@/lib/books/bookRef';
 import BookCard from './BookCard';
 import ContinueReading from './ContinueReading';
 
@@ -107,8 +108,7 @@ export default function LibraryGrid() {
     for (const directory of fileData.directories) {
       const files = fileData.filesByDirectory[directory] || [];
       for (const fileName of files) {
-        const key = `${directory}/${fileName}`;
-        const pd = bookProgress[key];
+        const pd = bookProgress[toBookKey({ directory, fileName })];
         books.push({
           fileName,
           directory,
@@ -227,7 +227,7 @@ export default function LibraryGrid() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-7 gap-y-9">
           {sortedBooks.map((book) => (
             <BookCard
-              key={`${book.directory}/${book.fileName}`}
+              key={toBookKey(book)}
               fileName={book.fileName}
               directory={book.directory}
               progress={book.progress}

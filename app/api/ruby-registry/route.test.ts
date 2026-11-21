@@ -65,6 +65,17 @@ describe('GET /api/ruby-registry', () => {
     expect(response.status).toBe(200);
     expect(readRubyRegistry).toHaveBeenCalledWith('bookv2-furigana', 'ほん');
   });
+
+  it.each([
+    ['a .. book name', 'bookv2-furigana', '..'],
+    ['a leading slash', '/bookv2-furigana', 'ほん'],
+    ['a backslash, which Windows reads as a separator', 'bookv2-furigana', 'ほん\\secret'],
+  ])('answers 400 without reading for %s', async (_case, directory, bookName) => {
+    const response = await GET(registryRequest(directory, bookName, OWNER_HEADERS));
+
+    expect(response.status).toBe(400);
+    expect(readRubyRegistry).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/ruby-registry', () => {
@@ -82,6 +93,13 @@ describe('POST /api/ruby-registry', () => {
     ['an unknown source', { ...ENTRY, source: 'admin' }],
   ])('answers 400 without saving for an entry with %s', async (_case, entry) => {
     const response = await POST(saveRequest({ directory: 'bookv2-furigana', bookName: 'ほん', entry }));
+
+    expect(response.status).toBe(400);
+    expect(upsertRubyEntry).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 without saving for a book outside the book folders', async () => {
+    const response = await POST(saveRequest({ directory: 'bookv2-furigana/..', bookName: '..', entry: ENTRY }));
 
     expect(response.status).toBe(400);
     expect(upsertRubyEntry).not.toHaveBeenCalled();
@@ -106,6 +124,15 @@ describe('DELETE /api/ruby-registry', () => {
     const response = await DELETE(new Request(`http://localhost/api/ruby-registry?${query}`, { method: 'DELETE' }));
 
     expect(response.status).toBe(401);
+    expect(deleteRubyEntry).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 without deleting for a book outside the book folders', async () => {
+    const query = new URLSearchParams({ directory: 'bookv2-furigana/..', bookName: '..', kanji: '本' });
+
+    const response = await DELETE(new Request(`http://localhost/api/ruby-registry?${query}`, { method: 'DELETE', headers: OWNER_HEADERS }));
+
+    expect(response.status).toBe(400);
     expect(deleteRubyEntry).not.toHaveBeenCalled();
   });
 });

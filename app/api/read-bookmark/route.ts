@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server';
 import { getBookmark } from '@/lib/db/queries';
 import { DEFAULT_FILE_NAME } from '@/lib/constants';
+import { bookRefFromParams, isSafeBookRef } from '@/lib/books/bookRef';
 import { withAuth } from '@/lib/auth/guards';
 import { apiError } from '@/lib/api/respond';
 import type { BookmarkResponse } from '@/lib/types';
@@ -18,19 +19,14 @@ export const dynamic = 'force-dynamic';
 export const GET = withAuth('owner', async (request) => {
   const { searchParams } = new URL(request.url);
   const fileName = searchParams.get('fileName') || DEFAULT_FILE_NAME;
+  const book = fileName ? bookRefFromParams(searchParams.get('directory'), fileName) : null;
 
   // バリデーション（ディレクトリトラバーサル攻撃を防ぐ）
-  if (!fileName || fileName.includes('..')) {
+  if (!book || !isSafeBookRef(book)) {
     console.error(`無効なファイル名: "${fileName}"`);
     return apiError(400, 'invalid_request', 'Invalid file name');
   }
 
-  // Extract directory and filename - last segment is file, rest is directory
-  // e.g., "bookv2-furigana/book-name/file-name" -> dir="bookv2-furigana/book-name", file="file-name"
-  const parts = fileName.split('/');
-  const directory = parts.length > 1 ? parts.slice(0, -1).join('/') : 'public';
-  const file = parts[parts.length - 1];
-
-  const bookmark = await getBookmark(file, directory);
+  const bookmark = await getBookmark(book.fileName, book.directory);
   return NextResponse.json<BookmarkResponse>(bookmark);
 });

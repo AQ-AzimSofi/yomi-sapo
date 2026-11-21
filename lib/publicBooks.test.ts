@@ -3,10 +3,10 @@ import {
   DEFAULT_PREVIEW_PAGES,
   PUBLIC_BOOKS,
   findPublicBook,
-  findPublicBookByPath,
   isPublicBookAsset,
   isPublicDirectory,
 } from './publicBooks';
+import { parseBookKey } from './books/bookRef';
 import { bookAssetPath, bookImagePath } from './utils/bookAssetPath';
 
 const [previewBook, otherPreviewBook] = PUBLIC_BOOKS;
@@ -67,33 +67,35 @@ describe('findPublicBook', () => {
   });
 });
 
-describe('findPublicBookByPath', () => {
+// Routes parse the combined fileName=dir/file form into a BookRef before matching.
+describe('findPublicBook on a combined book key', () => {
+  function findPublicBookByKey(bookKey: string) {
+    const { directory, fileName } = parseBookKey(bookKey);
+    return findPublicBook(directory, fileName);
+  }
+
   it('returns the allowlisted entry for its joined directory and file name', () => {
-    expect(findPublicBookByPath(`${previewBook.directory}/${previewBook.fileName}`)).toBe(previewBook);
+    expect(findPublicBookByKey(`${previewBook.directory}/${previewBook.fileName}`)).toBe(previewBook);
   });
 
   it('returns null for an unknown book', () => {
-    expect(findPublicBookByPath(`${UNKNOWN_DIRECTORY}/${UNKNOWN_FILE_NAME}`)).toBeNull();
+    expect(findPublicBookByKey(`${UNKNOWN_DIRECTORY}/${UNKNOWN_FILE_NAME}`)).toBeNull();
   });
 
   it('returns null for the directory alone', () => {
-    expect(findPublicBookByPath(previewBook.directory)).toBeNull();
+    expect(findPublicBookByKey(previewBook.directory)).toBeNull();
   });
 
-  it.each([
-    ['null', null],
-    ['undefined', undefined],
-    ['an empty path', ''],
-  ])('returns null for %s', (_case, fullPath) => {
-    expect(findPublicBookByPath(fullPath)).toBeNull();
+  it('returns null for an empty key', () => {
+    expect(findPublicBookByKey('')).toBeNull();
   });
 
   it.each([
     ['a leading slash', `/${previewBook.directory}/${previewBook.fileName}`],
     ['a path that climbs back into the preview book', `bookv2-furigana/架空の本/../${previewFolderName}/${previewBook.fileName}`],
     ['a path that climbs out of the preview book', `${previewBook.directory}/../${UNKNOWN_FILE_NAME}`],
-  ])('returns null for %s', (_case, fullPath) => {
-    expect(findPublicBookByPath(fullPath)).toBeNull();
+  ])('returns null for %s', (_case, bookKey) => {
+    expect(findPublicBookByKey(bookKey)).toBeNull();
   });
 });
 

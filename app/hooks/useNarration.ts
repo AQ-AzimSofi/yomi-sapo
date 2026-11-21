@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { API_ROUTES } from '@/lib/constants';
+import { bookQuery, type BookRef } from '@/lib/books/bookRef';
 import type { NarrationCue, NarrationManifest } from '@/lib/types';
 
 export interface NarrationLoad {
@@ -65,11 +66,7 @@ function parseManifest(value: unknown, url: string): NarrationManifest | null {
  * prefix -- that is how the guest preview arrives -- but a longer one means the
  * text was re-processed and every cue after the change would play the wrong line.
  */
-export function useNarration(
-  fileName: string | null,
-  directory: string | null,
-  unitCount: number
-): NarrationLoad {
+export function useNarration(book: BookRef | null, unitCount: number): NarrationLoad {
   const [load, setLoad] = useState<NarrationLoad>(ABSENT);
 
   useEffect(() => {
@@ -77,10 +74,10 @@ export function useNarration(
     // so serving book A's cues against book B's units for even one render is the
     // exact mismatch unitCount exists to prevent.
     setLoad(ABSENT);
-    if (!fileName || !directory || unitCount <= 0) return;
+    if (!book || unitCount <= 0) return;
 
     const controller = new AbortController();
-    const url = `${API_ROUTES.NARRATION}?directory=${encodeURIComponent(directory)}&fileName=${encodeURIComponent(fileName)}`;
+    const url = `${API_ROUTES.NARRATION}?${bookQuery(book)}`;
 
     const fail = (message: string, detail: string) => {
       console.error(`${detail}: ${url}`);
@@ -124,7 +121,7 @@ export function useNarration(
 
     loadManifest();
     return () => controller.abort();
-  }, [fileName, directory, unitCount]);
+  }, [book, unitCount]);
 
   return load;
 }

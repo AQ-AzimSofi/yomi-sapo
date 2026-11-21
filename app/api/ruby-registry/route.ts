@@ -9,6 +9,7 @@ import { guestPreviewOnly, withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import { isPublicDirectory } from '@/lib/publicBooks';
+import { isSafeBookRef } from '@/lib/books/bookRef';
 import type { RubyRegistryResponse, RubyEntry } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,12 @@ function isRubyEntryDraft(entry: unknown): entry is RubyEntryDraft {
   );
 }
 
+// A registry lives in the book folder public/<directory>/<bookName>, so it must stay
+// inside the book folders the same way a book does.
+function isSafeRegistryKey(directory: string, bookName: string): boolean {
+  return isSafeBookRef({ directory, fileName: bookName });
+}
+
 function isRubyEntryRequest(body: unknown): body is RubyEntryRequest {
   return (
     isRecord(body) &&
@@ -54,7 +61,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
     return apiError(400, 'invalid_request', 'directory and bookName are required');
   }
 
-  if (directory.includes('..') || bookName.includes('..')) {
+  if (!isSafeRegistryKey(directory, bookName)) {
     return apiError(400, 'invalid_request', 'Invalid path');
   }
 
@@ -93,6 +100,9 @@ export const POST = withAuth('owner', async (request) => {
   );
   if (body instanceof Response) return body;
   const { directory, bookName, entry } = body;
+  if (!isSafeRegistryKey(directory, bookName)) {
+    return apiError(400, 'invalid_request', 'Invalid path');
+  }
 
   const registry = await upsertRubyEntry(directory, bookName, {
     kanji: entry.kanji,
@@ -117,6 +127,9 @@ export const DELETE = withAuth('owner', async (request) => {
 
   if (!directory || !bookName || !kanji) {
     return apiError(400, 'invalid_request', 'directory, bookName, and kanji are required');
+  }
+  if (!isSafeRegistryKey(directory, bookName)) {
+    return apiError(400, 'invalid_request', 'Invalid path');
   }
 
   const registry = type === 'suggestion'

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/guards';
 import { findPublicBook } from '@/lib/publicBooks';
+import { toBookKey } from '@/lib/books/bookRef';
 import { getLibraryRows, type LibraryRow } from '@/lib/db/libraryProgressQueries.sql';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
     (row) => isSignedIn || findPublicBook(row.directory, row.file_name) !== null
   );
   const progressData: ProgressResponse = Object.fromEntries(
-    rows.map((row) => [`${row.directory}/${row.file_name}`, toBookProgress(row, isSignedIn)])
+    rows.map((row) => [toBookKey({ directory: row.directory, fileName: row.file_name }), toBookProgress(row, isSignedIn)])
   );
   return NextResponse.json(progressData);
 });
