@@ -1,20 +1,42 @@
 import { NextResponse } from 'next/server';
 import { getVocabularyEntries, createVocabularyEntry } from '@/lib/db/vocabularyQueries.sql';
-import { isAuthenticated } from '@/lib/auth/apiSession';
+import { withAuth } from '@/lib/auth/guards';
+import { errorBody, parseJsonBody } from '@/lib/api/respond';
+import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import type { VocabularyEntryResponse, VocabularyListResponse } from '@/lib/types';
 
-export async function GET(request: Request) {
+interface VocabularyDraft {
+  word: string;
+  reading?: string;
+  sentence: string;
+  fileName: string;
+  directory: string;
+  paragraphText?: string;
+  notes?: string;
+}
+
+function isVocabularyDraft(body: unknown): body is VocabularyDraft {
+  return (
+    isRecord(body) &&
+    isNonEmptyString(body.word) &&
+    isNonEmptyString(body.sentence) &&
+    isNonEmptyString(body.fileName) &&
+    isNonEmptyString(body.directory) &&
+    isOptionalString(body.reading) &&
+    isOptionalString(body.paragraphText) &&
+    isOptionalString(body.notes)
+  );
+}
+
+// Guests are never sent here: the vocabulary page is behind the login redirect.
+export const GET = withAuth('owner', async (request) => {
+  const { searchParams } = new URL(request.url);
+  const word = searchParams.get('word') || undefined;
+  const fileName = searchParams.get('fileName') || undefined;
+  const directory = searchParams.get('directory') || undefined;
+  const today = searchParams.get('today') === 'true';
+
   try {
-    if (!(await isAuthenticated())) {
-      return NextResponse.json<VocabularyListResponse>({ success: true, entries: [], count: 0 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const word = searchParams.get('word') || undefined;
-    const fileName = searchParams.get('fileName') || undefined;
-    const directory = searchParams.get('directory') || undefined;
-    const today = searchParams.get('today') === 'true';
-
     const entries = await getVocabularyEntries({
       word,
       fileName,
@@ -28,56 +50,35 @@ export async function GET(request: Request) {
       count: entries.length,
     });
   } catch (error) {
+    // The vocabulary page shows the top-level message.
     console.error('Error fetching vocabulary entries:', error);
-    return NextResponse.json(
-      { success: false, message: 'Failed to fetch vocabulary entries' },
-      { status: 500 }
-    );
+    const message = 'Failed to fetch vocabulary entries';
+    return NextResponse.json({ ...errorBody('internal_error', message), message }, { status: 500 });
   }
-}
+});
 
-export async function POST(request: Request) {
-  try {
-    if (!(await isAuthenticated())) {
-      return NextResponse.json(
-        { success: false, message: 'Sign in required' },
-        { status: 401 }
-      );
-    }
+export const POST = withAuth('owner', async (request) => {
+  const body = await parseJsonBody(
+    request,
+    isVocabularyDraft,
+    'Missing required fields: word, sentence, fileName, directory'
+  );
+  if (body instanceof Response) return body;
+  const { word, reading, sentence, fileName, directory, paragraphText, notes } = body;
 
-    const body = await request.json();
-    const { word, reading, sentence, fileName, directory, paragraphText, notes } = body;
+  const entry = await createVocabularyEntry({
+    word,
+    reading,
+    sentence,
+    fileName,
+    directory,
+    paragraphText,
+    notes,
+  });
 
-    if (!word || !sentence || !fileName || !directory) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Missing required fields: word, sentence, fileName, directory',
-        },
-        { status: 400 }
-      );
-    }
-
-    const entry = await createVocabularyEntry({
-      word,
-      reading,
-      sentence,
-      fileName,
-      directory,
-      paragraphText,
-      notes,
-    });
-
-    return NextResponse.json<VocabularyEntryResponse>({
-      success: true,
-      message: 'Vocabulary entry created',
-      entry,
-    });
-  } catch (error) {
-    console.error('Error creating vocabulary entry:', error);
-    return NextResponse.json(
-      { success: false, message: 'Failed to create vocabulary entry' },
-      { status: 500 }
-    );
-  }
-}
+  return NextResponse.json<VocabularyEntryResponse>({
+    success: true,
+    message: 'Vocabulary entry created',
+    entry,
+  });
+});

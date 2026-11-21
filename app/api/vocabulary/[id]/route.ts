@@ -4,95 +4,64 @@ import {
   updateVocabularyEntry,
   deleteVocabularyEntry,
 } from '@/lib/db/vocabularyQueries.sql';
-import { isAuthenticated } from '@/lib/auth/apiSession';
+import { withAuth } from '@/lib/auth/guards';
+import { apiError, parseJsonBody } from '@/lib/api/respond';
+import { isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import type { VocabularyEntryResponse } from '@/lib/types';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-async function rejectGuest(): Promise<NextResponse | null> {
-  if (await isAuthenticated()) return null;
-  return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+interface VocabularyEdit {
+  notes?: string;
+  word?: string;
+  reading?: string;
 }
 
-export async function GET(request: Request, { params }: RouteParams) {
-  const rejection = await rejectGuest();
-  if (rejection) return rejection;
+function isVocabularyEdit(body: unknown): body is VocabularyEdit {
+  return isRecord(body) && isOptionalString(body.notes) && isOptionalString(body.word) && isOptionalString(body.reading);
+}
 
-  try {
-    const { id } = await params;
-    const entry = await getVocabularyEntryById(id);
+export const GET = withAuth('owner', async (request: Request, { params }: RouteParams) => {
+  const { id } = await params;
+  const entry = await getVocabularyEntryById(id);
 
-    if (!entry) {
-      return NextResponse.json(
-        { success: false, message: 'Vocabulary entry not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json<VocabularyEntryResponse>({
-      success: true,
-      entry,
-    });
-  } catch (error) {
-    console.error('Error fetching vocabulary entry:', error);
-    return NextResponse.json(
-      { success: false, message: 'Failed to fetch vocabulary entry' },
-      { status: 500 }
-    );
+  if (!entry) {
+    return apiError(404, 'not_found', 'Vocabulary entry not found');
   }
-}
 
-export async function PUT(request: Request, { params }: RouteParams) {
-  const rejection = await rejectGuest();
-  if (rejection) return rejection;
+  return NextResponse.json<VocabularyEntryResponse>({
+    success: true,
+    entry,
+  });
+});
 
-  try {
-    const { id } = await params;
-    const body = await request.json();
-    const { notes, word, reading } = body;
+export const PUT = withAuth('owner', async (request: Request, { params }: RouteParams) => {
+  const { id } = await params;
+  const body = await parseJsonBody(request, isVocabularyEdit, 'notes, word and reading must be strings when present');
+  if (body instanceof Response) return body;
+  const { notes, word, reading } = body;
 
-    const entry = await updateVocabularyEntry(id, { notes, word, reading });
+  const entry = await updateVocabularyEntry(id, { notes, word, reading });
 
-    if (!entry) {
-      return NextResponse.json(
-        { success: false, message: 'Vocabulary entry not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json<VocabularyEntryResponse>({
-      success: true,
-      message: 'Vocabulary entry updated',
-      entry,
-    });
-  } catch (error) {
-    console.error('Error updating vocabulary entry:', error);
-    return NextResponse.json(
-      { success: false, message: 'Failed to update vocabulary entry' },
-      { status: 500 }
-    );
+  if (!entry) {
+    return apiError(404, 'not_found', 'Vocabulary entry not found');
   }
-}
 
-export async function DELETE(request: Request, { params }: RouteParams) {
-  const rejection = await rejectGuest();
-  if (rejection) return rejection;
+  return NextResponse.json<VocabularyEntryResponse>({
+    success: true,
+    message: 'Vocabulary entry updated',
+    entry,
+  });
+});
 
-  try {
-    const { id } = await params;
-    await deleteVocabularyEntry(id);
+export const DELETE = withAuth('owner', async (request: Request, { params }: RouteParams) => {
+  const { id } = await params;
+  await deleteVocabularyEntry(id);
 
-    return NextResponse.json({
-      success: true,
-      message: 'Vocabulary entry deleted',
-    });
-  } catch (error) {
-    console.error('Error deleting vocabulary entry:', error);
-    return NextResponse.json(
-      { success: false, message: 'Failed to delete vocabulary entry' },
-      { status: 500 }
-    );
-  }
-}
+  return NextResponse.json({
+    success: true,
+    message: 'Vocabulary entry deleted',
+  });
+});
