@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server';
 import { upsertTextEntry } from '@/lib/db/queries';
 import { readTextFile } from '@/lib/services/fileService';
+import { normalizeNewlines } from '@/lib/content/bookModel';
 
 // Mark as dynamic to prevent static generation during build
 export const dynamic = 'force-dynamic';
@@ -59,7 +60,7 @@ export async function PUT(request: Request) {
 
     // Read file from filesystem
     const filePath = `${directory}/${fileName}`;
-    const content = await readTextFile(filePath);
+    const content = normalizeNewlines(await readTextFile(filePath));
 
     if (!content) {
       return NextResponse.json(
