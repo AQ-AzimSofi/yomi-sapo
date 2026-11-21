@@ -8,12 +8,11 @@ import { parseFurigana, segmentsToHTML, stripAiFurigana } from '@/lib/utils/furi
 import { renderSafeMarkdown } from '@/lib/utils/safeMarkdown';
 import { toTint } from '@/lib/utils/colorTint';
 import { GUEST_KEY_UPDATED_EVENT } from '@/lib/guestKeys';
-import { ApiError, explainSentence } from '@/lib/api/client';
-import { shareRequest } from '@/lib/utils/shareRequest';
-import type { ExplanationRequest } from '@/lib/api/contracts';
+import { explainSentence } from '@/lib/api/client';
 import type { ExplanationMode } from '@/lib/constants';
-import { buildExplanationContext, type SentenceSurroundings } from '@/lib/content/explanationContext';
+import type { SentenceSurroundings } from '@/lib/content/explanationContext';
 import { IDLE_EXPLANATION, nextExplanationDisplay } from './explanationDisplay';
+import { askForExplanation } from './explanationRequest';
 import { contextSizeToCommit, isSliderStepKey } from './contextSlider';
 
 interface ExplanationSidebarProps {
@@ -28,15 +27,6 @@ interface ExplanationSidebarProps {
 // Shared across mounts, so a sidebar that is closed and reopened, or mounted
 // twice in development, joins the request already out instead of paying again.
 const pendingExplanations = new Map<string, Promise<string>>();
-
-function describeExplanationFailure(error: unknown): string {
-  if (error instanceof ApiError && error.promptedGuestKey) {
-    return 'Guest mode: add or update your Gemini API key to use AI explanations.';
-  }
-  if (error instanceof ApiError) return `Failed to fetch explanation: ${error.statusText}`;
-  if (error instanceof Error) return error.message;
-  return 'An unknown error occurred';
-}
 
 export default function ExplanationSidebar({
   isOpen,
@@ -68,40 +58,19 @@ export default function ExplanationSidebar({
 
   useEscapeKey(isOpen, onClose);
 
-  const context = React.useMemo(
-    () => buildExplanationContext({ sentence, surroundings, contextSize }),
-    [sentence, surroundings, contextSize]
-  );
-
-  // Every request gets its own id, and the display only takes the answer or
-  // failure of the latest one. A late answer for an earlier sentence, mode or
-  // context size is still cached under its own key; the request is never
-  // aborted, because the server would pay for the AI call anyway.
   const showExplanation = React.useCallback(
     ({ bypassCache }: { bypassCache: boolean }) => {
-      const cached = bypassCache ? null : getCache({ fileName, sentence, mode, contextSize, context });
-      if (cached) {
-        dispatchDisplay({ type: 'cacheHit', text: cached.explanation, cachedAt: cached.timestamp });
-        return;
-      }
-
-      requestCountRef.current += 1;
-      const requestId = requestCountRef.current;
-      dispatchDisplay({ type: 'requested', requestId });
-
-      const request: ExplanationRequest = { sentence, context, fileName, contextSize, mode };
-      const answer = shareRequest(pendingExplanations, JSON.stringify(request), async () => {
-        const requestedAt = Date.now();
-        const { explanation } = await explainSentence(request);
-        setCache({ fileName, sentence, mode, contextSize, context, explanation, requestedAt });
-        return explanation;
-      });
-      answer.then(
-        (text) => dispatchDisplay({ type: 'answered', requestId, text }),
-        (error: unknown) => dispatchDisplay({ type: 'failed', requestId, message: describeExplanationFailure(error) })
+      const nextRequestId = () => {
+        requestCountRef.current += 1;
+        return requestCountRef.current;
+      };
+      askForExplanation(
+        { getCache, setCache, explain: explainSentence, dispatch: dispatchDisplay, nextRequestId, pending: pendingExplanations },
+        { fileName, sentence, surroundings, contextSize, mode },
+        { bypassCache }
       );
     },
-    [sentence, context, fileName, contextSize, mode, getCache, setCache]
+    [sentence, surroundings, fileName, contextSize, mode, getCache, setCache]
   );
 
   React.useEffect(() => {
