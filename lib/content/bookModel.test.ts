@@ -10,6 +10,7 @@ import {
   pageOfIndex,
   pageStartIndex,
   parseReaderItems,
+  toMatchText,
   totalPagesFor,
 } from './bookModel';
 
@@ -184,6 +185,12 @@ describe('normalizeNewlines', () => {
 describe('itemMainText', () => {
   it('reads the head of a rephrase item and the text of a paragraph item', () => {
     expect([itemMainText({ head: '頭', subItems: ['い'] }), itemMainText({ text: '段落' })]).toEqual(['頭', '段落']);
+  });
+});
+
+describe('toMatchText', () => {
+  it('drops ruby and bracket furigana, line breaks and the surrounding spaces', () => {
+    expect(toMatchText(' <ruby>漢字<rt>かんじ</rt></ruby>を\r\n書[か]く。\n')).toBe('漢字を書く。');
   });
 });
 
