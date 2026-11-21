@@ -23,7 +23,7 @@ function createAsker(saved: CachedExplanation | null = null) {
   const asker = {
     getCache: vi.fn(() => saved),
     setCache: vi.fn(),
-    explain: vi.fn((_request: ExplanationRequest) => {
+    explain: vi.fn<(request: ExplanationRequest) => Promise<ExplanationResponse>>(() => {
       const reply = deferred<ExplanationResponse>();
       replies.push(reply);
       return reply.promise;
