@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { COLORS, DARK_COLORS, READER_THEME, THEME } from '@/lib/constants';
+import type { ReaderTheme } from './read/readerTheme';
 
 const GLOBALS_CSS = readFileSync(fileURLToPath(new URL('./globals.css', import.meta.url)), 'utf8');
 
@@ -14,8 +15,11 @@ function tokensOf(selector: string): Record<string, string> {
   );
 }
 
+const DARK_THEME: ReaderTheme = 'dark';
+
 const LIGHT_TOKENS = tokensOf(':root');
-const DARK_TOKENS = tokensOf("[data-theme='dark']");
+// The :root prefix outranks the plain :root block, so the dark values win wherever the file puts them.
+const DARK_TOKENS = tokensOf(`:root[data-theme='${DARK_THEME}']`);
 
 describe('reader theme tokens in globals.css', () => {
   it('give the light theme the COLORS and READER_THEME palette', () => {

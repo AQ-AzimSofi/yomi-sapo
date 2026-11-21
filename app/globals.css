@@ -33,7 +33,7 @@
   --shadow-menu: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
-[data-theme='dark'] {
+:root[data-theme='dark'] {
   --color-base: #15171C;
   --color-surface: #1E2128;
   --color-surface-muted: #1E2128;
