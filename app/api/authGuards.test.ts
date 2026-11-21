@@ -23,12 +23,7 @@ vi.mock('@/lib/db/vocabularyQueries.sql', () => ({
   updateVocabularyEntry: vi.fn(),
   deleteVocabularyEntry: vi.fn(),
 }));
-vi.mock('@/lib/db/queries', () => ({
-  getTextEntry: vi.fn(),
-  getAllTextEntries: vi.fn(),
-  deleteTextEntry: vi.fn(),
-  upsertTextEntry: vi.fn(),
-}));
+vi.mock('@/lib/db/queries', () => ({ upsertTextEntry: vi.fn() }));
 vi.mock('@/lib/services/fileService', () => ({ readTextFile: vi.fn() }));
 
 const ENTRY_PARAMS = { params: Promise.resolve({ id: 'entry-1' }) };

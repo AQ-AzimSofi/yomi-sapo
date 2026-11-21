@@ -37,8 +37,7 @@ yomi-sapo/
 | `/api/read-bookmark` | GET | Get bookmark position |
 | `/api/write-bookmark` | POST | Update bookmark |
 | `/api/list-text-files` | GET | List available text files |
-| `/api/text-entries` | GET, DELETE, PUT | Database text entries |
-| `/api/text-entries/reset` | POST | Reset text entries |
+| `/api/text-entries` | PUT | Copy a local book file into text_entries (dev server only) |
 | `/api/explain-sentence` | POST | Sentence explanations |
 | `/api/tts` | POST | Text-to-speech |
 | `/api/ruby-registry` | GET, POST | Furigana registry |
@@ -53,8 +52,6 @@ components/
 ├── icons/              # Icon components
 │   ├── BookmarkFilled.tsx
 │   ├── BookmarkUnfilled.tsx
-│   ├── ChevronDown.tsx
-│   ├── ChevronUp.tsx
 │   ├── SpeakerIcon.tsx
 │   ├── StartHereIcon.tsx
 │   └── TranslateIcon.tsx
@@ -80,11 +77,14 @@ components/
 | `useBookMetadata` | Load book metadata from JSON |
 | `useTTS` | Text-to-speech control |
 | `useRubyRegistry` | Manage furigana registry |
+| `useAudioBook` | Reader audio playback (narration or TTS) |
+| `useNarration` | Load a book's narration manifest |
+| `useGuestMode` | Whether the visitor is a guest |
 
-**Barrel Export:** Import from `@/app/hooks`
+Import each hook from its own file:
 
 ```typescript
-import { useExplanationCache, useBookMetadata } from '@/app/hooks';
+import { useExplanationCache } from '@/app/hooks/useExplanationCache';
 ```
 
 ### Pages
@@ -133,7 +133,6 @@ Raw SQL database operations using the `postgres` library.
 
 ```
 db/
-├── index.ts                # Barrel export
 ├── connection.ts           # PostgreSQL connection pool
 ├── schema.ts               # TypeScript interfaces & CREATE TABLE SQL
 ├── queries.ts              # Bookmark & text entry queries
@@ -145,31 +144,25 @@ db/
 
 **Usage:**
 ```typescript
-import { getBookmark, upsertBookmark } from '@/lib/db';
-import { getVocabularyEntries } from '@/lib/db';
+import { getBookmark, upsertBookmark } from '@/lib/db/queries';
+import { getVocabularyEntries } from '@/lib/db/vocabularyQueries.sql';
 ```
 
 ### Services (`/lib/services`)
 
 ```
 services/
-├── index.ts            # Barrel export
-└── fileService.ts      # File system operations
+└── fileService.ts      # Book files and ruby registries on disk
 ```
 
 **fileService functions:**
-- `readTextFile(fileName, directory?)`
-- `writeTextFile(fileName, content, directory?)`
-- `readBookmark(fileName, directory?)`
-- `updateBookmark(fileName, content, directory?)`
-- `listTextFiles()` - Returns `{directories, filesByDirectory, files}`
-- `syncBookmarks()` - Cleanup + initialize bookmarks
+- `readTextFile(fileName)`
+- `readRubyRegistry`, `writeRubyRegistry`, `upsertRubyEntry`, `deleteRubyEntry`, `ignoreSuggestion`
 
 ### Utilities (`/lib/utils`)
 
 ```
 utils/
-├── index.ts                # Barrel export
 ├── furiganaParser.ts       # Parse kanji[furigana] and <ruby> tags, render escaped HTML
 ├── html.ts                 # HTML escaping
 ├── safeMarkdown.ts         # Render AI markdown with raw HTML escaped
@@ -189,7 +182,8 @@ utils/
 
 **Usage:**
 ```typescript
-import { parseFurigana, parseMarkdown } from '@/lib/utils';
+import { parseFurigana } from '@/lib/utils/furiganaParser';
+import { parseMarkdown } from '@/lib/utils/markdownParser';
 ```
 
 ### Other Lib Modules
@@ -259,23 +253,24 @@ The old Prisma tables (`"Book"`, `"BookImage"`, `"ProcessingHistory"`, `"UserBoo
 
 ## Import Conventions
 
-Use barrel exports for cleaner imports:
+Import from the module that defines the function; only `lib/ai` keeps a barrel:
 
 ```typescript
 // Database
-import { getBookmark, getVocabularyEntries } from '@/lib/db';
+import { getBookmark } from '@/lib/db/queries';
+import { getVocabularyEntries } from '@/lib/db/vocabularyQueries.sql';
 
 // Services
-import { readTextFile } from '@/lib/services';
+import { readTextFile } from '@/lib/services/fileService';
 
 // Utilities
-import { parseFurigana, parseMarkdown } from '@/lib/utils';
+import { parseFurigana } from '@/lib/utils/furiganaParser';
 
 // AI
-import { getAIClient, ai_instructions } from '@/lib/ai';
+import { getAIClient, ai_instructions_quick } from '@/lib/ai';
 
 // Hooks
-import { useExplanationCache, useBookMetadata } from '@/app/hooks';
+import { useExplanationCache } from '@/app/hooks/useExplanationCache';
 ```
 
 ---

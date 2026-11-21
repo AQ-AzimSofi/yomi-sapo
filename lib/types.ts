@@ -36,13 +36,6 @@ export interface NarrationManifest {
   cues: (NarrationCue | null)[];
 }
 
-// 辞書の単語構造（漢字[読み・意味]）
-export interface DictionaryWord {
-  kanji: string;
-  reading: string;
-  meaning: string;
-}
-
 // APIレスポンスタイプ
 export interface TextResponse {
   text: string;
@@ -62,11 +55,6 @@ export interface TextFileListResponse {
   };
 }
 
-export interface GeminiResponse {
-  response: string;
-  message: string;
-}
-
 export interface ExplanationResponse {
   explanation: string;
   message: string;
@@ -84,38 +72,12 @@ export interface BookmarkRequest {
   page?: number;    // 現在のページ番号
 }
 
-export interface GeminiRequest {
-  text?: string;
-  image?: File;
-}
-
 export interface ExplanationRequest {
   sentence: string;
   context: string;
   fileName: string;
   contextSize: number;
   mode: import('./constants').ExplanationMode;
-}
-
-// コンポーネントのプロップ型
-export interface CollapsibleItemProps {
-  head: string;
-  subItems: string[];
-  initialDropdownState?: boolean;
-  id?: string;
-  onSubmitSuccess: () => void;
-}
-
-// クエリパラメータ型
-export interface PageQueryParams {
-  directory?: string;
-  fileName?: string;
-  dropdownAlwaysOpen?: string;
-}
-
-// ファイル保存型
-export interface BookmarkData {
-  [fileName: string]: string;
 }
 
 // Book metadata types (from EPUB converter JSON)
@@ -175,35 +137,6 @@ export interface VocabularyEntry {
   updatedAt: Date | string;
 }
 
-export interface VocabularyListResponse {
-  success: boolean;
-  entries: VocabularyEntry[];
-  count: number;
-  message?: string;
-}
-
-export interface VocabularyCreateRequest {
-  word: string;
-  reading?: string;
-  sentence: string;
-  fileName: string;
-  directory: string;
-  paragraphText?: string;
-  notes?: string;
-}
-
-export interface VocabularyUpdateRequest {
-  notes?: string;
-  word?: string;
-  reading?: string;
-}
-
-export interface VocabularyResponse {
-  success: boolean;
-  entry?: VocabularyEntry;
-  message: string;
-}
-
 // TTS（Text-to-Speech）型
 export interface TTSRequest {
   text: string;
@@ -214,22 +147,6 @@ export interface TTSRequest {
 export interface TTSResponse {
   audioContent: string; // base64エンコードされた音声データ
   message: string;
-}
-
-export interface TTSState {
-  isPlaying: boolean;
-  isPaused: boolean;
-  isLoading: boolean;
-  currentIndex: number; // 連続再生時の現在位置
-  speed: number;
-  voiceGender: import('./constants').TTSVoiceGender;
-}
-
-export interface TTSPlaybackPosition {
-  fileName: string;
-  directory: string;
-  itemIndex: number;
-  timestamp: number;
 }
 
 // Ruby Registry types (for character name lookups)

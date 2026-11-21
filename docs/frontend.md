@@ -359,9 +359,7 @@ rt {
 
 **Via CSS Variables**:
 \`\`\`typescript
-import { CSS_VARS } from '@/lib/constants';
-
-style={{ backgroundColor: CSS_VARS.BASE }}  // Uses var(--color-base)
+style={{ backgroundColor: 'var(--color-base)' }}
 \`\`\`
 
 **Via Direct Values**:
@@ -406,12 +404,10 @@ style={{
 
 ### Custom Events (Cross-Component Sync)
 
-\`\`\`typescript
-// Furigana toggle
-window.dispatchEvent(new CustomEvent('furiganaChanged', {
-  detail: { enabled: boolean }
-}));
-\`\`\`
+| Event | Sent by | Purpose |
+|-------|---------|---------|
+| \`starredWordsChanged\` | \`RubyLookupSidebar\` | Starred ruby words changed; sticky notes reload |
+| \`guestKeyRequired\` / \`guestKeyUpdated\` | \`lib/guestKeys.ts\` | A guest needs, or just saved, their own API key |
 
 ---
 
