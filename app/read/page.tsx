@@ -31,6 +31,7 @@ import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { usePreference } from '@/app/hooks/usePreference';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
+import { loginPathReturningTo } from '@/lib/auth/loginPath';
 import { describeLoadFailure } from './loadFailure';
 import { applyReaderTheme } from './readerTheme';
 import { READER_PREFERENCES } from './readerPreferences';
@@ -713,7 +714,7 @@ function ReaderContent({
               You are reading a free sample. Sign in to read the full book.
             </p>
             <button
-              onClick={() => router.push('/login')}
+              onClick={() => router.push(loginPathReturningTo(window.location))}
               className="min-h-11 px-5 text-sm font-bold interactive-btn"
               style={{ backgroundColor: THEME.PRIMARY, color: THEME.ON_PRIMARY }}
             >
