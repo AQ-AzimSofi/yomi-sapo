@@ -15,11 +15,11 @@ export interface StrayMarkupCleanup {
 const STRAY_MARKUP_RULES: StrayMarkupRule[] = [
   { name: 'model <bos> token', pattern: /<bos>/g, replacement: '' },
   { name: 'calibre class on a ruby tag', pattern: /<(ruby|rb|rt) ?class="[^"]*">/g, replacement: '<$1>' },
-  { name: 'tate-chu-yoko span', pattern: /<span ?class="[^"]*">|<\/span>/g, replacement: '' },
+  { name: 'tate-chu-yoko span', pattern: /<span ?class="[^"]*">([^<]*)<\/span>/g, replacement: '$1' },
   {
-    // The pipeline added its own ruby inside calibre's unclosed one; the book's reading is the right one.
+    // The pipeline added its own ruby inside calibre's (usually unclosed) one; the book's reading is the right one.
     name: 'pipeline ruby nested in calibre ruby',
-    pattern: /(?:<ruby>)?<rb><ruby>([^<]+)<rt>[^<]*<\/rt><\/ruby><rt>([^<]*)<\/rt>/g,
+    pattern: /(?:<ruby>)?<rb><ruby>([^<]+)<rt>[^<]*<\/rt><\/ruby><rt>([^<]*)<\/rt>(?:<\/ruby>)?/g,
     replacement: '<ruby>$1<rt>$2</rt></ruby>',
   },
   {

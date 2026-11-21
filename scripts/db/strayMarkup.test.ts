@@ -20,6 +20,10 @@ describe('cleanStrayMarkup', () => {
     expect(cleanStrayMarkup(nested).cleaned).toBe('<ruby>間<rt>ま</rt></ruby><ruby>違<rt>ちが</rt></ruby>える');
   });
 
+  it('keeps the book reading when pipeline ruby sits inside a closed calibre ruby', () => {
+    expect(cleanStrayMarkup('<ruby><rb><ruby>間<rt>かん</rt></ruby><rt>ま</rt></ruby>に').cleaned).toBe('<ruby>間<rt>ま</rt></ruby>に');
+  });
+
   it('unwraps a tate-chu-yoko span and keeps its text', () => {
     expect(cleanStrayMarkup('記号<spanclass="tcy">α</span>と<span class="tcy">β</span>').cleaned).toBe('記号αとβ');
   });
@@ -44,6 +48,12 @@ describe('cleanStrayMarkup', () => {
     );
   });
 
+  it('leaves a lone closing span and a span without a class alone', () => {
+    const content = 'HTMLでは<span>強調</span>と書き、閉じタグは</span>だ';
+
+    expect(cleanStrayMarkup(content).cleaned).toBe(content);
+  });
+
   it('leaves well-formed ruby, footnote superscripts and code text alone', () => {
     const content = '<ruby>幼<rt>おさな</rt>馴<rt>な</rt></ruby>の<sup>*1</sup>と<div id="x">';
 
@@ -54,7 +64,7 @@ describe('cleanStrayMarkup', () => {
     expect(cleanStrayMarkup('a<bos>b<bos><spanclass="tcy">c</span>').removedByRule).toEqual({
       'model <bos> token': 2,
       'calibre class on a ruby tag': 0,
-      'tate-chu-yoko span': 2,
+      'tate-chu-yoko span': 1,
       'pipeline ruby nested in calibre ruby': 0,
       'gaiji image ruby': 0,
       'gaiji image pair in a longer ruby': 0,
