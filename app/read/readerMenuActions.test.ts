@@ -106,11 +106,28 @@ describe('readerMenuActions', () => {
     expect(themeIcons).toStrictEqual(['darkMode', 'lightMode']);
   });
 
-  it('calls the handler of the selected entry', () => {
+  it.each([
+    ['bookmark', 'goToBookmark'],
+    ['copyPage', 'copyPage'],
+    ['copyRange', 'openCopyRange'],
+    ['prioritize', 'prioritize'],
+    ['rephrase', 'toggleRephrase'],
+    ['furigana', 'toggleFurigana'],
+    ['rubyLookup', 'toggleRubyLookup'],
+    ['theme', 'toggleDarkMode'],
+    ['settings', 'openSettings'],
+  ])('selecting %s calls only its handler %s', (id, handlerName) => {
     const handlers = noopHandlers();
 
-    readerMenuActions(QUIET_STATE, handlers).find((action) => action.id === 'rubyLookup')?.onSelect();
+    readerMenuActions(QUIET_STATE, handlers).find((action) => action.id === id)?.onSelect();
 
-    expect(handlers.toggleRubyLookup).toHaveBeenCalledTimes(1);
+    const called = Object.entries(handlers).filter(([, handler]) => handler.mock.calls.length > 0).map(([name]) => name);
+    expect(called).toStrictEqual([handlerName]);
+  });
+
+  it('marks only the importance analysis as beta', () => {
+    const beta = readerMenuActions(QUIET_STATE, noopHandlers()).filter((action) => action.beta);
+
+    expect(beta.map((action) => action.id)).toStrictEqual(['prioritize']);
   });
 });
