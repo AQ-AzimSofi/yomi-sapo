@@ -237,6 +237,7 @@ describe('PUT /api/text-entries', () => {
     const response = await putTextEntry(jsonRequest('PUT', BOOK));
 
     expect(response.status).toBe(200);
+    expect(readTextFile).toHaveBeenCalledWith('bookv2-furigana/ほん/ほん-rephrase-furigana');
     expect(upsertTextEntry).toHaveBeenCalledWith(BOOK.fileName, '< 本文\n>> やさしい文', BOOK.directory);
   });
 });
