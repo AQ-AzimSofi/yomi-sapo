@@ -30,8 +30,8 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // Prevent Prisma from being bundled multiple times in serverless functions
-  serverExternalPackages: ['@prisma/client', '@prisma/adapter-pg', 'pg'],
+  // pg is only reached by the dev-only sync route; keep it out of the bundle.
+  serverExternalPackages: ['pg'],
 };
 
 export default nextConfig;
