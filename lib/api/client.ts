@@ -184,16 +184,20 @@ export async function fetchBookText(book: BookRef, signal?: AbortSignal): Promis
   );
 }
 
-/** The saved bookmark, or null when the server gives none (guests have no bookmarks). */
-export async function fetchBookmark(book: BookRef, signal?: AbortSignal): Promise<BookmarkResponse | null> {
-  return request<BookmarkResponse>(API_ROUTES.READ_BOOKMARK, { query: bookParams(book), signal }).catch(nullOnApiError);
-}
-
 /** The metadata the EPUB converter wrote for a book, or null when it has none (not every book does). */
 export async function fetchBookMetadata(book: BookRef): Promise<BookMetadata | null> {
   return request<BookMetadata>(API_ROUTES.BOOK_ASSET, {
     query: { path: bookAssetPath(book.directory, book.fileName, '.json') },
   }).catch(nullOnApiError);
+}
+
+/** The saved bookmark, or null when the server gives none (guests have no bookmarks). */
+export async function fetchBookmark(book: BookRef, signal?: AbortSignal): Promise<BookmarkResponse | null> {
+  return request<BookmarkResponse>(API_ROUTES.READ_BOOKMARK, { query: bookParams(book), signal }).catch(nullOnApiError);
+}
+
+export async function saveBookmark(bookmark: SaveBookmarkRequest): Promise<WriteResponse> {
+  return request<WriteResponse>(API_ROUTES.WRITE_BOOKMARK, { method: 'POST', body: bookmark });
 }
 
 // 404 means this text has no recording and 401 means a guest, who is never served
@@ -217,8 +221,22 @@ export async function fetchNarration(book: BookRef, signal?: AbortSignal): Promi
   return response.json();
 }
 
-export async function saveBookmark(bookmark: SaveBookmarkRequest): Promise<WriteResponse> {
-  return request<WriteResponse>(API_ROUTES.WRITE_BOOKMARK, { method: 'POST', body: bookmark });
+export async function explainSentence(explanation: ExplanationRequest): Promise<ExplanationResponse> {
+  return request<ExplanationResponse>(API_ROUTES.EXPLAIN_SENTENCE, {
+    method: 'POST',
+    body: explanation,
+    guestKey: { kind: 'gemini', promptOn: 'any-failure' },
+  });
+}
+
+// Only a 401 opens the key prompt: the reader shows any other failure as a page it could not analyse.
+export async function prioritize(sentences: string[]): Promise<PrioritizeResponse> {
+  const body: PrioritizeRequest = { sentences };
+  return request<PrioritizeResponse>(API_ROUTES.PRIORITIZE, {
+    method: 'POST',
+    body,
+    guestKey: { kind: 'gemini', promptOn: 'unauthorized' },
+  });
 }
 
 export async function translate(text: string): Promise<TranslateResponse> {
@@ -230,15 +248,7 @@ export async function translate(text: string): Promise<TranslateResponse> {
   });
 }
 
-export async function explainSentence(explanation: ExplanationRequest): Promise<ExplanationResponse> {
-  return request<ExplanationResponse>(API_ROUTES.EXPLAIN_SENTENCE, {
-    method: 'POST',
-    body: explanation,
-    guestKey: { kind: 'gemini', promptOn: 'any-failure' },
-  });
-}
-
-/** Base64 MP3 of the text, in the guest's own TTS key when they have one. */
+/** Base64 MP3 of the text, synthesized with the guest's own TTS key when they have one. */
 export async function synthesizeSpeech(speech: TTSRequest): Promise<TTSResponse> {
   return request<TTSResponse>(API_ROUTES.TTS, {
     method: 'POST',
@@ -253,16 +263,6 @@ export async function fetchVocabulary(): Promise<VocabularyListResponse> {
 
 export async function deleteVocabularyEntry(id: string): Promise<DeleteVocabularyResponse> {
   return request<DeleteVocabularyResponse>(API_ROUTES.VOCABULARY, { method: 'DELETE', pathSegment: id });
-}
-
-/** Compares the local and production databases (local dev server only). */
-export async function fetchDbSyncStatus(): Promise<DbSyncStatusResponse> {
-  return request<DbSyncStatusResponse>(API_ROUTES.DB_SYNC);
-}
-
-export async function runDbSync(direction: DbSyncDirection): Promise<DbSyncResponse> {
-  const body: DbSyncRequest = { direction };
-  return request<DbSyncResponse>(API_ROUTES.DB_SYNC, { method: 'POST', body });
 }
 
 function rubyRegistryParams({ directory, bookName }: RubyRegistryKey): Record<string, string> {
@@ -289,12 +289,12 @@ export async function removeRubyRegistryItem(
   });
 }
 
-// Only a 401 opens the key prompt: the reader shows any other failure as a page it could not analyse.
-export async function prioritize(sentences: string[]): Promise<PrioritizeResponse> {
-  const body: PrioritizeRequest = { sentences };
-  return request<PrioritizeResponse>(API_ROUTES.PRIORITIZE, {
-    method: 'POST',
-    body,
-    guestKey: { kind: 'gemini', promptOn: 'unauthorized' },
-  });
+/** Compares the local and production databases (local dev server only). */
+export async function fetchDbSyncStatus(): Promise<DbSyncStatusResponse> {
+  return request<DbSyncStatusResponse>(API_ROUTES.DB_SYNC);
+}
+
+export async function runDbSync(direction: DbSyncDirection): Promise<DbSyncResponse> {
+  const body: DbSyncRequest = { direction };
+  return request<DbSyncResponse>(API_ROUTES.DB_SYNC, { method: 'POST', body });
 }
