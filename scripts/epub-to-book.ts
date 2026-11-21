@@ -34,6 +34,7 @@ import { alignRephrase, parseMarkdown, type AlignReport } from './utils/rephrase
 import { isClaudeModel, rephraseWithClaude, splitParagraphs } from './utils/claude-rephrase';
 import { chunkText, stripRubyTags } from './pipeline/chunking';
 import { createProgress, getProgressPath, loadProgress, saveProgress, simpleHash } from './pipeline/progress';
+import { AI_MODELS, VN_RETRY_CONFIG } from '../lib/constants';
 
 // Load environment variables
 const envLocalPath = path.join(process.cwd(), '.env.local');
@@ -55,14 +56,6 @@ const PYTHON_CMD = process.platform === 'win32'
   ? 'C:\\Users\\azimm\\AppData\\Local\\Programs\\Python\\Python312\\python.exe'
   : 'python3';
 
-const AI_MODELS = {
-  GEMINI_3_FLASH_PREVIEW: 'gemini-3-flash-preview',
-  GEMINI_2_5_FLASH: 'gemini-2.5-flash',
-  GEMINI_2_5_FLASH_LITE: 'gemini-2.5-flash-lite',
-  GEMINI_FLASH: 'gemini-2.0-flash-exp',
-  GEMINI_PRO: 'gemini-1.5-pro-latest',
-} as const;
-
 // Model fallback order: try gemini-3-flash-preview first, then 2.5-flash, then 2.5-flash-lite
 const MODEL_FALLBACK_ORDER = [
   AI_MODELS.GEMINI_3_FLASH_PREVIEW,
@@ -71,11 +64,6 @@ const MODEL_FALLBACK_ORDER = [
 ];
 
 const DEFAULT_REPHRASE_MODEL = 'sonnet';
-
-const VN_RETRY_CONFIG = {
-  MAX_ATTEMPTS: 4,
-  INITIAL_ATTEMPT: 1,
-} as const;
 
 const ai_instructions = `
 以下の文章について、日本語学習者が意味を掴みやすくするために、元の一行ごとに要約してください。回答は必ず下記の構成に従ってください。
