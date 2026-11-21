@@ -6,6 +6,7 @@ import { PRIORITY_LEVELS, THEME, type PriorityScore } from "@/lib/constants";
 import CollapsibleItem from "@/app/components/reading/CollapsibleItem";
 import ParagraphItem from "@/app/components/reading/ParagraphItem";
 import type { BookRef } from "@/lib/books/bookRef";
+import type { SentenceLocation } from "@/lib/content/explanationContext";
 
 interface ReadingContentProps {
   items: readonly ReaderItem[];
@@ -17,7 +18,7 @@ interface ReadingContentProps {
   aiExplanationEnabled: boolean;
   currentPage: number;
   onBookmarkSuccess: () => void;
-  onSentenceClick?: (sentence: string) => void;
+  onSentenceClick?: (location: SentenceLocation) => void;
   imageMap?: Record<string, string>;
   audiobookEnabled?: boolean;
   startCursorIndex?: number;
@@ -85,6 +86,11 @@ export default function ReadingContent({
 }: ReadingContentProps) {
   const pageStart = pageStartIndex(currentPage);
 
+  const sentenceClickFor = (unitIndex: number) =>
+    onSentenceClick
+      ? (sentence: string, occurrence: number) => onSentenceClick({ unitIndex, sentence, occurrence })
+      : undefined;
+
   const paginatedItems = useMemo(
     () => items.slice(pageStart, pageStartIndex(currentPage + 1)),
     [items, pageStart, currentPage]
@@ -121,7 +127,7 @@ export default function ReadingContent({
               showFurigana={showFurigana}
               aiExplanationEnabled={aiExplanationEnabled}
               onSubmitSuccess={onBookmarkSuccess}
-              onSentenceClick={onSentenceClick}
+              onSentenceClick={sentenceClickFor(globalIndex)}
               imageMap={imageMap}
               book={book}
               currentPage={currentPage}
@@ -166,7 +172,7 @@ export default function ReadingContent({
             book={book}
             showFurigana={showFurigana}
             onBookmarkSuccess={onBookmarkSuccess}
-            onSentenceClick={onSentenceClick}
+            onSentenceClick={sentenceClickFor(globalIndex)}
             imageMap={imageMap}
             currentPage={currentPage}
             audiobookEnabled={audiobookEnabled}

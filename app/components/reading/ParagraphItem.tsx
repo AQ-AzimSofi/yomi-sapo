@@ -23,7 +23,7 @@ interface ParagraphItemProps {
   book: BookRef;
   showFurigana: boolean;
   onBookmarkSuccess: () => void;
-  onSentenceClick?: (sentence: string) => void;
+  onSentenceClick?: (sentence: string, occurrence: number) => void;
   imageMap?: Record<string, string>;
   currentPage?: number;
   audiobookEnabled?: boolean;
@@ -194,7 +194,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
               dangerouslySetInnerHTML={{ __html: html }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSentenceClick(sentence);
+                onSentenceClick(sentence, sentences.slice(0, index).filter((earlier) => earlier === sentence).length);
               }}
               className="cursor-pointer transition-colors px-1"
               style={{

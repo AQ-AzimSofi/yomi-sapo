@@ -26,7 +26,7 @@ interface CollapsibleItemProps {
   onSubmitSuccess: () => void;
   showFurigana?: boolean;
   aiExplanationEnabled?: boolean;
-  onSentenceClick?: (sentence: string) => void;
+  onSentenceClick?: (sentence: string, occurrence: number) => void;
   imageMap?: Record<string, string>;
   book: BookRef;
   currentPage?: number;
@@ -181,7 +181,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
               dangerouslySetInnerHTML={{ __html: html }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSentenceClick?.(sentence);
+                onSentenceClick?.(sentence, sentences.slice(0, index).filter((earlier) => earlier === sentence).length);
               }}
               className={
                 onSentenceClick

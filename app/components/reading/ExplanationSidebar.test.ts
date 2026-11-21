@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { NO_SURROUNDINGS } from '@/lib/content/explanationContext';
 import ExplanationSidebar from './ExplanationSidebar';
 
 const RUBY_SENTENCE = '<ruby><rb>漢字</rb><rt>かんじ</rt></ruby>を<ruby>読<rt>よ</rt></ruby>む。';
@@ -11,7 +12,7 @@ function renderSelectedSentence(showFurigana: boolean): string {
       isOpen: true,
       onClose: () => {},
       sentence: RUBY_SENTENCE,
-      context: '',
+      surroundings: NO_SURROUNDINGS,
       fileName: 'book',
       showFurigana,
     })

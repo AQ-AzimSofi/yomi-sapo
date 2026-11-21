@@ -12,6 +12,7 @@ import { ApiError, explainSentence } from '@/lib/api/client';
 import { shareRequest } from '@/lib/utils/shareRequest';
 import type { ExplanationRequest } from '@/lib/api/contracts';
 import type { ExplanationMode } from '@/lib/constants';
+import { buildExplanationContext, type SentenceSurroundings } from '@/lib/content/explanationContext';
 import { IDLE_EXPLANATION, nextExplanationDisplay } from './explanationDisplay';
 import { contextSizeToCommit, isSliderStepKey } from './contextSlider';
 
@@ -19,7 +20,7 @@ interface ExplanationSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   sentence: string;
-  context: string;
+  surroundings: SentenceSurroundings;
   fileName: string;
   showFurigana?: boolean;
 }
@@ -41,7 +42,7 @@ export default function ExplanationSidebar({
   isOpen,
   onClose,
   sentence,
-  context,
+  surroundings,
   fileName,
   showFurigana = true,
 }: ExplanationSidebarProps) {
@@ -66,6 +67,11 @@ export default function ExplanationSidebar({
   } = useExplanationCache();
 
   useEscapeKey(isOpen, onClose);
+
+  const context = React.useMemo(
+    () => buildExplanationContext({ sentence, surroundings, contextSize }),
+    [sentence, surroundings, contextSize]
+  );
 
   // Every request gets its own id, and the display only takes the answer or
   // failure of the latest one. A late answer for an earlier sentence, mode or
