@@ -603,6 +603,43 @@ async function processChunk(
   return { success: false, response: '', attempts: maxAttempts * modelsToTry.length };
 }
 
+interface ChunkOutput {
+  rawText: string;
+  readerText: string;
+  attempts: number;
+  error?: string;
+}
+
+interface ChunkOutputTarget {
+  rawPath: string;
+  furiganaPath: string;
+  sourceDir: string;
+  apiUrl: string;
+  fileName: string;
+  directory: string;
+}
+
+async function rephraseChunkWithGemini(chunk: string, model: string): Promise<ChunkOutput> {
+  const chunkStripped = stripRubyTags(chunk);
+  const result = await processChunk(chunk, model);
+  if (result.success) {
+    const aligned = alignRephrase(chunkStripped, result.response);
+    logAlignReport(aligned.report);
+    return { rawText: result.response, readerText: aligned.text, attempts: result.attempts };
+  }
+
+  // Each line stands in as its own rephrase so no content is skipped
+  console.log(`  Failed after ${result.attempts} attempts, using original text as fallback...`);
+  const lines = chunkStripped.split('\n').filter(l => l.trim().length > 0);
+  const fallbackResponse = lines.map(line => `< ${line}\n>> ${line}`).join('\n\n');
+  return {
+    rawText: fallbackResponse,
+    readerText: fallbackResponse,
+    attempts: result.attempts,
+    error: 'Used original text (rephrase failed)',
+  };
+}
+
 // ============================================================================
 // Database Sync
 // ============================================================================
@@ -666,6 +703,24 @@ function addFuriganaToChunk(chunkText: string, outputDir: string): string {
 // ============================================================================
 // Batch Rephrase Processing
 // ============================================================================
+
+async function saveChunkOutput(target: ChunkOutputTarget, output: ChunkOutput): Promise<void> {
+  const rawSeparator = fs.existsSync(target.rawPath) ? '\n\n' : '';
+  fs.appendFileSync(target.rawPath, rawSeparator + output.rawText, 'utf-8');
+
+  console.log(`  Adding furigana...`);
+  const withFurigana = addFuriganaToChunk(output.readerText, target.sourceDir);
+  const furiganaSeparator = fs.existsSync(target.furiganaPath) ? '\n\n' : '';
+  fs.appendFileSync(target.furiganaPath, furiganaSeparator + withFurigana, 'utf-8');
+
+  console.log(`  Syncing to database...`);
+  const synced = await syncToDatabase(target.apiUrl, target.fileName, target.directory);
+  if (synced) {
+    console.log(`  Database synced! Users can now read the updated content.`);
+    return;
+  }
+  console.log(`  Warning: Database sync failed. File saved locally.`);
+}
 
 async function batchRephrase(
   bookName: string,
@@ -750,6 +805,14 @@ async function batchRephrase(
 
   console.log('\n=== Starting Processing ===\n');
 
+  const outputTarget: ChunkOutputTarget = {
+    rawPath: outputPath,
+    furiganaPath: outputPathFurigana,
+    sourceDir,
+    apiUrl: options.apiUrl,
+    fileName: `${bookName}-rephrase-furigana`,
+    directory: `${options.outputDir}/${bookName}`,
+  };
   const startTime = Date.now();
   let processedCount = 0;
 
@@ -770,77 +833,23 @@ async function batchRephrase(
     chunkProgress.status = 'processing';
     saveProgress(progressPath, progress);
 
-    const result = await processChunk(chunk, progress.settings.model);
-    chunkProgress.attempts = result.attempts;
+    const output = await rephraseChunkWithGemini(chunk, progress.settings.model);
+    chunkProgress.status = 'completed';
+    chunkProgress.completedAt = new Date().toISOString();
+    chunkProgress.attempts = output.attempts;
+    chunkProgress.error = output.error;
+    progress.chunks.completed++;
 
-    if (result.success) {
-      chunkProgress.status = 'completed';
-      chunkProgress.completedAt = new Date().toISOString();
-      progress.chunks.completed++;
+    await saveChunkOutput(outputTarget, output);
+    processedCount++;
 
-      // Save raw rephrase output
-      const separator = fs.existsSync(outputPath) ? '\n\n' : '';
-      fs.appendFileSync(outputPath, separator + result.response, 'utf-8');
+    const elapsed = (Date.now() - startTime) / 1000;
+    const avgTime = elapsed / processedCount;
+    const remaining = chunks.length - progress.chunks.completed;
+    const eta = remaining * Math.max(avgTime, progress.settings.delaySeconds);
 
-      const aligned = alignRephrase(chunkStripped, result.response);
-      logAlignReport(aligned.report);
-
-      // Add furigana
-      console.log(`  Adding furigana...`);
-      const finalText = addFuriganaToChunk(aligned.text, sourceDir);
-      const furiganaSeparator = fs.existsSync(outputPathFurigana) ? '\n\n' : '';
-      fs.appendFileSync(outputPathFurigana, furiganaSeparator + finalText, 'utf-8');
-      console.log(`  Furigana added!`);
-
-      // Sync to database
-      const outputDirectory = `${options.outputDir}/${bookName}`;
-      console.log(`  Syncing to database...`);
-      const synced = await syncToDatabase(options.apiUrl, `${bookName}-rephrase-furigana`, outputDirectory);
-      if (synced) {
-        console.log(`  Database synced! Users can now read the updated content.`);
-      } else {
-        console.log(`  Warning: Database sync failed. File saved locally.`);
-      }
-
-      processedCount++;
-
-      const elapsed = (Date.now() - startTime) / 1000;
-      const avgTime = elapsed / processedCount;
-      const remaining = chunks.length - progress.chunks.completed;
-      const eta = remaining * Math.max(avgTime, progress.settings.delaySeconds);
-
-      console.log(`  Done! (${progress.chunks.completed}/${chunks.length})`);
-      console.log(`  ETA for remaining: ${formatDuration(eta)}`);
-    } else {
-      // Fallback: include original text without rephrasing so no content is skipped
-      chunkProgress.status = 'completed';
-      chunkProgress.completedAt = new Date().toISOString();
-      chunkProgress.error = 'Used original text (rephrase failed)';
-      progress.chunks.completed++;
-
-      console.log(`  Failed after ${result.attempts} attempts, using original text as fallback...`);
-
-      // Convert original text to the expected format (each line as < original >> original)
-      const cleanChunk = stripRubyTags(chunk);
-      const lines = cleanChunk.split('\n').filter(l => l.trim().length > 0);
-      const fallbackResponse = lines.map(line => `< ${line}\n>> ${line}`).join('\n\n');
-
-      const separator = fs.existsSync(outputPath) ? '\n\n' : '';
-      fs.appendFileSync(outputPath, separator + fallbackResponse, 'utf-8');
-
-      console.log(`  Adding furigana to fallback...`);
-      const finalText = addFuriganaToChunk(fallbackResponse, sourceDir);
-      const furiganaSeparator = fs.existsSync(outputPathFurigana) ? '\n\n' : '';
-      fs.appendFileSync(outputPathFurigana, furiganaSeparator + finalText, 'utf-8');
-
-      const outputDirectory = `${options.outputDir}/${bookName}`;
-      const synced = await syncToDatabase(options.apiUrl, `${bookName}-rephrase-furigana`, outputDirectory);
-      if (synced) {
-        console.log(`  Database synced with fallback content.`);
-      }
-
-      processedCount++;
-    }
+    console.log(`  Done! (${progress.chunks.completed}/${chunks.length})`);
+    console.log(`  ETA for remaining: ${formatDuration(eta)}`);
 
     saveProgress(progressPath, progress);
 
