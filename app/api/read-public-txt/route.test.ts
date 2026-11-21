@@ -242,6 +242,13 @@ describe('GET /api/read-public-txt with separate directory and fileName', () => 
     expect(vi.mocked(getTextEntryVersion).mock.calls).toEqual([['c', 'a/b']]);
   });
 
+  // The same key the bookmark routes resolve, so text and bookmark name one book.
+  it('moves a slash in a separate fileName into the directory', async () => {
+    await GET(bookRequest({ directory: 'bookv2-furigana', fileName: 'ほん/ほん-rephrase-furigana' }));
+
+    expect(vi.mocked(getTextEntryVersion).mock.calls).toEqual([['ほん-rephrase-furigana', 'bookv2-furigana/ほん']]);
+  });
+
   it('gives a guest the preview of an allowlisted book', async () => {
     vi.mocked(getTextEntryVersion).mockResolvedValue('5000-1700000000000');
 

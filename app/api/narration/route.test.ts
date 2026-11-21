@@ -53,6 +53,15 @@ describe('GET /api/narration', () => {
     expect(options).toStrictEqual({ expiresIn: 12 * 60 * 60 });
   });
 
+  // The same key the reader's text and bookmark routes resolve.
+  it('moves a slash in a separate fileName into the directory', async () => {
+    const book = { directory: 'bookv2-furigana', fileName: 'ほん/ほん-rephrase-furigana' };
+
+    await GET(narrationRequest(new URLSearchParams(book).toString()));
+
+    expect(getNarration).toHaveBeenCalledWith('ほん-rephrase-furigana', 'bookv2-furigana/ほん');
+  });
+
   it.each([
     ['a .. directory segment', { directory: 'bookv2-furigana/..', fileName: 'secret' }],
     ['a leading slash', { directory: '/bookv2-furigana', fileName: BOOK.fileName }],
