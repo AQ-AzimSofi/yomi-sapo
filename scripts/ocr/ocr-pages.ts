@@ -31,6 +31,7 @@ import path from 'node:path';
 import { ApiError, GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
 import sharp from 'sharp';
+import { CONTINUATION_MARKER, findStrayMarker } from './page-markers';
 
 dotenv.config({ path: [path.join(process.cwd(), '.env.local'), path.join(process.cwd(), '.env')] });
 
@@ -46,7 +47,6 @@ const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
 const MAX_ATTEMPTS = 4;
 const MAX_RETRY_WAIT_SECS = 30;
 
-const CONTINUATION_MARKER = '<<CONTINUED>>';
 const NO_TEXT_MARKER = '<<NO_TEXT>>';
 const FIGURE_MARKER_START = '<<FIGURE';
 // Box edges in Gemini's own order and scale: top left bottom right, each 0-1000 of the page image.
@@ -315,6 +315,8 @@ async function transcribePages(context: OcrContext, imageNames: string[], concur
       try {
         const transcript = await transcribePage(context, job);
         const pageText = await saveFigures(transcript, path.join(context.imageDir, job.imageName), context.figuresDir);
+        const strayMarker = findStrayMarker(pageText);
+        if (strayMarker) throw new Error(`the reply left "${strayMarker}" where it is not read`);
         await writeFile(pageTextPath(context.pagesDir, job.imageName), pageText);
         finishedImageNames.push(job.imageName);
         console.log(`[${finishedImageNames.length}/${imageNames.length}] ${job.imageName}: ${pageText.length} chars`);
