@@ -94,11 +94,22 @@ body {
   color: inherit;
 }
 
-/* Reading content typography, the same for plain, furigana and rephrased books (ReaderItem). */
-.reader-item,
+/* Reading content typography, the same for plain, furigana and rephrased books (ReaderItem).
+   The text sizes itself from the reader container (app/read/page.tsx), which the font size and
+   line height sliders set. At their defaults (16px, 1.8) the original text is 18px on 28px lines
+   and the rephrase 16px at 1.8, the sizes the text had before the sliders reached it. */
+.reader-item {
+  @apply font-mincho;
+  font-weight: 500;
+  /* The item's own controls keep their line height; the text sets its own from the slider. */
+  line-height: 1.7;
+  /* 0.208px at 16px, the spacing the text had when the item was fixed at 1.3rem. */
+  letter-spacing: 0.013em;
+}
+
+/* An illustration's loading note keeps the fixed size it always had. */
 .reader-item p {
   font-size: 1.3rem !important;
-  @apply font-mincho;
   font-weight: 500;
   line-height: 1.7;
   letter-spacing: 0.01em;
@@ -113,14 +124,22 @@ rt {
 
 .sub-item-text {
   @apply font-gothic;
-  font-size: 1rem;
   font-weight: 400;
-  line-height: 1.8;
+  line-height: var(--reader-line-height);
 }
 
+/* A step above the reader's font size, on lines a little tighter than its line height:
+   28px of the 32.4px that 1.8 would give 18px text. */
 .head-text {
   font-weight: normal;
-  font-size: large;
+  font-size: 1.125em;
+  line-height: calc(var(--reader-line-height) * 28 / 32.4);
+}
+
+/* 10px over 18px text. The text used to be sized with the "large" keyword, and Chrome
+   scales a ruby's 50% from a keyword size to 10px rather than 9px. */
+.head-text rt {
+  font-size: calc(10em / 18);
 }
 
 .desktop-sidebar {

@@ -664,6 +664,7 @@ function ReaderContent({
         style={{
           fontSize: `${fontSize}px`,
           lineHeight: lineHeight,
+          ['--reader-line-height' as string]: lineHeight,
           paddingBottom: audiobookEnabled ? 140 : undefined,
         }}
       >

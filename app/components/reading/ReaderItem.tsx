@@ -220,7 +220,7 @@ function ReaderItem({
 
   const mainText = (
     <div
-      className="head-text font-bold text-lg whitespace-pre-wrap"
+      className="head-text whitespace-pre-wrap"
       onClickCapture={selectOnTripleClick}
       style={{ color: THEME.INK, ...(areSentencesClickable ? {} : SELECTABLE_TEXT_STYLE) }}
     >
