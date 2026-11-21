@@ -20,6 +20,12 @@ interface SourceUnit {
   lineIndex: number;
 }
 
+interface SourceIndex {
+  units: SourceUnit[];
+  /** keyOffsets[i] is the total key length of the units before i, so a run's length is one subtraction. */
+  keyOffsets: number[];
+}
+
 interface UnitRun {
   begin: number;
   end: number;
@@ -40,11 +46,20 @@ const CLAUSE_PATTERN = /[^。！？、]*[。！？、]+[」』）]*|[^。！？�
 const FIGURE_SUMMARY = '（図）';
 // How many source units a head may sit past the previous match; the gap is what the model skipped.
 const MAX_SKIPPED_UNITS = 40;
-// The model may join several sentences, or a whole paragraph, into one head.
-const MAX_RUN_UNITS = 48;
+// The model may join several sentences, or a whole paragraph, into one head; a long
+// paragraph of dialogue can hold a few hundred clauses.
+const MAX_RUN_UNITS = 400;
 const MIN_SIMILARITY = 0.8;
 // Bigram similarity says little about very short strings, so those must match exactly.
 const MIN_FUZZY_LENGTH = 8;
+// One passage merged or skipped beyond the window would otherwise leave every later head
+// unmatched, so a head that matches nothing nearby may re-anchor further on. Only a long head
+// that starts like the source and is nearly identical may do so, since short lines repeat.
+const MAX_RESYNC_UNITS = 3000;
+const MIN_RESYNC_SIMILARITY = 0.95;
+const MIN_RESYNC_LENGTH = 20;
+const RESYNC_PREFIX_LENGTH = 6;
+const RESYNC_PREFIX_UNITS = 4;
 
 export function parseMarkdown(text: string): ParsedItem[] {
   const hasHeadingPrefix = /^[<＜](?!ruby>|rt>)/m.test(text);
@@ -108,6 +123,15 @@ function splitIntoUnits(sourceText: string): SourceUnit[] {
   });
 }
 
+function indexSource(sourceText: string): SourceIndex {
+  const units = splitIntoUnits(sourceText);
+  const keyOffsets = units.reduce<number[]>((offsets, unit) => {
+    offsets.push(offsets[offsets.length - 1] + unit.key.length);
+    return offsets;
+  }, [0]);
+  return { units, keyOffsets };
+}
+
 function countBigrams(text: string): Map<string, number> {
   const bigrams = createRange(0, text.length - 1).map((index) => text.slice(index, index + 2));
   return bigrams.reduce((counts, bigram) => counts.set(bigram, (counts.get(bigram) ?? 0) + 1), new Map<string, number>());
@@ -123,26 +147,45 @@ function measureSimilarity(a: string, b: string): number {
   return (2 * sharedCount) / (a.length - 1 + (b.length - 1));
 }
 
-function hasComparableLength(a: string, b: string): boolean {
-  return Math.abs(a.length - b.length) <= Math.max(4, a.length * 0.2);
+function hasComparableLength(runLength: number, headLength: number): boolean {
+  return Math.abs(runLength - headLength) <= Math.max(4, runLength * 0.2);
 }
 
-/** The best run of source units for a head, searching forward from the first unit not yet matched; ties go to the earliest run. */
-function findMatchingRun(headKey: string, units: SourceUnit[], firstCandidate: number): UnitRun | undefined {
-  const beginCandidates = createRange(firstCandidate, Math.min(units.length, firstCandidate + MAX_SKIPPED_UNITS + 1));
+function joinUnitKeys(units: SourceUnit[], begin: number, end: number): string {
+  return units.slice(begin, end).map((unit) => unit.key).join('');
+}
+
+/** The most similar run of source units starting at one of the candidates; ties go to the earliest run. */
+function findBestRun(headKey: string, source: SourceIndex, beginCandidates: number[]): UnitRun | undefined {
+  const { units, keyOffsets } = source;
   const runs = beginCandidates.flatMap((begin) =>
-    createRange(begin + 1, Math.min(units.length, begin + MAX_RUN_UNITS) + 1).map((end) => ({
-      begin,
-      end,
-      key: units.slice(begin, end).map((unit) => unit.key).join(''),
-    })),
+    createRange(begin + 1, Math.min(units.length, begin + MAX_RUN_UNITS) + 1)
+      .filter((end) => hasComparableLength(keyOffsets[end] - keyOffsets[begin], headKey.length))
+      .map((end) => ({ begin, end })),
   );
-  const best = runs
-    .filter((run) => hasComparableLength(run.key, headKey))
-    .map((run) => ({ begin: run.begin, end: run.end, score: measureSimilarity(headKey, run.key) }))
+  return runs
+    .map((run) => ({ ...run, score: measureSimilarity(headKey, joinUnitKeys(units, run.begin, run.end)) }))
     .reduce<UnitRun | undefined>((top, run) => (!top || run.score > top.score ? run : top), undefined);
-  if (!best || best.score < MIN_SIMILARITY) return undefined;
+}
+
+function findResyncRun(headKey: string, source: SourceIndex, firstCandidate: number): UnitRun | undefined {
+  if (headKey.length < MIN_RESYNC_LENGTH) return undefined;
+  const prefix = headKey.slice(0, RESYNC_PREFIX_LENGTH);
+  const lastBegin = Math.min(source.units.length, firstCandidate + MAX_RESYNC_UNITS);
+  const farBegins = createRange(firstCandidate + MAX_SKIPPED_UNITS + 1, lastBegin).filter((begin) =>
+    joinUnitKeys(source.units, begin, begin + RESYNC_PREFIX_UNITS).startsWith(prefix),
+  );
+  const best = findBestRun(headKey, source, farBegins);
+  if (!best || best.score < MIN_RESYNC_SIMILARITY) return undefined;
   return best;
+}
+
+/** The run of source units a head was made from, searched forward from the first unit not yet matched. */
+function findMatchingRun(headKey: string, source: SourceIndex, firstCandidate: number): UnitRun | undefined {
+  const nearbyBegins = createRange(firstCandidate, Math.min(source.units.length, firstCandidate + MAX_SKIPPED_UNITS + 1));
+  const nearby = findBestRun(headKey, source, nearbyBegins);
+  if (nearby && nearby.score >= MIN_SIMILARITY) return nearby;
+  return findResyncRun(headKey, source, firstCandidate);
 }
 
 /** Skipped units grouped back into their source lines, so a skipped paragraph returns as one pair. */
@@ -162,9 +205,10 @@ function countLeadingFragments(gapUnits: SourceUnit[], headLineIndex: number): n
   return firstWhole === -1 ? fromHead.length : firstWhole;
 }
 
-function alignItem(state: AlignState, item: ParsedItem, units: SourceUnit[]): AlignState {
+function alignItem(state: AlignState, item: ParsedItem, source: SourceIndex): AlignState {
+  const { units } = source;
   const headKey = normalizeForMatch(item.head);
-  const run = findMatchingRun(headKey, units, state.nextUnit);
+  const run = findMatchingRun(headKey, source, state.nextUnit);
   if (!run) {
     return {
       ...state,
@@ -209,7 +253,7 @@ function formatItem(item: ParsedItem): string {
  * outside a pair is dropped. `sourceText` must be free of ruby, like the text the model saw.
  */
 export function alignRephrase(sourceText: string, response: string): { text: string; report: AlignReport } {
-  const units = splitIntoUnits(sourceText);
+  const source = indexSource(sourceText);
   const parsedItems = parseMarkdown(response);
   const initialState: AlignState = {
     items: [],
@@ -219,8 +263,8 @@ export function alignRephrase(sourceText: string, response: string): { text: str
     insertedPassages: [],
     unmatchedHeads: [],
   };
-  const aligned = parsedItems.reduce((state, item) => alignItem(state, item, units), initialState);
-  const trailingItems = aligned.hasUnmatchedSinceLastMatch ? [] : toPassageItems(units.slice(aligned.nextUnit));
+  const aligned = parsedItems.reduce((state, item) => alignItem(state, item, source), initialState);
+  const trailingItems = aligned.hasUnmatchedSinceLastMatch ? [] : toPassageItems(source.units.slice(aligned.nextUnit));
   return {
     text: [...aligned.items, ...trailingItems].map(formatItem).join('\n\n'),
     report: {
