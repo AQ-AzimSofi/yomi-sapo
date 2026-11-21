@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import BookmarkUnfilled from "@/app/components/icons/BookmarkUnfilled";
 import BookmarkFilled from "@/app/components/icons/BookmarkFilled";
 import TranslateIcon from "@/app/components/icons/TranslateIcon";
@@ -109,7 +109,7 @@ function SimplerVersionsToggle({ isOpen, onToggle }: { isOpen: boolean; onToggle
   );
 }
 
-export default function ReaderItem({
+function ReaderItem({
   globalIndex,
   text,
   subItems,
@@ -294,3 +294,7 @@ export default function ReaderItem({
     </div>
   );
 }
+
+// Every prop is a value or a reference the reader keeps stable, so an item re-renders only
+// when something it shows changes, not on every reader update (an audiobook step, a panel).
+export default memo(ReaderItem);

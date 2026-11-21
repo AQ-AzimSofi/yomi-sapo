@@ -448,12 +448,15 @@ function ReaderContent({
     setKeyboardMode(prev => !prev);
   };
 
-  const handleSentenceClick = (location: SentenceLocation) => {
-    if (!aiExplanationEnabled) return;
+  const handleSentenceClick = useCallback(
+    (location: SentenceLocation) => {
+      if (!aiExplanationEnabled) return;
 
-    setExplanationTarget({ sentence: location.sentence, surroundings: sentenceSurroundings(readerItems, location) });
-    setActivePanel('explanation');
-  };
+      setExplanationTarget({ sentence: location.sentence, surroundings: sentenceSurroundings(readerItems, location) });
+      setActivePanel('explanation');
+    },
+    [aiExplanationEnabled, readerItems]
+  );
 
 
   const handleGoToBookmark = useCallback(() => {
