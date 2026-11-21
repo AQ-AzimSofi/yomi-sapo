@@ -175,6 +175,16 @@ describe('POST /api/tts', () => {
     expect(response.status).toBe(504);
   });
 
+  it('answers a generic 500 that does not pass on a network error', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    upstreamFetch.mockRejectedValue(new TypeError('fetch failed: getaddrinfo ENOTFOUND texttospeech.googleapis.com'));
+
+    const response = await synthesizeSpeech(postRequest({ text: '本を読む。' }, OWNER_HEADERS));
+
+    expect(response.status).toBe(500);
+    expect(JSON.stringify(await response.json())).not.toContain('ENOTFOUND');
+  });
+
   it('answers 502 when Google TTS refuses', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     upstreamFetch.mockResolvedValue(new Response('quota', { status: 429 }));
