@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { COLORS, EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG } from '@/lib/constants';
+import { COLORS, EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG, THEME } from '@/lib/constants';
 import { useExplanationCache } from '@/app/hooks/useExplanationCache';
 import { parseFurigana, segmentsToHTML, stripAiFurigana } from '@/lib/utils/furiganaParser';
 import { renderSafeMarkdown } from '@/lib/utils/safeMarkdown';
@@ -200,7 +200,7 @@ export default function ExplanationSidebar({
       {isOpen && (
         <div
           className="fixed inset-0 z-40 transition-all duration-300"
-          style={{ backgroundColor: toTint(COLORS.INK, 20) }}
+          style={{ backgroundColor: THEME.SCRIM_SOFT }}
           onClick={onClose}
         />
       )}
@@ -211,9 +211,9 @@ export default function ExplanationSidebar({
         }`}
         style={{
           width: 'min(calc(100vw - 16px), 480px)',
-          backgroundColor: COLORS.SURFACE,
-          color: COLORS.INK,
-          borderLeft: `1px solid ${COLORS.INK}`,
+          backgroundColor: THEME.SURFACE,
+          color: THEME.INK,
+          borderLeft: `1px solid ${THEME.INK}`,
           transform: `translateX(${isOpen ? dragOffset : '100%'}px)`,
           transition: isDragging ? 'none' : 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
         }}
@@ -225,28 +225,28 @@ export default function ExplanationSidebar({
         <div className="md:hidden flex justify-center pt-3 pb-1">
           <div
             className="w-9 h-0.5"
-            style={{ backgroundColor: COLORS.NEUTRAL }}
+            style={{ backgroundColor: THEME.NEUTRAL }}
           />
         </div>
 
         <div className="p-4 md:p-6">
           <div
             className="flex items-start justify-between pb-4 mb-5"
-            style={{ borderBottom: `1px solid ${COLORS.NEUTRAL}` }}
+            style={{ borderBottom: `1px solid ${THEME.NEUTRAL}` }}
           >
             <div className="flex-1">
-              <h2 className="text-lg font-mincho font-bold" style={{ color: COLORS.INK }}>
+              <h2 className="text-lg font-mincho font-bold" style={{ color: THEME.INK }}>
                 AI Explanation
               </h2>
               {isCached && cacheTimestamp && (
                 <div className="flex items-center gap-3 mt-1">
-                  <span className="text-xs" style={{ color: COLORS.SECONDARY }}>
+                  <span className="text-xs" style={{ color: THEME.SECONDARY }}>
                     Cached {getTimeAgo(cacheTimestamp)}
                   </span>
                   <button
                     onClick={() => setForceRegenerate(true)}
                     className="text-xs font-bold cursor-pointer interactive-link"
-                    style={{ color: COLORS.PRIMARY }}
+                    style={{ color: THEME.PRIMARY }}
                   >
                     Regenerate
                   </button>
@@ -256,7 +256,7 @@ export default function ExplanationSidebar({
             <button
               onClick={onClose}
               className="w-8 h-8 flex items-center justify-center cursor-pointer interactive-link"
-              style={{ color: COLORS.SECONDARY }}
+              style={{ color: THEME.SECONDARY }}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -267,17 +267,17 @@ export default function ExplanationSidebar({
           <div
             className="p-4 mb-5"
             style={{
-              backgroundColor: COLORS.BASE,
-              border: `1px solid ${COLORS.NEUTRAL}`,
+              backgroundColor: THEME.BASE,
+              border: `1px solid ${THEME.NEUTRAL}`,
             }}
           >
             <div
               className="text-xs font-bold uppercase tracking-wide mb-2"
-              style={{ color: COLORS.PRIMARY }}
+              style={{ color: THEME.PRIMARY }}
             >
               Selected Sentence
             </div>
-            <p className="font-mincho text-base leading-relaxed" style={{ color: COLORS.INK, whiteSpace: 'pre-wrap' }}>
+            <p className="font-mincho text-base leading-relaxed" style={{ color: THEME.INK, whiteSpace: 'pre-wrap' }}>
               {renderTextWithFurigana(sentence)}
             </p>
           </div>
@@ -292,9 +292,9 @@ export default function ExplanationSidebar({
                     onClick={() => setMode(modeKey as ExplanationMode)}
                     className="px-3.5 py-1.5 text-xs font-bold cursor-pointer interactive-link"
                     style={{
-                      backgroundColor: isActive ? COLORS.INK : 'transparent',
-                      color: isActive ? COLORS.SURFACE : COLORS.SECONDARY_DARK,
-                      border: `1px solid ${isActive ? COLORS.INK : COLORS.NEUTRAL}`,
+                      backgroundColor: isActive ? THEME.INK : 'transparent',
+                      color: isActive ? THEME.ON_INK : THEME.SECONDARY_DARK,
+                      border: `1px solid ${isActive ? THEME.INK : THEME.NEUTRAL}`,
                     }}
                     title={config.description}
                   >
@@ -308,7 +308,7 @@ export default function ExplanationSidebar({
               <button
                 onClick={() => setContextSizeExpanded(!contextSizeExpanded)}
                 className="text-xs font-medium flex items-center gap-1 cursor-pointer interactive-link"
-                style={{ color: COLORS.SECONDARY }}
+                style={{ color: THEME.SECONDARY }}
               >
                 Context: {contextSize} chars
                 <svg
@@ -336,10 +336,10 @@ export default function ExplanationSidebar({
                     onChange={(e) => setContextSize(parseInt(e.target.value, 10))}
                     className="w-full"
                     style={{
-                      background: `linear-gradient(to right, ${COLORS.PRIMARY} 0%, ${COLORS.PRIMARY} ${contextPercent}%, ${COLORS.NEUTRAL} ${contextPercent}%, ${COLORS.NEUTRAL} 100%)`,
+                      background: `linear-gradient(to right, ${THEME.PRIMARY} 0%, ${THEME.PRIMARY} ${contextPercent}%, ${THEME.NEUTRAL} ${contextPercent}%, ${THEME.NEUTRAL} 100%)`,
                     }}
                   />
-                  <div className="flex justify-between text-[10px] mt-1" style={{ color: COLORS.SECONDARY }}>
+                  <div className="flex justify-between text-[10px] mt-1" style={{ color: THEME.SECONDARY }}>
                     <span>{EXPLANATION_CONFIG.MIN_CONTEXT_SIZE}</span>
                     <span>{EXPLANATION_CONFIG.MAX_CONTEXT_SIZE}</span>
                   </div>
@@ -351,17 +351,17 @@ export default function ExplanationSidebar({
           <div
             className="p-4"
             style={{
-              backgroundColor: COLORS.SURFACE,
-              border: `1px solid ${COLORS.NEUTRAL}`,
+              backgroundColor: THEME.SURFACE,
+              border: `1px solid ${THEME.NEUTRAL}`,
             }}
           >
             {isLoading && (
               <div className="flex flex-col items-center justify-center py-10">
                 <div
                   className="animate-spin rounded-full h-8 w-8 border-2 border-transparent"
-                  style={{ borderTopColor: COLORS.PRIMARY, borderRightColor: COLORS.PRIMARY }}
+                  style={{ borderTopColor: THEME.PRIMARY, borderRightColor: THEME.PRIMARY }}
                 />
-                <span className="mt-3 text-sm" style={{ color: COLORS.SECONDARY }}>
+                <span className="mt-3 text-sm" style={{ color: THEME.SECONDARY }}>
                   Generating explanation...
                 </span>
               </div>
@@ -384,7 +384,7 @@ export default function ExplanationSidebar({
             {explanation && !isLoading && !error && (
               <div
                 className="text-sm leading-relaxed"
-                style={{ color: COLORS.INK }}
+                style={{ color: THEME.INK }}
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(explanation) }}
               />
             )}
