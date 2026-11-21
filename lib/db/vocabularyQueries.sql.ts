@@ -1,5 +1,5 @@
 import { sql } from './connection';
-import type { VocabularyEntry, QueryResult } from './schema';
+import type { VocabularyRow, QueryResult } from './schema';
 import { nanoid } from 'nanoid';
 
 function normalizeResult<T>(result: QueryResult<T>): T[] {
@@ -37,12 +37,12 @@ export interface UpdateVocabularyInput {
   notes?: string;
 }
 
-export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<VocabularyEntry[]> {
+export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<VocabularyRow[]> {
   try {
-    let result: QueryResult<VocabularyEntry>;
+    let result: QueryResult<VocabularyRow>;
 
     if (!filter || Object.keys(filter).length === 0) {
-      result = await sql<VocabularyEntry>`
+      result = await sql<VocabularyRow>`
         SELECT * FROM vocabulary_entries ORDER BY created_at DESC
       `;
     } else if (filter.today) {
@@ -52,59 +52,59 @@ export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<V
       endOfDay.setHours(23, 59, 59, 999);
 
       if (filter.fileName && filter.directory) {
-        result = await sql<VocabularyEntry>`
+        result = await sql<VocabularyRow>`
           SELECT * FROM vocabulary_entries
           WHERE created_at >= ${startOfDay} AND created_at <= ${endOfDay}
             AND file_name = ${filter.fileName} AND directory = ${filter.directory}
           ORDER BY created_at DESC
         `;
       } else if (filter.word) {
-        result = await sql<VocabularyEntry>`
+        result = await sql<VocabularyRow>`
           SELECT * FROM vocabulary_entries
           WHERE created_at >= ${startOfDay} AND created_at <= ${endOfDay}
             AND word ILIKE ${'%' + filter.word + '%'}
           ORDER BY created_at DESC
         `;
       } else {
-        result = await sql<VocabularyEntry>`
+        result = await sql<VocabularyRow>`
           SELECT * FROM vocabulary_entries
           WHERE created_at >= ${startOfDay} AND created_at <= ${endOfDay}
           ORDER BY created_at DESC
         `;
       }
     } else if (filter.word && filter.fileName && filter.directory) {
-      result = await sql<VocabularyEntry>`
+      result = await sql<VocabularyRow>`
         SELECT * FROM vocabulary_entries
         WHERE word ILIKE ${'%' + filter.word + '%'}
           AND file_name = ${filter.fileName} AND directory = ${filter.directory}
         ORDER BY created_at DESC
       `;
     } else if (filter.fileName && filter.directory) {
-      result = await sql<VocabularyEntry>`
+      result = await sql<VocabularyRow>`
         SELECT * FROM vocabulary_entries
         WHERE file_name = ${filter.fileName} AND directory = ${filter.directory}
         ORDER BY created_at DESC
       `;
     } else if (filter.word) {
-      result = await sql<VocabularyEntry>`
+      result = await sql<VocabularyRow>`
         SELECT * FROM vocabulary_entries
         WHERE word ILIKE ${'%' + filter.word + '%'}
         ORDER BY created_at DESC
       `;
     } else if (filter.fileName) {
-      result = await sql<VocabularyEntry>`
+      result = await sql<VocabularyRow>`
         SELECT * FROM vocabulary_entries
         WHERE file_name = ${filter.fileName}
         ORDER BY created_at DESC
       `;
     } else if (filter.directory) {
-      result = await sql<VocabularyEntry>`
+      result = await sql<VocabularyRow>`
         SELECT * FROM vocabulary_entries
         WHERE directory = ${filter.directory}
         ORDER BY created_at DESC
       `;
     } else {
-      result = await sql<VocabularyEntry>`
+      result = await sql<VocabularyRow>`
         SELECT * FROM vocabulary_entries ORDER BY created_at DESC
       `;
     }
@@ -116,9 +116,9 @@ export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<V
   }
 }
 
-export async function getVocabularyEntryById(id: string): Promise<VocabularyEntry | null> {
+export async function getVocabularyEntryById(id: string): Promise<VocabularyRow | null> {
   try {
-    const result = await sql<VocabularyEntry>`
+    const result = await sql<VocabularyRow>`
       SELECT * FROM vocabulary_entries WHERE id = ${id}
     `;
     const entries = normalizeResult(result);
@@ -129,7 +129,7 @@ export async function getVocabularyEntryById(id: string): Promise<VocabularyEntr
   }
 }
 
-export async function createVocabularyEntry(input: CreateVocabularyInput): Promise<VocabularyEntry> {
+export async function createVocabularyEntry(input: CreateVocabularyInput): Promise<VocabularyRow> {
   try {
     const id = nanoid();
     const now = new Date();
@@ -150,7 +150,7 @@ export async function createVocabularyEntry(input: CreateVocabularyInput): Promi
   }
 }
 
-export async function updateVocabularyEntry(id: string, input: UpdateVocabularyInput): Promise<VocabularyEntry | null> {
+export async function updateVocabularyEntry(id: string, input: UpdateVocabularyInput): Promise<VocabularyRow | null> {
   try {
     const now = new Date();
 
