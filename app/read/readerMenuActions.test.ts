@@ -125,9 +125,9 @@ describe('readerMenuActions', () => {
     expect(called).toStrictEqual([handlerName]);
   });
 
-  it('marks only the importance analysis as beta', () => {
-    const beta = readerMenuActions(QUIET_STATE, noopHandlers()).filter((action) => action.beta);
+  it('marks no entry as beta, the importance analysis included', () => {
+    const marked = readerMenuActions(QUIET_STATE, noopHandlers()).filter((action) => 'beta' in action);
 
-    expect(beta.map((action) => action.id)).toStrictEqual(['prioritize']);
+    expect(marked.map((action) => action.id)).toStrictEqual([]);
   });
 });
