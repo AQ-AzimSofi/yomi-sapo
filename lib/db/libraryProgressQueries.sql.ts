@@ -1,4 +1,5 @@
 import { sql } from './connection';
+import { runWriteTransaction } from './writeTransaction';
 import {
   itemMainText,
   locateBookmark,
@@ -70,7 +71,7 @@ export function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
 }
 
 async function saveRecountedRows(recounted: LibraryRow[], bookmarkRows: LibraryRow[]): Promise<void> {
-  await sql.begin(async (tx) => {
+  await runWriteTransaction(sql, async (tx) => {
     await tx`
       UPDATE text_entries AS t
       SET total_pages = u.total_pages, total_characters = u.total_characters, content_bytes = u.content_bytes

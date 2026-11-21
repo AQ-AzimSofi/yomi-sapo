@@ -73,6 +73,20 @@ describe('getLibraryRows', () => {
     expect(updatedTables(vi.mocked(sql))).toEqual([]);
   });
 
+  it('saves the recounted rows again after a DSQL write conflict', async () => {
+    const transaction = vi.fn().mockResolvedValue([]);
+    const conflict = Object.assign(new Error('change conflicts with another transaction (OC000)'), { code: '40001' });
+    vi.mocked(sql.begin)
+      .mockRejectedValueOnce(conflict)
+      .mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+    mockStaleBookReads();
+
+    await getLibraryRows(() => true);
+
+    expect(sql.begin).toHaveBeenCalledTimes(2);
+    expect(updatedTables(transaction)).toEqual(['text_entries', 'bookmarks']);
+  });
+
   it('fails when the transaction that saves the recounted rows rolls back', async () => {
     vi.mocked(sql.begin).mockRejectedValue(new Error('rolled back'));
     mockStaleBookReads();
