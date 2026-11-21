@@ -1,6 +1,6 @@
 # Scripts Directory
 
-Offline tools for preparing books, narration and the database. None of them run in the deployed app: `next.config.ts` keeps `scripts/` out of the bundle, and `tsc` and `npm run lint` skip it. Run them from the project root, TypeScript with `npx tsx` and Python with Python 3.12 and MeCab.
+Offline tools for preparing books, narration and the database. None of them run in the deployed app: `next.config.ts` keeps `scripts/` out of the bundle, and `npm run lint` skips it. `npm run typecheck:scripts` type-checks it, and CI runs that on every pull request. Run them from the project root, TypeScript with `npx tsx` and Python with Python 3.12 and MeCab.
 
 ## Contents
 
@@ -54,7 +54,7 @@ public/bookv2-furigana/<book>/
 ### Rephrasing
 
 - **Claude** (the default): a `--model` that does not start with `gemini`, such as `sonnet` or `opus`, runs `claude -p` on the Claude subscription with `prompts/claude-rephrase.md` as the system prompt. Chunks run back to back with no delay. When a call fails (usage limit, sign-in), the run stops and that chunk stays unfinished.
-- **Gemini**: a `gemini-*` model sends each chunk to the Gemini API. It rotates through `GEMINI_API_KEY` to `GEMINI_API_KEY5`, falls back to other Gemini models when one is unavailable or keeps failing, and waits `--delay` seconds divided by the number of keys between chunks. A chunk that still fails keeps its original lines as their own rephrase.
+- **Gemini**: a `gemini-*` model sends each chunk to the Gemini API. It spreads chunks over every free key named `GEMINI_API_KEY`, `GEMINI_API_KEY2`, `GEMINI_API_KEY3` and so on (the key pool `ocr/ocr-pages.ts` also uses). A free key out of daily quota for the model is set aside for the rest of the run; once none is left, `GEMINI_API_KEY_PAID` takes over on the same model. Only when that is missing or fails too does it fall back to other Gemini models. Between chunks it waits `--delay` seconds divided by the number of free keys. A chunk that still fails keeps its original lines as their own rephrase.
 
 ### Resuming
 
@@ -71,8 +71,8 @@ npx tsx scripts/epub-to-book.ts "public/bookv2-furigana/<book>" --skip-extract
 ### Before a Run
 
 - Start the local database and the dev server on port 3333 (`npm run db:start`, then `npm run dev` or `npm run dev:nosync`). `--api-url <url>` points step 6 at another server. Without the dev server the files are still written, and each chunk logs a failed database sync
-- Install the Python dependencies (see [Python Setup](#python-setup)) into the Python the pipeline calls: `C:\Users\azimm\AppData\Local\Programs\Python\Python312\python.exe` on Windows, `python3` on PATH elsewhere
-- Claude rephrasing needs the `claude` CLI signed in; Gemini rephrasing needs at least one of `GEMINI_API_KEY` to `GEMINI_API_KEY5` in `.env.local`
+- Install the Python dependencies (see [Python Setup](#python-setup)) into the Python the pipeline calls: the `PYTHON` environment variable if set, else `.venv` or `venv` in the project root, else `py -3` on Windows and `python3` elsewhere. The pipeline stops before step 1 when that Python cannot import MeCab
+- Claude rephrasing needs the `claude` CLI signed in; Gemini rephrasing needs at least one `GEMINI_API_KEY<n>` in `.env.local`, or `GEMINI_API_KEY_PAID`
 
 `--help` does not list `--skip-extract` or `--api-url`. It lists `--skip-images`, which has no effect: the extractor always writes the images.
 
