@@ -37,6 +37,7 @@ import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { fetchBookText } from '@/lib/bookTextCache';
+import { bookQuery, bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -125,17 +126,14 @@ function ReaderContent({
   const [isPrioritizing, setIsPrioritizing] = useState(false);
   const [prioritizeError, setPrioritizeError] = useState<string | null>(null);
 
-  const { imageMap } = useBookMetadata(fileNameParam, directoryParam);
+  const book = useMemo(
+    () => (fileNameParam ? bookRefFromParams(directoryParam, fileNameParam) : null),
+    [directoryParam, fileNameParam]
+  );
+  const { imageMap } = useBookMetadata(book);
   const { isGuest } = useGuestMode();
   const hasOpenedExplanation = useOpenedOnce(explanationOpen);
   const hasOpenedRubyLookup = useOpenedOnce(rubyLookupOpen);
-
-  const fullFilePath = useMemo(() => {
-    if (directoryParam && fileNameParam) {
-      return `${directoryParam}/${fileNameParam}`;
-    }
-    return fileNameParam || '';
-  }, [directoryParam, fileNameParam]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -191,7 +189,7 @@ function ReaderContent({
   }, []);
 
   useEffect(() => {
-    if (!fullFilePath) {
+    if (!book) {
       router.push('/library');
       return;
     }
@@ -209,8 +207,8 @@ function ReaderContent({
 
       try {
         const [bookText, bookmarkRes] = await Promise.all([
-          fetchBookText(`${API_ROUTES.READ_TEXT}?fileName=${encodeURIComponent(fullFilePath)}`, controller.signal),
-          fetch(`${API_ROUTES.READ_BOOKMARK}?fileName=${encodeURIComponent(fullFilePath)}`, { signal: controller.signal }),
+          fetchBookText(`${API_ROUTES.READ_TEXT}?${bookQuery(book)}`, controller.signal),
+          fetch(`${API_ROUTES.READ_BOOKMARK}?${bookQuery(book)}`, { signal: controller.signal }),
         ]);
 
         if (controller.signal.aborted) return;
@@ -234,7 +232,7 @@ function ReaderContent({
     // A late response from the book we just left would otherwise overwrite the
     // new book's text, and narration would then be keyed on the wrong unit count.
     return () => controller.abort();
-  }, [fullFilePath, router]);
+  }, [book, router]);
 
   // The book is parsed once here; ReadingContent renders these same items.
   const readerItems = useMemo(() => parseReaderItems(content), [content]);
@@ -256,7 +254,7 @@ function ReaderContent({
   useEffect(() => {
     setPriorityScores({});
     setPrioritizeError(null);
-  }, [currentPage, fullFilePath]);
+  }, [currentPage, book]);
 
   useEffect(() => {
     if (!prioritizeError) return;
@@ -315,11 +313,7 @@ function ReaderContent({
     return pageOfIndex(bookmarkItemIndex) === currentPage ? bookmarkItemIndex : pageTop;
   }, [currentPage, bookmarkItemIndex]);
 
-  const { manifest: narration, error: narrationLoadError } = useNarration(
-    fileNameParam,
-    directoryParam,
-    totalItems
-  );
+  const { manifest: narration, error: narrationLoadError } = useNarration(book, totalItems);
 
   const {
     status: audioStatus,
@@ -414,10 +408,9 @@ function ReaderContent({
   }, [audioIndex, audiobookEnabled, currentPage]);
 
   const refetchBookmark = useCallback(async () => {
+    if (!book) return;
     try {
-      const res = await fetch(
-        `${API_ROUTES.READ_BOOKMARK}?fileName=${encodeURIComponent(fullFilePath)}`
-      );
+      const res = await fetch(`${API_ROUTES.READ_BOOKMARK}?${bookQuery(book)}`);
       if (res.ok) {
         const data = await res.json();
         setBookmarkText(data.text || '');
@@ -426,10 +419,10 @@ function ReaderContent({
     } catch (err) {
       console.error('Failed to refetch bookmark:', err);
     }
-  }, [fullFilePath]);
+  }, [book]);
 
   const bookmarkPlayingSentence = useCallback(async () => {
-    if (audioStatus === 'idle' || audioIndex < 0) return;
+    if (!book || audioStatus === 'idle' || audioIndex < 0) return;
     const unit = playableUnits[audioIndex];
     if (!unit) return;
     const page = pageOfIndex(audioIndex);
@@ -437,13 +430,13 @@ function ReaderContent({
       const res = await fetch(API_ROUTES.WRITE_BOOKMARK, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: fullFilePath, content: unit.main, page }),
+        body: JSON.stringify({ ...book, content: unit.main, page }),
       });
       if (res.ok) refetchBookmark();
     } catch (err) {
       console.error('Failed to bookmark playing sentence:', err);
     }
-  }, [audioStatus, audioIndex, playableUnits, fullFilePath, refetchBookmark]);
+  }, [book, audioStatus, audioIndex, playableUnits, refetchBookmark]);
 
   useEffect(() => {
     if (!audiobookEnabled || !keyboardMode) return;
@@ -600,7 +593,8 @@ function ReaderContent({
     }
   }, [unitMainTexts]);
 
-  if (isLoading) {
+  // Without a book the reader is on its way back to the library.
+  if (isLoading || !book) {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
@@ -655,6 +649,7 @@ function ReaderContent({
     : { bg: READER_THEME.SURFACE, surface: READER_THEME.SURFACE_MUTED, text: COLORS.INK, muted: COLORS.SECONDARY, rule: COLORS.NEUTRAL };
 
   const hasBookmark = bookmarkPage != null && bookmarkPage > 0;
+  const registryKey = rubyRegistryKey(book);
 
   return (
     <div
@@ -740,8 +735,7 @@ function ReaderContent({
         <ReadingContent
           items={readerItems}
           contentType={contentType}
-          fileName={fileNameParam || ''}
-          directory={directoryParam || ''}
+          book={book}
           bookmarkIndex={bookmarkItemIndex}
           showFurigana={showFurigana}
           displayMode={displayMode}
@@ -865,7 +859,7 @@ function ReaderContent({
           onClose={() => setExplanationOpen(false)}
           sentence={selectedSentence}
           context={sentenceContext}
-          fileName={fullFilePath}
+          fileName={toBookKey(book)}
           showFurigana={showFurigana}
         />
       )}
@@ -874,15 +868,12 @@ function ReaderContent({
         <RubyLookupSidebar
           isOpen={rubyLookupOpen}
           onClose={() => setRubyLookupOpen(false)}
-          directory={directoryParam?.split('/')[0] || ''}
-          bookName={directoryParam?.split('/').slice(1).join('/') || ''}
+          directory={registryKey.directory}
+          bookName={registryKey.bookName}
         />
       )}
 
-      <FloatingStickyNotes
-        directory={directoryParam?.split('/')[0] || ''}
-        bookName={directoryParam?.split('/').slice(1).join('/') || ''}
-      />
+      <FloatingStickyNotes directory={registryKey.directory} bookName={registryKey.bookName} />
 
       {audiobookEnabled && (
         <AudioPlayerBar
