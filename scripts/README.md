@@ -35,7 +35,7 @@ Steps:
 2. Build `ruby-registry.json` from the EPUB's ruby (`core/extract-ruby-smart.py`).
 3. Upload `images/` and the metadata JSON to the BookImages bucket when `BOOK_IMAGES_BUCKET` is set in `.env.local` (see "Book Illustrations" in the root README).
 4. Rephrase the text chunk by chunk.
-5. Add furigana to each rephrased chunk (`core/add-furigana-to-text.py`) and append it to `<book>-rephrase-furigana.txt`, the text the reader shows.
+5. Add furigana to each rephrased chunk (`core/add-furigana-to-text.py`). Each chunk is saved to its own files in `chunks/`, and `<book>-rephrase.txt` and `<book>-rephrase-furigana.txt` (the text the reader shows) are rebuilt from them in chunk order.
 6. After each chunk, call `PUT /api/text-entries` on the local dev server, which copies that file into the local database, so the book can be read while it is still being processed.
 
 ```
@@ -46,7 +46,11 @@ public/bookv2-furigana/<book>/
 ├── ruby-registry.json               vocabulary index
 ├── <book>-rephrase.txt              rephrase before furigana
 ├── <book>-rephrase-furigana.txt     rephrase with furigana (synced to the database)
-└── <book>-rephrase-progress.json    resume state
+├── <book>-rephrase-progress.json    resume state
+└── chunks/                          one set of files per chunk, which the two outputs are built from
+    ├── 0000.rephrase.txt            the model's reply
+    ├── 0000.reader.txt              the text furigana is added to
+    └── 0000.furigana.txt            what the reader shows
 ```
 
 `public/bookv2-furigana/` is gitignored and never deployed. The app reads book text from the database and illustrations from the BookImages bucket.
@@ -54,11 +58,15 @@ public/bookv2-furigana/<book>/
 ### Rephrasing
 
 - **Claude** (the default): a `--model` that does not start with `gemini`, such as `sonnet` or `opus`, runs `claude -p` on the Claude subscription with `prompts/claude-rephrase.md` as the system prompt. Chunks run back to back with no delay. When a call fails (usage limit, sign-in), the run stops and that chunk stays unfinished.
-- **Gemini**: a `gemini-*` model sends each chunk to the Gemini API. It spreads chunks over every free key named `GEMINI_API_KEY`, `GEMINI_API_KEY2`, `GEMINI_API_KEY3` and so on (the key pool `ocr/ocr-pages.ts` also uses). A free key out of daily quota for the model is set aside for the rest of the run; once none is left, `GEMINI_API_KEY_PAID` takes over on the same model. Only when that is missing or fails too does it fall back to other Gemini models. Between chunks it waits `--delay` seconds divided by the number of free keys. A chunk that still fails keeps its original lines as their own rephrase.
+- **Gemini**: a `gemini-*` model sends each chunk to the Gemini API. It spreads chunks over every free key named `GEMINI_API_KEY`, `GEMINI_API_KEY2`, `GEMINI_API_KEY3` and so on (the key pool `ocr/ocr-pages.ts` also uses). A free key out of daily quota for the model is set aside for the rest of the run; once none is left, `GEMINI_API_KEY_PAID` takes over on the same model. When no key has quota left for the model, the run stops like a Claude run does, and that chunk stays unfinished. A per-minute limit, a server error or a reply in the wrong format waits and retries on the next key. Only an unknown model (404) moves on to the next Gemini model. Between chunks it waits `--delay` seconds divided by the number of free keys. A chunk whose attempts all fail keeps its original lines as their own rephrase, is marked `fallback`, and is retried on the next run.
 
 ### Resuming
 
-Progress is saved in `<book>-rephrase-progress.json`. Run the same command again to continue from the first unfinished chunk; a resumed run keeps the model the book started with. The script refuses to resume when the source text has changed since. `--reset` starts over and first moves the earlier `-rephrase.txt` and `-rephrase-furigana.txt` aside as `.bak` files.
+Progress is saved in `<book>-rephrase-progress.json`. Run the same command again to continue; a resumed run keeps the model the book started with. It redoes every chunk that is not finished: pending chunks, `fallback` chunks, and chunks saved without furigana (only the furigana step is redone, from `chunks/<n>.reader.txt`, without asking the model again). The final summary lists the chunks still left, and the run reports itself incomplete until every chunk is rephrased with furigana.
+
+A chunk counts as done only once its chunk files are written and the progress file says so, and the two outputs are always rebuilt from the chunk files. So a run killed at any point, or resumed any number of times, never repeats or reorders text. The progress file also stores a hash of each chunk's source: a chunk whose source no longer matches is redone. The script refuses to resume when the whole source text has changed since, or when the progress file cannot be read. `--reset` starts over and first moves the earlier `-rephrase.txt`, `-rephrase-furigana.txt` and `chunks/` aside as `.bak`.
+
+A progress file from before chunk files (version 1) is moved over on the first resume: the earlier outputs are split back into chunk files by matching each chunk's `<` lines to its source lines. A chunk the earlier run was stopped in and had only partly saved is redone. If an output does not split cleanly, for example a Gemini reply that rewrote the original lines, the script stops and leaves the files untouched; `--reset` then starts the book over.
 
 ### Text That Is Not an EPUB
 
