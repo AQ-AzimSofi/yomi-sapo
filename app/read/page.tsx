@@ -28,6 +28,7 @@ import { buildPlayableUnits } from '@/lib/utils/buildPlayableUnits';
 import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
+import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -117,6 +118,8 @@ function ReaderContent({
 
   const { imageMap } = useBookMetadata(fileNameParam, directoryParam);
   const { isGuest } = useGuestMode();
+  const hasOpenedExplanation = useOpenedOnce(explanationOpen);
+  const hasOpenedRubyLookup = useOpenedOnce(rubyLookupOpen);
 
   const fullFilePath = useMemo(() => {
     if (directoryParam && fileNameParam) {
@@ -863,21 +866,25 @@ function ReaderContent({
         />
       </BottomSheet>
 
-      <ExplanationSidebar
-        isOpen={explanationOpen}
-        onClose={() => setExplanationOpen(false)}
-        sentence={selectedSentence}
-        context={sentenceContext}
-        fileName={fullFilePath}
-        showFurigana={showFurigana}
-      />
+      {hasOpenedExplanation && (
+        <ExplanationSidebar
+          isOpen={explanationOpen}
+          onClose={() => setExplanationOpen(false)}
+          sentence={selectedSentence}
+          context={sentenceContext}
+          fileName={fullFilePath}
+          showFurigana={showFurigana}
+        />
+      )}
 
-      <RubyLookupSidebar
-        isOpen={rubyLookupOpen}
-        onClose={() => setRubyLookupOpen(false)}
-        directory={directoryParam?.split('/')[0] || ''}
-        bookName={directoryParam?.split('/').slice(1).join('/') || ''}
-      />
+      {hasOpenedRubyLookup && (
+        <RubyLookupSidebar
+          isOpen={rubyLookupOpen}
+          onClose={() => setRubyLookupOpen(false)}
+          directory={directoryParam?.split('/')[0] || ''}
+          bookName={directoryParam?.split('/').slice(1).join('/') || ''}
+        />
+      )}
 
       <FloatingStickyNotes
         directory={directoryParam?.split('/')[0] || ''}
@@ -906,7 +913,7 @@ function ReaderContent({
         />
       )}
 
-      <GuestApiKeyModal isDarkMode={isDarkMode} />
+      {isGuest && <GuestApiKeyModal isDarkMode={isDarkMode} />}
     </div>
   );
 }
