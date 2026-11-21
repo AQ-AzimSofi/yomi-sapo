@@ -12,11 +12,13 @@ import type { BookRef } from '@/lib/books/bookRef';
 import type { BookMetadata, NarrationManifest } from '@/lib/types';
 import type {
   ApiErrorResponse,
+  AuthResponse,
   BookmarkResponse,
   DeleteVocabularyResponse,
   ExplanationRequest,
   ExplanationResponse,
   LibraryProgressResponse,
+  LoginRequest,
   PrioritizeRequest,
   PrioritizeResponse,
   RubyRegistryItemType,
@@ -24,6 +26,7 @@ import type {
   RubyRegistryResponse,
   SaveBookmarkRequest,
   SaveRubyEntryRequest,
+  SessionResponse,
   TextFileListResponse,
   TranslateRequest,
   TranslateResponse,
@@ -146,6 +149,19 @@ function bookParams(book: BookRef): Record<string, string> {
 function nullOnApiError(error: unknown): null {
   if (error instanceof ApiError) return null;
   throw error;
+}
+
+export async function login(password: string): Promise<AuthResponse> {
+  const body: LoginRequest = { password };
+  return request<AuthResponse>(API_ROUTES.AUTH_LOGIN, { method: 'POST', body });
+}
+
+export async function logout(): Promise<AuthResponse> {
+  return request<AuthResponse>(API_ROUTES.AUTH_LOGOUT, { method: 'POST' });
+}
+
+export async function fetchSession(): Promise<SessionResponse> {
+  return request<SessionResponse>(API_ROUTES.AUTH_SESSION);
 }
 
 export async function listTextFiles(): Promise<TextFileListResponse> {

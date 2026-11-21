@@ -13,8 +13,11 @@ import {
   fetchLibraryProgress,
   fetchNarration,
   fetchRubyRegistry,
+  fetchSession,
   fetchVocabulary,
   listTextFiles,
+  login,
+  logout,
   prioritize,
   removeRubyRegistryItem,
   request,
@@ -577,5 +580,44 @@ describe('vocabulary calls', () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'internal_error', message }, message }, 500));
 
     await expect(fetchVocabulary()).rejects.toMatchObject({ body: { message } });
+  });
+});
+
+describe('auth calls', () => {
+  it('posts the password to log in', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ message: 'Login successful', success: true }));
+
+    await login('secret');
+
+    expect(lastCall().url).toBe('/api/auth?action=login');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"password":"secret"}',
+    });
+  });
+
+  it('keeps the top-level message of a refused login', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: { code: 'invalid_password', message: 'Invalid password' }, message: 'Invalid password' }, 401)
+    );
+
+    await expect(login('wrong')).rejects.toMatchObject({ status: 401, body: { message: 'Invalid password' } });
+  });
+
+  it('posts an empty logout with no content type', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ message: 'Logged out successfully', success: true }));
+
+    await logout();
+
+    expect(lastCall().url).toBe('/api/auth?action=logout');
+    expect(lastCall().init).toMatchObject({ method: 'POST', headers: {}, body: undefined });
+  });
+
+  it('reads whether the visitor is signed in', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ authenticated: false }));
+
+    expect(await fetchSession()).toEqual({ authenticated: false });
+    expect(lastCall().url).toBe('/api/auth?action=session');
   });
 });

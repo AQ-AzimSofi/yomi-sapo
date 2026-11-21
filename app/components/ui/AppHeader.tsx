@@ -2,8 +2,9 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { API_ROUTES, COLORS, PAGE_ROUTES } from '@/lib/constants';
+import { COLORS, PAGE_ROUTES } from '@/lib/constants';
 import { clearBookTextCache } from '@/lib/bookTextCache';
+import { ApiError, logout } from '@/lib/api/client';
 
 type AppPage = 'library' | 'vocabulary';
 
@@ -21,7 +22,11 @@ const NAV_ITEMS: ReadonlyArray<{ page: AppPage; label: string; href: string }> =
 export const NAV_ITEM_CLASS = 'py-3 cursor-pointer interactive-link';
 
 async function signOut(): Promise<void> {
-  await fetch(API_ROUTES.AUTH_LOGOUT, { method: 'POST' });
+  // An error answer still signs this browser out: the stored books are cleared
+  // and the login page shown. Only an unreachable server stops it.
+  await logout().catch((error: unknown) => {
+    if (!(error instanceof ApiError)) throw error;
+  });
   await clearBookTextCache();
   window.location.href = PAGE_ROUTES.LOGIN;
 }
