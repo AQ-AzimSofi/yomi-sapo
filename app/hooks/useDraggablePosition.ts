@@ -55,7 +55,10 @@ export function useDraggablePosition({ storageKey, size, defaultPosition }: Drag
 
   useEffect(() => {
     if (!position || isDragging) return;
-    localStorage.setItem(storageKey, JSON.stringify(position));
+    // A full storage only costs the saved position; letting the error escape would unmount the reader.
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(position));
+    } catch {}
   }, [position, isDragging, storageKey]);
 
   const startDrag = useCallback((pointer: Point) => {
