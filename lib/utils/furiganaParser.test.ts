@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFurigana, segmentsToHTML, stripFurigana, type FuriganaSegment } from './furiganaParser';
+import { parseFurigana, segmentsToHTML, stripAiFurigana, stripFurigana, type FuriganaSegment } from './furiganaParser';
 
 describe('parseFurigana', () => {
   it('returns plain text with no markup as one text segment', () => {
@@ -156,6 +156,14 @@ describe('segmentsToHTML', () => {
     expect(segmentsToHTML([], true)).toBe('');
   });
 
+  it('escapes the base text of a ruby segment when furigana is hidden', () => {
+    expect(segmentsToHTML([{ type: 'ruby', text: '<i>字', ruby: 'じ' }], false)).toBe('&lt;i&gt;字');
+  });
+
+  it('escapes the base text of a ruby segment with an empty reading', () => {
+    expect(segmentsToHTML([{ type: 'ruby', text: '<i>字', ruby: '' }], true)).toBe('&lt;i&gt;字');
+  });
+
   it('escapes markup in plain text so it shows as text', () => {
     expect(segmentsToHTML([{ type: 'text', text: '型は<string>&"引用"\'' }], true)).toBe(
       '型は&lt;string&gt;&amp;&quot;引用&quot;&#39;'
@@ -198,6 +206,16 @@ describe('stripFurigana', () => {
     expect(stripFurigana('ひらがなだけ')).toBe('ひらがなだけ');
   });
 
+  it('keeps ruby text that follows the last reading', () => {
+    expect(stripFurigana('<ruby>漢<rt>かん</rt>字</ruby>と<ruby>字<rt>じ</rt>余り</ruby>です')).toBe('漢字と字余りです');
+  });
+
+  it('drops rp fallback parentheses inside a ruby tag', () => {
+    expect(parseFurigana('<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>')).toEqual([
+      { type: 'ruby', text: '漢字', ruby: 'かんじ' },
+    ]);
+  });
+
   it('keeps only the base text of ruby tags with and without rb', () => {
     expect(stripFurigana('<ruby>今日<rt>きょう</rt></ruby>は<ruby><rb>雨</rb><rt>あめ</rt></ruby>です')).toBe(
       '今日は雨です'
@@ -226,5 +244,24 @@ describe('stripFurigana', () => {
 
   it('keeps every base character of a multi-part ruby tag', () => {
     expect(stripFurigana('<ruby><rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt></ruby>')).toBe('漢字');
+  });
+});
+
+describe('stripAiFurigana', () => {
+  it.each([
+    ['**焦燥感**[しょうそうかん]が募る', '**焦燥感**が募る'],
+    ['難しい[むずかしい]言葉[ことば]', '難しい言葉'],
+    ['〇〇[まるまる]', '〇〇'],
+    ['<ruby>雨<rt>あめ</rt></ruby>の日', '雨の日'],
+  ])('removes the readings from %j', (text, expected) => {
+    expect(stripAiFurigana(text)).toBe(expected);
+  });
+
+  it('keeps a markdown link whose text is kana', () => {
+    expect(stripAiFurigana('[ここ](https://example.com)')).toBe('[ここ](https://example.com)');
+  });
+
+  it('keeps a bracket that holds more than kana', () => {
+    expect(stripAiFurigana('[注1]を見る')).toBe('[注1]を見る');
   });
 });

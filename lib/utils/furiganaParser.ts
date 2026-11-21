@@ -13,10 +13,14 @@ const ESCAPED_FOOTNOTE_TAG = /&lt;(\/?)sup&gt;/g;
 const RUBY_ELEMENT_PATTERN = /<ruby>(.*?)<\/ruby>/g;
 // One ruby element may hold several base/reading pairs: 幼<rt>おさな</rt>馴<rt>な</rt>.
 const RUBY_PAIR_PATTERN = /(?:<rb>)?([^<]+)(?:<\/rb>)?<rt>([^<]*)<\/rt>/g;
+// <rp> holds the parentheses shown by browsers without ruby support.
+const RUBY_FALLBACK_PATTERN = /<rp>[^<]*<\/rp>/g;
 // The base is the kanji run right before the bracket and the reading is kana,
 // so notes such as [IMAGE:...] are never read as furigana.
 const BRACKET_FURIGANA_PATTERN = /([㐀-䶿一-鿿々〆ヶ]+)\[([ぁ-ゖァ-ヺー]+)\]/g;
 const TAG_PATTERN = /<[^>]*>/g;
+// AI explanations put a reading after any word (難しい[むずかしい]), not only after kanji.
+const AI_READING_PATTERN = /\[[ぁ-ゖー]+\](?!\()/g;
 
 function escapeBookText(text: string): string {
   return escapeHtml(text).replace(ESCAPED_FOOTNOTE_TAG, '<$1sup>');
@@ -50,9 +54,12 @@ function textSegments(text: string): FuriganaSegment[] {
 }
 
 function parseRubyElement(match: RegExpMatchArray): FuriganaSegment[] {
-  const pairs = [...match[1].matchAll(RUBY_PAIR_PATTERN)];
-  if (pairs.length === 0) return textSegments(match[1].replace(TAG_PATTERN, ''));
-  return pairs.map(([, base, reading]): FuriganaSegment => ({ type: 'ruby', text: base, ruby: reading }));
+  return splitByMatches({
+    text: match[1].replace(RUBY_FALLBACK_PATTERN, ''),
+    pattern: RUBY_PAIR_PATTERN,
+    parseGap: (gap) => textSegments(gap.replace(TAG_PATTERN, '')),
+    parseMatch: ([, base, reading]) => [{ type: 'ruby', text: base, ruby: reading }],
+  });
 }
 
 function parseBracketFurigana(text: string): FuriganaSegment[] {
@@ -106,4 +113,8 @@ export function segmentsToHTML(segments: FuriganaSegment[], showFurigana: boolea
 export function stripFurigana(text: string): string {
   const segments = parseFurigana(text);
   return segments.map(s => s.text).join('');
+}
+
+export function stripAiFurigana(text: string): string {
+  return stripFurigana(text).replace(AI_READING_PATTERN, '');
 }
