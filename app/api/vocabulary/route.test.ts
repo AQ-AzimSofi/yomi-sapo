@@ -86,7 +86,7 @@ describe('POST /api/vocabulary', () => {
     notes: 'メモ',
   };
 
-  it('saves the camelCase body and returns the entry in the camelCase shape', async () => {
+  it('saves the camelCase body and returns the created entry', async () => {
     vi.mocked(createVocabularyEntry).mockResolvedValue(ENTRY);
 
     const response = await POST(createRequest(CREATE_BODY));

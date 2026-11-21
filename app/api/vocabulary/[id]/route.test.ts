@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 describe('GET /api/vocabulary/[id]', () => {
-  it('returns the entry in the camelCase shape', async () => {
+  it('wraps the entry the query returns in a success response', async () => {
     vi.mocked(getVocabularyEntryById).mockResolvedValue(ENTRY);
 
     const response = await GET(new Request('http://localhost/api/vocabulary/entry-1'), ENTRY_PARAMS);
