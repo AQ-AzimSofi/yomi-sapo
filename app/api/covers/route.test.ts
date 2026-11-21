@@ -11,6 +11,7 @@ vi.mock('@aws-sdk/client-s3', () => ({
     constructor(readonly input: unknown) {}
   },
   NoSuchKey: class extends Error {},
+  NotFound: class extends Error {},
 }));
 
 const COVER_URL = 'http://localhost/api/covers?directory=bookv2-furigana&fileName=%E3%81%BB%E3%82%93';
