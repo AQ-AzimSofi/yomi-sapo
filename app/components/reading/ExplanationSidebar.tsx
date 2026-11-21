@@ -13,6 +13,7 @@ import { shareRequest } from '@/lib/utils/shareRequest';
 import type { ExplanationRequest } from '@/lib/api/contracts';
 import type { ExplanationMode } from '@/lib/constants';
 import { IDLE_EXPLANATION, nextExplanationDisplay } from './explanationDisplay';
+import { contextSizeToCommit, isSliderStepKey } from './contextSlider';
 
 interface ExplanationSidebarProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export default function ExplanationSidebar({
 }: ExplanationSidebarProps) {
   const [display, dispatchDisplay] = React.useReducer(nextExplanationDisplay, IDLE_EXPLANATION);
   const requestCountRef = React.useRef(0);
+  const [draftContextSize, setDraftContextSize] = React.useState<number | null>(null);
 
   const [touchStart, setTouchStart] = React.useState<number>(0);
   const [touchEnd, setTouchEnd] = React.useState<number>(0);
@@ -161,8 +163,15 @@ export default function ExplanationSidebar({
 
   const renderMarkdown = (text: string): string => renderSafeMarkdown(stripAiFurigana(text));
 
+  const commitContextSize = () => {
+    const settledSize = contextSizeToCommit(draftContextSize, contextSize);
+    setDraftContextSize(null);
+    if (settledSize !== null) setContextSize(settledSize);
+  };
+
+  const shownContextSize = draftContextSize ?? contextSize;
   const contextPercent =
-    ((contextSize - EXPLANATION_CONFIG.MIN_CONTEXT_SIZE) /
+    ((shownContextSize - EXPLANATION_CONFIG.MIN_CONTEXT_SIZE) /
       (EXPLANATION_CONFIG.MAX_CONTEXT_SIZE - EXPLANATION_CONFIG.MIN_CONTEXT_SIZE)) *
     100;
 
@@ -283,7 +292,7 @@ export default function ExplanationSidebar({
                 className="text-xs font-medium flex items-center gap-1 cursor-pointer interactive-link"
                 style={{ color: THEME.SECONDARY }}
               >
-                Context: {contextSize} chars
+                Context: {shownContextSize} chars
                 <svg
                   className="w-3 h-3"
                   fill="none"
@@ -305,8 +314,16 @@ export default function ExplanationSidebar({
                     type="range"
                     min={EXPLANATION_CONFIG.MIN_CONTEXT_SIZE}
                     max={EXPLANATION_CONFIG.MAX_CONTEXT_SIZE}
-                    value={contextSize}
-                    onChange={(e) => setContextSize(parseInt(e.target.value, 10))}
+                    value={shownContextSize}
+                    onChange={(e) => setDraftContextSize(parseInt(e.target.value, 10))}
+                    // Captured so the release still reaches the slider when the pointer has left it.
+                    onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+                    onPointerUp={commitContextSize}
+                    onPointerCancel={commitContextSize}
+                    onKeyUp={(e) => {
+                      if (isSliderStepKey(e.key)) commitContextSize();
+                    }}
+                    onBlur={commitContextSize}
                     className="w-full"
                     style={{
                       background: `linear-gradient(to right, ${THEME.PRIMARY} 0%, ${THEME.PRIMARY} ${contextPercent}%, ${THEME.NEUTRAL} ${contextPercent}%, ${THEME.NEUTRAL} 100%)`,
