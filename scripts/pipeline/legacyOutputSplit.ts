@@ -22,11 +22,21 @@ export function listExpectedHeads(chunk: string): string[] {
   return splitParagraphs(stripRubyTags(chunk)).map(normalizeForCompare);
 }
 
+// A chunk starts after the last append separator before its first head, so a model preamble
+// such as 以下が要約です。 stays with its own chunk.
+function findChunkStart(text: string, headLines: readonly HeadLine[], firstHeadIndex: number): number | undefined {
+  if (firstHeadIndex === 0) return 0;
+  const firstHeadOffset = headLines[firstHeadIndex].offset;
+  const separatorOffset = text.lastIndexOf(CHUNK_SEPARATOR, firstHeadOffset - CHUNK_SEPARATOR.length);
+  if (separatorOffset <= headLines[firstHeadIndex - 1].offset) return undefined;
+  return separatorOffset + CHUNK_SEPARATOR.length;
+}
+
 /**
  * Splits an output the pipeline built by appending chunk after chunk back into one text per
- * chunk. Every < head must match its chunk's source line in order, and each chunk after the
- * first must start right after the append separator; otherwise the text is not that sequence
- * of chunks and undefined is returned.
+ * chunk. Every < head must match its chunk's source line in order, and an append separator must
+ * come between each chunk's first head and the head before it; otherwise the text is not that
+ * sequence of chunks and undefined is returned.
  */
 export function splitByChunkHeads(text: string, expectedHeadsByChunk: readonly string[][]): string[] | undefined {
   const headLines = findHeadLines(text);
@@ -36,11 +46,8 @@ export function splitByChunkHeads(text: string, expectedHeadsByChunk: readonly s
   if (expectedHeadsByChunk.length === 0) return text === '' ? [] : undefined;
 
   const firstHeadIndexes = expectedHeadsByChunk.map((_, chunkIndex) => expectedHeadsByChunk.slice(0, chunkIndex).flat().length);
-  const chunkStarts = firstHeadIndexes.map((headIndex, chunkIndex) => (chunkIndex === 0 ? 0 : headLines[headIndex].offset));
-  const startsAfterSeparator = chunkStarts
-    .slice(1)
-    .every((start) => text.slice(start - CHUNK_SEPARATOR.length, start) === CHUNK_SEPARATOR);
-  if (!startsAfterSeparator) return undefined;
+  const chunkStarts = firstHeadIndexes.map((headIndex) => findChunkStart(text, headLines, headIndex));
+  if (chunkStarts.includes(undefined)) return undefined;
 
   const chunkTexts = chunkStarts.map((start, chunkIndex) => {
     const nextStart = chunkStarts[chunkIndex + 1];
