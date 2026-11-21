@@ -679,9 +679,9 @@ function ReaderContent({
             zIndex: 60,
             padding: '8px 16px',
             backgroundColor: THEME.SURFACE,
-            color: COLORS.DANGER,
+            color: THEME.DANGER,
             boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
-            border: `1px solid ${COLORS.DANGER}`,
+            border: `1px solid ${THEME.DANGER}`,
             fontSize: 13,
             fontWeight: 500,
           }}
