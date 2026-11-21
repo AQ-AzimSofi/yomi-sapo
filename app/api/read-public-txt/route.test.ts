@@ -177,14 +177,15 @@ describe('GET /api/read-public-txt', () => {
     expect(getTextEntry).toHaveBeenCalledWith('a/c', 'public');
   });
 
-  it('answers 500 without an ETag and logs the book when the database fails', async () => {
+  it('answers a generic 500 without an ETag and logs the book when the database fails', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(getTextEntryVersion).mockRejectedValue(new Error('connection lost'));
+    vi.mocked(getTextEntryVersion).mockRejectedValue(new Error('password authentication failed for user "neondb_owner"'));
 
     const response = await GET(readRequest(OWNER_PATH));
 
     expect(response.status).toBe(500);
     expect(response.headers.get('etag')).toBeNull();
+    expect(JSON.stringify(await response.json())).not.toContain('neondb_owner');
     expect(error).toHaveBeenCalledWith('Failed to read book text:', { fileName: OWNER_PATH, directory: null }, expect.any(Error));
     error.mockRestore();
   });
