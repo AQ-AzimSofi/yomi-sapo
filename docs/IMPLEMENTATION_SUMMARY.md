@@ -4,11 +4,9 @@ Both requested features have been successfully implemented:
 
 ## Feature 1: Vocabulary Diary System
 
-A comprehensive word diary system that allows you to save interesting words while reading, with full context and easy navigation back to the source.
+A word diary that keeps saved words with their sentence context and a link back to the source. Saving words from the reader went away with the old vocabulary mode and returns in a later update; the vocabulary page lists, searches and deletes saved words.
 
 ### Components Created:
-- **VocabularySaveDialog** (`app/components/ui/VocabularySaveDialog.tsx`): Modal for saving selected words with optional reading and notes
-- **VocabularySidebar** (`app/components/ui/VocabularySidebar.tsx`): Sidebar showing today's saved words
 - **Vocabulary Page** (`app/vocabulary/page.tsx`): Full list of all saved words with search functionality
 
 ### Database:
@@ -23,21 +21,16 @@ A comprehensive word diary system that allows you to save interesting words whil
 - `DELETE /api/vocabulary/[id]` - Delete entry
 
 ### Features:
-1. **Today's Words Sidebar**:
-   - Quick access to words saved today
-   - Shows word, reading, sentence preview, and notes
-   - Click any word to navigate back to its source
-
-2. **Full Vocabulary Page** (`/vocabulary`):
+1. **Full Vocabulary Page** (`/vocabulary`):
    - Opened from 単語帳 in the shared `AppHeader`
    - View all saved words in a grid layout
    - Search across word, reading, sentence, and notes
    - Click any word for detailed view
    - Delete functionality
-   - Navigate back to source with word highlighting
+   - Open the book each word came from
 
-3. **Word Highlighting**:
-   - When navigating from vocabulary page to source
+2. **Word Highlighting**:
+   - When the book opened from the vocabulary page shows the word on its first page
    - Paragraph containing the word gets highlighted (orange glow)
    - Highlight fades after 3 seconds
 
@@ -108,7 +101,7 @@ Simple password-only authentication to protect your Japanese reading helper from
 
 ## Modified Existing Files
 
-### `app/components/ui/CollapsibleItem.tsx`:
+### `app/components/reading/CollapsibleItem.tsx`:
 - Added word highlighting effect when navigating from vocabulary page
 
 ---

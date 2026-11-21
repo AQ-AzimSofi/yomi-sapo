@@ -46,7 +46,7 @@ The frontend follows a **minimal, reading-focused** design philosophy:
 ### Route Overview
 
 \`\`\`
-/                    -> Redirects to /library (or /read if params exist)
+/                    -> Redirects to /library
 /library             -> Book library grid view
 /read                -> Minimal distraction-free reader
 /vocabulary          -> Saved vocabulary list
@@ -62,15 +62,16 @@ The frontend follows a **minimal, reading-focused** design philosophy:
 The entry point for browsing and selecting books.
 
 **Features**:
-- Grid layout of all books organized by directory
+- One grid of all books with sort options (最近読んだ, 追加順, 進捗, タイトル) and a directory tag per card
 - Progress bar per book showing reading completion
-- Collapsible directory sections
 - Shared \`AppHeader\` with 本棚, 単語帳, 同期 and ログアウト
 
 **Components Used**:
 - \`AppHeader\` - Shared page header
 - \`LibraryGrid\` - Main grid container
-- \`DirectorySection\` - Collapsible directory group
+- \`ContinueReading\` - Card for the book you were last reading
+- \`BookCover\` - Cover image of a book
+- \`DbSyncModal\` - Local and production sync dialog
 - \`BookCard\` - Individual book card
 
 **Navigation**:
@@ -121,28 +122,27 @@ The primary reading experience with distraction-free design.
 \`\`\`
 app/
 ├── components/
-│   ├── ui/                        # Shared UI components
-│   │   ├── AppHeader.tsx          # Shared page header
+│   ├── reading/                   # Reader components
 │   │   ├── CollapsibleItem.tsx    # Expandable reading unit
 │   │   ├── ParagraphItem.tsx      # Paragraph display
 │   │   ├── ExplanationSidebar.tsx # AI explanation panel
-│   │   ├── Pagination.tsx         # Page navigation
+│   │   ├── RubyLookupSidebar.tsx  # Ruby lookup panel
 │   │   ├── TTSButton.tsx          # Text-to-speech button
-│   │   ├── TTSPlayerBar.tsx       # TTS playback controls
-│   │   ├── VocabularySaveDialog.tsx
-│   │   ├── RubyLookupSidebar.tsx
-│   │   └── BookImage.tsx
-│   ├── icons/                     # Icon components
-│   │   ├── BookmarkFilled.tsx
-│   │   ├── BookmarkUnfilled.tsx
-│   │   ├── ChevronUp.tsx
-│   │   └── ChevronDown.tsx
+│   │   ├── GuestApiKeyModal.tsx   # Guest Gemini key prompt
+│   │   └── BookImage.tsx          # Book illustration
+│   ├── ui/                        # Shared UI components
+│   │   ├── AppHeader.tsx          # Shared page header
+│   │   ├── BottomSheet.tsx        # Mobile bottom sheet
+│   │   └── GuestModeBanner.tsx    # Guest preview banner
+│   └── icons/                     # Icon components
 ├── library/
 │   ├── page.tsx                   # Library page
 │   └── components/
 │       ├── LibraryGrid.tsx        # Book grid
-│       ├── DirectorySection.tsx   # Directory group
-│       └── BookCard.tsx           # Book card
+│       ├── ContinueReading.tsx    # Last book you were reading
+│       ├── BookCard.tsx           # Book card
+│       ├── BookCover.tsx          # Cover image
+│       └── DbSyncModal.tsx        # Sync dialog
 └── read/
     ├── page.tsx                   # Minimal reader
     └── components/
@@ -155,11 +155,11 @@ app/
 ### Key Components
 
 #### \`CollapsibleItem\`
-**File**: \`app/components/ui/CollapsibleItem.tsx\`
+**File**: \`app/components/reading/CollapsibleItem.tsx\`
 
 The primary reading unit for rephrase-format content.
 
-**Props**:
+**Props** (main ones):
 \`\`\`typescript
 interface CollapsibleItemProps {
   id?: string;
@@ -188,11 +188,11 @@ interface CollapsibleItemProps {
 ---
 
 #### \`ParagraphItem\`
-**File**: \`app/components/ui/ParagraphItem.tsx\`
+**File**: \`app/components/reading/ParagraphItem.tsx\`
 
 Paragraph display for furigana-format content.
 
-**Props**:
+**Props** (main ones):
 \`\`\`typescript
 interface ParagraphItemProps {
   id?: string;
@@ -202,8 +202,6 @@ interface ParagraphItemProps {
   showFurigana: boolean;
   onBookmarkSuccess: () => void;
   onSentenceClick?: (sentence: string) => void;
-  fontSize: number;
-  lineHeight: number;
   imageMap?: Record<string, string>;
 }
 \`\`\`
@@ -253,7 +251,7 @@ function detectContentType(text: string): 'rephrase' | 'furigana' | 'plain' {
 ---
 
 #### \`ExplanationSidebar\`
-**File**: \`app/components/ui/ExplanationSidebar.tsx\`
+**File**: \`app/components/reading/ExplanationSidebar.tsx\`
 
 AI-powered sentence explanation panel.
 
@@ -391,7 +389,6 @@ style={{
 | \`directory\` | Book subdirectory | \`bookv2-furigana\` |
 | \`fileName\` | Book file name | \`chapter-1\` |
 | \`page\` | Current page number | \`1\` |
-| \`dropdownAlwaysOpen\` | Display mode | \`true\` |
 | \`highlight\` | Word to highlight | \`word\` |
 
 ### LocalStorage (Persistent Preferences)
@@ -426,10 +423,7 @@ window.dispatchEvent(new CustomEvent('furiganaChanged', {
 Manages localStorage caching for AI explanations.
 
 \`\`\`typescript
-const { getCachedExplanation, cacheExplanation, settings } = useExplanationCache(
-  fileName,
-  directory
-);
+const { getCache, setCache, mode, contextSize } = useExplanationCache();
 \`\`\`
 
 ### \`useBookMetadata\`
@@ -441,18 +435,13 @@ Loads book metadata including image mappings.
 const { imageMap, metadata } = useBookMetadata(fileName, directory);
 \`\`\`
 
-### \`useTTSPlayer\`
+### \`useTTS\`
 **File**: \`app/hooks/useTTS.ts\`
 
-Text-to-speech playback management.
+Text-to-speech playback of one sentence (used by \`TTSButton\`).
 
 \`\`\`typescript
-const ttsPlayer = useTTSPlayer({
-  items: textItems,
-  fileName: 'chapter-1',
-  directory: 'bookv2',
-  onItemChange: (index) => { /* handle item change */ },
-});
+const { isPlaying, play, pause, resume, stop } = useTTS();
 \`\`\`
 
 ---

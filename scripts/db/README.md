@@ -1,18 +1,16 @@
 # Database Scripts
 
-## sync-from-prod.ts
+## sync.ts
 
-Syncs production (Neon PG17) data to local (Docker PG15). Production is the source of truth.
+Interactive sync between production (Neon PG17) and local (Docker PG15). It shows the differences per table, then pulls, pushes or does both. `npm run dev` runs the same sync when it starts and stops (`scripts/dev-with-sync.ts`).
 
 ```bash
-npm run db:sync                                          # sync all tables (except text_entries)
-npx tsx scripts/db/sync-from-prod.ts --include-text      # also sync text_entries (large)
-npx tsx scripts/db/sync-from-prod.ts --dry-run           # preview row counts only
+npm run db:sync    # npx tsx scripts/db/sync.ts
 ```
 
-**Tables synced:** `"Book"`, `"BookImage"`, `"ProcessingHistory"`, `bookmarks`, `"UserBookmark"`, `vocabulary_entries`
+**Tables synced** (`TABLES` in `lib/db/sync-core.ts`): `bookmarks`, `vocabulary_entries`, `text_entries`
 
-Uses upsert (ON CONFLICT DO UPDATE), so local-only data is preserved while prod data overwrites matching rows.
+Every table is last-write-wins on `updated_at`: a row is copied when the other side lacks it or holds an older copy. Only changed rows are sent. The old Prisma tables (`"Book"`, `"BookImage"`, `"ProcessingHistory"`, `"UserBookmark"`) still exist but are not synced.
 
 **Requirements:**
 - `PROD_DATABASE_URL` in `.env.local`
