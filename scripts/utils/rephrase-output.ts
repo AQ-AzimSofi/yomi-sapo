@@ -1,7 +1,5 @@
-export interface ParsedItem {
-  head: string;
-  subItems: string[];
-}
+import { isHeadingLine, isSubItemLine } from '../../lib/utils/markdownParser/validator';
+import type { ParsedItem } from '../../lib/types';
 
 export interface AlignReport {
   /** Response lines outside any < >> pair: the model talking about the task, or `---`. */
@@ -61,7 +59,12 @@ const MIN_RESYNC_LENGTH = 20;
 const RESYNC_PREFIX_LENGTH = 6;
 const RESYNC_PREFIX_UNITS = 4;
 
-export function parseMarkdown(text: string): ParsedItem[] {
+/**
+ * The strict reading of a rephrase reply: only < and >> lines count, with the reader's own line
+ * grammar. The reader's parseMarkdown also repairs merged and unprefixed lines, which would let
+ * a malformed reply through as if it were well formed.
+ */
+export function parseRephrasePairs(text: string): ParsedItem[] {
   const hasHeadingPrefix = /^[<＜](?!ruby>|rt>)/m.test(text);
   const hasSubItemSeparator = text.includes('>>');
 
@@ -83,14 +86,14 @@ export function parseMarkdown(text: string): ParsedItem[] {
       continue;
     }
 
-    if (/^[<＜]/.test(trimmed) && !/^<ruby>/.test(trimmed)) {
+    if (isHeadingLine(trimmed)) {
       currentItem = {
         head: trimmed.replace(/^[<＜]\s*/, ''),
         subItems: [],
       };
       items.push(currentItem);
       collectingHeader = true;
-    } else if (trimmed.startsWith('>>')) {
+    } else if (isSubItemLine(trimmed)) {
       collectingHeader = false;
       if (currentItem) {
         currentItem.subItems.push(trimmed.replace(/^>>\s*/, ''));
@@ -238,7 +241,7 @@ function listStrayLines(response: string, items: ParsedItem[]): string[] {
   return response
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line && !/^[<＜]/.test(line) && !line.startsWith('>>') && !pairedLines.has(line));
+    .filter((line) => line && !isHeadingLine(line) && !isSubItemLine(line) && !pairedLines.has(line));
 }
 
 function formatItem(item: ParsedItem): string {
@@ -254,7 +257,7 @@ function formatItem(item: ParsedItem): string {
  */
 export function alignRephrase(sourceText: string, response: string): { text: string; report: AlignReport } {
   const source = indexSource(sourceText);
-  const parsedItems = parseMarkdown(response);
+  const parsedItems = parseRephrasePairs(response);
   const initialState: AlignState = {
     items: [],
     nextUnit: 0,

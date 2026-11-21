@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { alignRephrase, parseMarkdown } from './rephrase-output';
+import { alignRephrase, parseRephrasePairs } from './rephrase-output';
 
 const SOURCE = '吾輩は猫である。名前はまだ無い。\n[IMAGE:fig-1.png]\nどこで生れたかとんと見当がつかぬ。';
 const FIRST_PAIR = '< 吾輩は猫である。名前はまだ無い。\n>> 私は猫です。名前はありません。';
 const IMAGE_PAIR = '< [IMAGE:fig-1.png]\n>> （図）';
 const LAST_PAIR = '< どこで生れたかとんと見当がつかぬ。\n>> どこで生まれたか分かりません。';
 
-describe('parseMarkdown', () => {
-  it('Test_parseMarkdown_PairsWithFullWidthHead', () => {
-    expect(parseMarkdown('＜ 原文\n>> 要約')).toEqual([{ head: '原文', subItems: ['要約'] }]);
+describe('parseRephrasePairs', () => {
+  it('Test_parseRephrasePairs_PairsWithFullWidthHead', () => {
+    expect(parseRephrasePairs('＜ 原文\n>> 要約')).toEqual([{ head: '原文', subItems: ['要約'] }]);
   });
 
-  it('Test_parseMarkdown_IgnoresRubyLine', () => {
-    expect(parseMarkdown('< 原文\n>> 要約\n<ruby>漢<rt>かん</rt></ruby>')).toEqual([{ head: '原文', subItems: ['要約'] }]);
+  it('Test_parseRephrasePairs_IgnoresRubyLine', () => {
+    expect(parseRephrasePairs('< 原文\n>> 要約\n<ruby>漢<rt>かん</rt></ruby>')).toEqual([{ head: '原文', subItems: ['要約'] }]);
   });
 
-  it('Test_parseMarkdown_NoPairs', () => {
-    expect(parseMarkdown('ただの文章です。')).toEqual([]);
+  it('Test_parseRephrasePairs_NoPairs', () => {
+    expect(parseRephrasePairs('ただの文章です。')).toEqual([]);
   });
 });
 
