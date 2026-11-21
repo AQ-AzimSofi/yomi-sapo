@@ -62,7 +62,7 @@ export default function LoginPage() {
             よみサポ
           </h1>
           <p className="text-xs mt-2 tracking-[0.12em]" style={{ color: COLORS.SECONDARY }}>
-            Japanese Reading Assistant
+            E-Reader
           </p>
         </div>
 

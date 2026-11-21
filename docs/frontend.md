@@ -62,7 +62,7 @@ The frontend follows a **minimal, reading-focused** design philosophy:
 The entry point for browsing and selecting books.
 
 **Features**:
-- One grid of all books with sort options (最近読んだ, 追加順, 進捗, タイトル) and a directory tag per card
+- One grid of all books with sort options (最近読んだ, 追加順, 進捗, タイトル); each card shows the title, progress and character count
 - Progress bar per book showing reading completion
 - Shared \`AppHeader\` with 本棚, 単語帳, 同期 and ログアウト
 
