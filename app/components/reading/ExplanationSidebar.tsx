@@ -80,15 +80,18 @@ export default function ExplanationSidebar({
     showExplanation({ bypassCache: false });
   }, [isOpen, sentence, showExplanation]);
 
-  // After a guest saves their API key, repeat the last ask. A failed Regenerate
-  // asks the AI again instead of falling back to the saved answer; any other ask
-  // reaches the AI only when nothing is saved, since a failure is never cached.
+  // After a guest saves their API key, retry the explanation. A failed Regenerate
+  // is retried without the cache, so the saved answer it was replacing does not
+  // come back; anything else asks the AI only when nothing is saved, since a
+  // failure is never cached.
+  const isShowingFailure = display.status === 'error';
   React.useEffect(() => {
     if (!isOpen || !sentence) return;
-    const retryExplanation = () => showExplanation({ bypassCache: lastAskBypassedCacheRef.current });
+    const retryExplanation = () =>
+      showExplanation({ bypassCache: isShowingFailure && lastAskBypassedCacheRef.current });
     window.addEventListener(GUEST_KEY_UPDATED_EVENT, retryExplanation);
     return () => window.removeEventListener(GUEST_KEY_UPDATED_EVENT, retryExplanation);
-  }, [isOpen, sentence, showExplanation]);
+  }, [isOpen, sentence, showExplanation, isShowingFailure]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.targetTouches[0].clientX);
