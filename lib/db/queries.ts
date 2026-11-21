@@ -93,11 +93,12 @@ export async function initializeBookmarksForFiles(
 /**
  * A cheap fingerprint of a book's stored text, or null when the book is missing.
  * octet_length reads the TOAST header, so the text itself is never loaded.
+ * GREATEST (which skips NULLs) also catches rewrites that only bump created_at.
  */
 export async function getTextEntryVersion(fileName: string, directory: string): Promise<string | null> {
   const result = await sql<{ bytes: number; updated_ms: string }>`
     SELECT octet_length(content) AS bytes,
-           FLOOR(EXTRACT(EPOCH FROM COALESCE(updated_at, created_at)) * 1000)::bigint AS updated_ms
+           FLOOR(EXTRACT(EPOCH FROM GREATEST(updated_at, created_at)) * 1000)::bigint AS updated_ms
     FROM text_entries
     WHERE file_name = ${fileName} AND directory = ${directory}
   `;
