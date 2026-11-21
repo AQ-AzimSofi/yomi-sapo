@@ -295,7 +295,7 @@ function ReaderContent({
     getStartIndex,
   });
 
-  const { state: readAloud, toggle: toggleReadAloud, stop: stopReadAloud } = useReadAloud();
+  const { state: readAloud, toggle: toggleReadAloud, stop: stopReadAloud } = useReadAloud(audioSpeed);
 
   // Each item used to own its player, so leaving the page or the book silenced it.
   useEffect(() => {

@@ -31,25 +31,28 @@ class FakeAudio implements ReadAloudAudio {
 
 interface PendingClip {
   text: string;
-  speed: number;
   resolve: (clip: string | null) => void;
 }
 
 function setUp({ holdClips = false } = {}) {
   const audios: FakeAudio[] = [];
   const pending: PendingClip[] = [];
+  const requests: unknown[] = [];
   const player = createReadAloudPlayer({
-    synthesize: ({ text, speed }) =>
-      holdClips
-        ? new Promise<string | null>((resolve) => pending.push({ text, speed, resolve }))
-        : Promise.resolve(`clip:${text}`),
+    synthesize: (request) => {
+      requests.push(request);
+      const text = String(request);
+      return holdClips
+        ? new Promise<string | null>((resolve) => pending.push({ text, resolve }))
+        : Promise.resolve(`clip:${text}`);
+    },
     createAudio: (clip) => {
       const audio = new FakeAudio(clip);
       audios.push(audio);
       return audio;
     },
   });
-  return { player, audios, pending };
+  return { player, audios, pending, requests };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -148,6 +151,27 @@ describe('createReadAloudPlayer', () => {
 
     expect(audios).toEqual([]);
     expect(player.getState()).toEqual({ unitIndex: null, status: 'idle' });
+  });
+
+  it('asks for the clip at normal speed and applies the reader speed once, on playback', async () => {
+    const { player, audios, requests } = setUp();
+    player.setSpeed(1.5);
+
+    player.toggle(1, '一つ目。');
+    await settle();
+
+    expect(requests).toEqual(['一つ目。']);
+    expect(audios[0].playbackRate).toBe(1.5);
+  });
+
+  it('changes the speed of the clip already playing', async () => {
+    const { player, audios } = setUp();
+    player.toggle(1, '一つ目。');
+    await settle();
+
+    player.setSpeed(0.75);
+
+    expect(audios[0].playbackRate).toBe(0.75);
   });
 
   it('tells subscribers about every change until they unsubscribe', async () => {

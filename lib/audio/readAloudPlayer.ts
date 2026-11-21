@@ -22,8 +22,11 @@ export interface ReadAloudAudio {
 }
 
 export interface ReadAloudDeps {
-  /** The clip (base64 MP3) for a text at a speed, or null when the text has nothing to say. */
-  synthesize: (request: { text: string; speed: number }) => Promise<string | null>;
+  /**
+   * The clip (base64 MP3) for a text, spoken at normal speed, or null when the text has
+   * nothing to say. The player applies the reader's speed on playback, as the audiobook does.
+   */
+  synthesize: (text: string) => Promise<string | null>;
   createAudio: (clip: string) => ReadAloudAudio;
 }
 
@@ -76,7 +79,7 @@ export function createReadAloudPlayer({ synthesize, createAudio }: ReadAloudDeps
     const token = takeOver();
     update({ unitIndex, status: 'loading' });
     try {
-      const clip = await synthesize({ text, speed: session.speed });
+      const clip = await synthesize(text);
       if (token !== session.token) return;
       if (!clip) {
         update(READ_ALOUD_IDLE);
