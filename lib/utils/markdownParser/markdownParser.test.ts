@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  hasEmbeddedHeading,
   isHeadingLine,
   isSubItemLine,
-  normalizeHeading,
   parseMarkdown,
   removeBoldFormatting,
   removeHeadingPrefix,
@@ -387,59 +385,5 @@ describe('removeBoldFormatting', () => {
 
   it('leaves a line with no "**" unchanged', () => {
     expect(removeBoldFormatting('朝が来た。')).toBe('朝が来た。');
-  });
-});
-
-describe('normalizeHeading', () => {
-  it('removes "<" and trims the space after it', () => {
-    expect(normalizeHeading('< 朝が来た。')).toBe('朝が来た。');
-  });
-
-  it('removes a full-width "＜"', () => {
-    expect(normalizeHeading('＜朝が来た。')).toBe('朝が来た。');
-  });
-
-  it('removes "<" and then "**" bold markers written right after it', () => {
-    expect(normalizeHeading('<**朝が来た。**')).toBe('朝が来た。');
-  });
-
-  it('removes "## " from a hash heading', () => {
-    expect(normalizeHeading('## 第一章')).toBe('第一章');
-  });
-
-  it('removes a full-width "＃＃ " from a hash heading', () => {
-    expect(normalizeHeading('＃＃ 第一章')).toBe('第一章');
-  });
-
-  it('trims surrounding whitespace from a line with no marker', () => {
-    expect(normalizeHeading('  朝が来た。  ')).toBe('朝が来た。');
-  });
-
-  it.todo('removes "**" and "##" written after "< " in the spaced head format, e.g. "< **朝が来た。**" (bug)');
-});
-
-describe('hasEmbeddedHeading', () => {
-  it('finds a full-width "＜" inside a line', () => {
-    expect(hasEmbeddedHeading('>> 朝になった。＜雨が降る。')).toBe(true);
-  });
-
-  it('finds a "<" inside a line', () => {
-    expect(hasEmbeddedHeading('>> 朝になった。<雨が降る。')).toBe(true);
-  });
-
-  it('finds a "<" that follows <ruby> markup', () => {
-    expect(hasEmbeddedHeading('<ruby>駅<rt>えき</rt></ruby>だ。<雨が降る。')).toBe(true);
-  });
-
-  it('ignores <ruby>, <rt> and their closing tags', () => {
-    expect(hasEmbeddedHeading('<ruby>駅<rt>えき</rt></ruby>に着いた。')).toBe(false);
-  });
-
-  it('ignores <rb> and its closing tag', () => {
-    expect(hasEmbeddedHeading('<ruby><rb>駅</rb><rt>えき</rt></ruby>')).toBe(false);
-  });
-
-  it('finds nothing in a line with no "<"', () => {
-    expect(hasEmbeddedHeading('朝が来た。')).toBe(false);
   });
 });

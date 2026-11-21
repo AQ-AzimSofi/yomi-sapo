@@ -6,42 +6,6 @@
 import { MARKDOWN_PATTERNS } from '@/lib/constants';
 
 /**
- * 埋め込まれた見出しプレフィックスを含む行を分割します
- * 例: ">>content<nextHeading" → [">>content", "nextHeading"]
- *
- * @param line - 埋め込まれた見出しプレフィックスを含む行
- * @param prefix - 分割する見出しプレフィックス（< または ＜）
- * @returns [プレフィックス前, プレフィックス後]の配列
- */
-export function splitEmbeddedHeading(
-  line: string,
-  prefix: string
-): [string, string] {
-  const parts = line.split(prefix);
-  return [parts[0], parts[1]];
-}
-
-/**
- * 行に埋め込まれた見出しプレフィックスが含まれているかを確認します
- * HTML ruby/rt タグは除外します（<ruby> や </ruby> などはカウントしない）
- */
-export function hasEmbeddedHeading(line: string): boolean {
-  // 全角の見出しプレフィックスをチェック
-  if (line.includes(MARKDOWN_PATTERNS.HEADING_PREFIX_FULLWIDTH)) {
-    return true;
-  }
-
-  // 半角の < をチェック（ただし HTML タグは除外）
-  if (line.includes(MARKDOWN_PATTERNS.HEADING_PREFIX)) {
-    // <ruby>, </ruby>, <rt>, </rt> などの HTML タグを除外してチェック
-    const withoutHtmlTags = line.replace(/<\/?(?:ruby|rt|rb)>/g, '');
-    return withoutHtmlTags.includes(MARKDOWN_PATTERNS.HEADING_PREFIX);
-  }
-
-  return false;
-}
-
-/**
  * 見出しプレフィックスの位置を検索します（HTML タグを除外）
  * @returns プレフィックスの位置、見つからない場合は -1
  */
