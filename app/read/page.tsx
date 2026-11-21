@@ -10,6 +10,7 @@ import CopyRangeModal from './components/CopyRangeModal';
 import ReaderSettings from './components/ReaderSettings';
 import ReadingContent from './components/ReadingContent';
 import ReaderHeader from './components/ReaderHeader';
+import SaveWordAction from './components/SaveWordAction';
 import BottomSheet from '@/app/components/ui/BottomSheet';
 import { useBookMetadata } from '@/app/hooks/useBookMetadata';
 import { useGuestMode } from '@/app/hooks/useGuestMode';
@@ -79,6 +80,8 @@ const GuestApiKeyModal = dynamic(
   { ssr: false }
 );
 
+// Room the audiobook bar takes at the bottom of the screen.
+const AUDIO_BAR_INSET_PX = 150;
 const PRIORITIZE_ERROR_MESSAGE = 'このページを分析できませんでした。もう一度お試しください。';
 const COPY_ERROR_MESSAGE = 'クリップボードにコピーできませんでした。';
 
@@ -161,7 +164,7 @@ function ReaderContent({
     [directoryParam, fileNameParam]
   );
   const { imageMap } = useBookMetadata(book);
-  const { isGuest } = useGuestMode();
+  const { isGuest, isAuthenticated } = useGuestMode();
   const hasOpenedExplanation = useOpenedOnce(activePanel === 'explanation');
   const hasOpenedRubyLookup = useOpenedOnce(activePanel === 'ruby');
 
@@ -786,6 +789,16 @@ function ReaderContent({
       </main>
 
       <ReaderFAB actions={menuActions} />
+
+      {/* Owner only: guests cannot save to the 単語帳. */}
+      {isAuthenticated && (
+        <SaveWordAction
+          unitTexts={unitMainTexts}
+          book={book}
+          isEnabled={activePanel === null && !isGuestKeyPromptOpen}
+          bottomInsetPx={audiobookEnabled ? AUDIO_BAR_INSET_PX : 0}
+        />
+      )}
 
       <CopyRangeModal
         isOpen={activePanel === 'copyRange'}
