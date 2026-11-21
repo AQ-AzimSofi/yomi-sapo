@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { STORAGE_KEYS, THEME } from '@/lib/constants';
 import type { Point, Size } from '@/lib/utils/draggablePosition';
 import { useDraggablePosition } from '@/app/hooks/useDraggablePosition';
 import { toTint } from '@/lib/utils/colorTint';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
 import { useStarredWords } from '@/app/hooks/useStarredWords';
+import { usePreference } from '@/app/hooks/usePreference';
+import { READER_PREFERENCES } from '../readerPreferences';
 
 interface FloatingStickyNotesProps {
   directory: string;
@@ -25,22 +27,11 @@ function defaultStickyPosition(): Point {
   return { x: 20, y: 200 };
 }
 
-function getInitialCollapsed(): boolean {
-  if (typeof window === 'undefined') return true;
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.STICKY_NOTES_COLLAPSED);
-    return stored === null ? true : stored === 'true';
-  } catch {
-    return true;
-  }
-}
-
 export default function FloatingStickyNotes({
   directory,
   bookName,
 }: FloatingStickyNotesProps) {
-  const [isCollapsed, setIsCollapsed] = useState(true);
-  const [mounted, setMounted] = useState(false);
+  const [isCollapsed, setIsCollapsed] = usePreference(READER_PREFERENCES.stickyNotesCollapsed);
   const { starredWords } = useStarredWords(directory, bookName);
   const { position, isDragging, dragHandlers, isClickFromDrag } = useDraggablePosition({
     storageKey: STORAGE_KEYS.STICKY_NOTES_POSITION,
@@ -55,19 +46,6 @@ export default function FloatingStickyNotes({
     enabled: !!directory && !!bookName && starredWords.size > 0,
   });
 
-  useEffect(() => {
-    setIsCollapsed(getInitialCollapsed());
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (mounted) {
-      try {
-        localStorage.setItem(STORAGE_KEYS.STICKY_NOTES_COLLAPSED, String(isCollapsed));
-      } catch {}
-    }
-  }, [isCollapsed, mounted]);
-
   const starredEntries = useMemo(() => {
     if (starredWords.size === 0) return [];
     if (!registry) {
@@ -81,10 +59,10 @@ export default function FloatingStickyNotes({
   const handleToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (isClickFromDrag()) return;
-    setIsCollapsed(prev => !prev);
-  }, [isClickFromDrag]);
+    setIsCollapsed(!isCollapsed);
+  }, [isClickFromDrag, isCollapsed, setIsCollapsed]);
 
-  if (!mounted || !position) return null;
+  if (!position) return null;
   if (starredWords.size === 0) return null;
 
   return (

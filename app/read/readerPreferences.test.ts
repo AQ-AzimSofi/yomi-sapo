@@ -16,6 +16,7 @@ describe('READER_PREFERENCES keys', () => {
       readerTheme: 'reader_dark_mode',
       audiobookEnabled: 'audiobook_enabled',
       audiobookContentMode: 'audiobook_content_mode',
+      stickyNotesCollapsed: 'sticky_notes_collapsed',
     });
   });
 });
@@ -35,6 +36,7 @@ describe('READER_PREFERENCES defaults', () => {
       readerTheme: 'light',
       audiobookEnabled: false,
       audiobookContentMode: 'main',
+      stickyNotesCollapsed: true,
     });
   });
 });
@@ -111,7 +113,7 @@ describe('READER_PREFERENCES.readerTheme', () => {
 });
 
 describe('READER_PREFERENCES switches', () => {
-  it.each(['showFurigana', 'aiExplanationEnabled', 'audiobookEnabled'] as const)(
+  it.each(['showFurigana', 'aiExplanationEnabled', 'audiobookEnabled', 'stickyNotesCollapsed'] as const)(
     'reads %s from the true and false strings earlier versions stored',
     (name) => {
       const preference = READER_PREFERENCES[name];

@@ -36,4 +36,5 @@ export const READER_PREFERENCES = {
     choices: ['main', 'sub', 'both'],
     defaultValue: 'main',
   }),
+  stickyNotesCollapsed: switchPreference({ key: STORAGE_KEYS.STICKY_NOTES_COLLAPSED, on: true, off: false, defaultValue: true }),
 };
