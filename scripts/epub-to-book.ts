@@ -27,8 +27,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync, spawnSync } from 'child_process';
-import * as dotenv from 'dotenv';
+import { spawnSync } from 'child_process';
 import { isClaudeModel } from './utils/claude-rephrase';
 import { chunkText, stripRubyTags } from './pipeline/chunking';
 import { createProgress, getProgressPath, loadProgress, saveProgress, simpleHash } from './pipeline/progress';
@@ -40,26 +39,16 @@ import {
   type ChunkRephraser,
 } from './pipeline/rephraseChunk';
 import { createKeyPool } from './shared/geminiKeyPool';
+import { describePython, resolvePython, runPython } from './shared/python';
+import { loadRepoEnv, REPO_ROOT } from './shared/repoPaths';
 
-// Load environment variables
-const envLocalPath = path.join(process.cwd(), '.env.local');
-const envPath = path.join(process.cwd(), '.env');
-
-if (fs.existsSync(envLocalPath)) {
-  dotenv.config({ path: envLocalPath });
-} else if (fs.existsSync(envPath)) {
-  dotenv.config({ path: envPath });
-}
+loadRepoEnv();
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-// Use 'python' on Windows, 'python3' elsewhere
-// On Windows, use full path if regular python command fails
-const PYTHON_CMD = process.platform === 'win32'
-  ? 'C:\\Users\\azimm\\AppData\\Local\\Programs\\Python\\Python312\\python.exe'
-  : 'python3';
+const CORE_SCRIPTS_DIR = path.join(REPO_ROOT, 'scripts', 'core');
 
 const DEFAULT_REPHRASE_MODEL = 'sonnet';
 
@@ -99,24 +88,22 @@ function formatDuration(seconds: number): string {
 // EPUB Extraction
 // ============================================================================
 
-function extractEpub(epubPath: string, outputDir: string, filter: string, skipImages: boolean): string | null {
+function extractEpub(epubPath: string, outputDir: string, filter: string): string | null {
   console.log('\n=== Step 1: Extracting EPUB ===\n');
 
-  const filterArg = filter === 'n3' ? '--filter n3' : '';
-  const outputArg = `--output "${path.join(process.cwd(), 'public', outputDir)}"`;
+  const python = resolvePython();
+  const scriptArgs = [
+    path.join(CORE_SCRIPTS_DIR, 'epub-to-text-furigana.py'),
+    epubPath,
+    ...(filter === 'n3' ? ['--filter', 'n3'] : []),
+    '--output', path.join(REPO_ROOT, 'public', outputDir),
+  ];
 
-  const cmd = `${PYTHON_CMD} scripts/core/epub-to-text-furigana.py "${epubPath}" ${filterArg} ${outputArg}`;
-
-  console.log(`Running: ${cmd}\n`);
+  console.log(`Running: ${describePython(python)} ${scriptArgs.join(' ')}\n`);
 
   try {
-    const result = spawnSync(PYTHON_CMD, [
-      'scripts/core/epub-to-text-furigana.py',
-      epubPath,
-      ...(filter === 'n3' ? ['--filter', 'n3'] : []),
-      '--output', path.join(process.cwd(), 'public', outputDir),
-    ], {
-      cwd: process.cwd(),
+    const result = runPython(python, scriptArgs, {
+      cwd: REPO_ROOT,
       encoding: 'utf-8',
       stdio: 'inherit',
     });
@@ -127,7 +114,7 @@ function extractEpub(epubPath: string, outputDir: string, filter: string, skipIm
     }
 
     // Find the created book directory
-    const baseDir = path.join(process.cwd(), 'public', outputDir);
+    const baseDir = path.join(REPO_ROOT, 'public', outputDir);
     const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
       .filter(d => d.isDirectory())
       .map(d => d.name);
@@ -161,11 +148,11 @@ function extractEpub(epubPath: string, outputDir: string, filter: string, skipIm
 // Ruby Registry Extraction
 // ============================================================================
 
-function extractRubyRegistry(epubPath: string, bookDir: string): boolean {
+function extractRubyRegistry(epubPath: string): boolean {
   console.log('\n=== Step 2: Extracting Ruby Registry ===\n');
 
   // Create temp directory and copy EPUB there for extract-ruby-smart.py
-  const tempDir = path.join(process.cwd(), 'temp');
+  const tempDir = path.join(REPO_ROOT, 'temp');
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
   }
@@ -178,10 +165,8 @@ function extractRubyRegistry(epubPath: string, bookDir: string): boolean {
   console.log(`Copied EPUB to: ${tempEpubPath}`);
 
   try {
-    const result = spawnSync(PYTHON_CMD, [
-      'scripts/core/extract-ruby-smart.py',
-    ], {
-      cwd: process.cwd(),
+    const result = runPython(resolvePython(), [path.join(CORE_SCRIPTS_DIR, 'extract-ruby-smart.py')], {
+      cwd: REPO_ROOT,
       encoding: 'utf-8',
       stdio: 'inherit',
     });
@@ -234,7 +219,7 @@ function uploadBookImages(outputDir: string, bookName: string, isDryRun: boolean
   }
 
   const bookPrefix = `${outputDir}/${bookName}`;
-  const localBookDir = path.join(process.cwd(), 'public', bookPrefix);
+  const localBookDir = path.join(REPO_ROOT, 'public', bookPrefix);
   const imagesDir = path.join(localBookDir, 'images');
   const metadataPath = path.join(localBookDir, `${bookName}.json`);
   const modeFlag = isDryRun ? '--dryrun' : '--only-show-errors';
@@ -301,11 +286,14 @@ function addFuriganaToChunk(chunkText: string, outputDir: string): string {
   fs.writeFileSync(tempInput, chunkText, 'utf-8');
 
   try {
-    execSync(`${PYTHON_CMD} scripts/core/add-furigana-to-text.py "${tempInput}" -o "${tempOutput}"`, {
-      cwd: process.cwd(),
+    const furiganaRun = runPython(resolvePython(), [path.join(CORE_SCRIPTS_DIR, 'add-furigana-to-text.py'), tempInput, '-o', tempOutput], {
+      cwd: REPO_ROOT,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe']
     });
+    if (furiganaRun.status !== 0) {
+      throw furiganaRun.error ?? new Error(`add-furigana-to-text.py exited with ${furiganaRun.status}: ${furiganaRun.stderr}`);
+    }
 
     const result = fs.readFileSync(tempOutput, 'utf-8');
 
@@ -646,18 +634,18 @@ Example:
     console.log(`\n=== Skipping Extraction (--skip-extract) ===`);
     console.log(`Using existing book: ${bookName}\n`);
   } else {
-    bookName = extractEpub(options.epubPath, options.outputDir, options.filter, options.skipImages);
+    bookName = extractEpub(options.epubPath, options.outputDir, options.filter);
     if (!bookName) {
       console.error('Failed to extract EPUB');
       process.exit(1);
     }
   }
 
-  const sourceDir = path.join(process.cwd(), 'public', options.outputDir, bookName);
+  const sourceDir = path.join(REPO_ROOT, 'public', options.outputDir, bookName);
 
   // Step 2: Extract Ruby Registry
   if (!options.skipExtract) {
-    extractRubyRegistry(options.epubPath, bookName);
+    extractRubyRegistry(options.epubPath);
   }
 
   // Step 3: Upload illustrations before rephrasing, so chunks synced during step 4

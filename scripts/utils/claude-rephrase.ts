@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { REPO_ROOT } from '../shared/repoPaths';
 
-const PROMPT_PATH = path.join(process.cwd(), 'scripts', 'prompts', 'claude-rephrase.md');
+const PROMPT_PATH = path.join(REPO_ROOT, 'scripts', 'prompts', 'claude-rephrase.md');
 const MAX_ATTEMPTS = 3;
 const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_ERROR_PREVIEW_CHARS = 500;
