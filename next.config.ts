@@ -22,6 +22,11 @@ const nextConfig: NextConfig = {
       'node_modules/webpack/**/*',
       'node_modules/terser/**/*',
       'scripts/**/*',
+      '.git/**/*',
+      '.sst/**/*',
+      '.claude/**/*',
+      'temp/**/*',
+      '.env*',
     ],
   },
 
