@@ -6,7 +6,8 @@ import BookmarkFilled from "@/app/components/icons/BookmarkFilled";
 import TranslateIcon from "@/app/components/icons/TranslateIcon";
 import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
-import { COLORS, EXPLANATION_CONFIG, THEME } from "@/lib/constants";
+import { COLORS, THEME } from "@/lib/constants";
+import { sentenceOccurrence, splitIntoSentences } from "@/lib/content/sentences";
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
@@ -136,27 +137,6 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
     return parts;
   };
 
-  const splitIntoSentences = (sentenceText: string): string[] => {
-    const delimiters: readonly string[] = EXPLANATION_CONFIG.SENTENCE_DELIMITERS;
-    const sentences: string[] = [];
-    let currentSentence = "";
-
-    for (let i = 0; i < sentenceText.length; i++) {
-      currentSentence += sentenceText[i];
-
-      if (delimiters.includes(sentenceText[i])) {
-        sentences.push(currentSentence.trim());
-        currentSentence = "";
-      }
-    }
-
-    if (currentSentence.trim()) {
-      sentences.push(currentSentence.trim());
-    }
-
-    return sentences.filter((s) => s.length > 0);
-  };
-
   const handleTripleClickSelect = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.detail >= 3) {
       e.stopPropagation();
@@ -194,7 +174,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
               dangerouslySetInnerHTML={{ __html: html }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSentenceClick(sentence, sentences.slice(0, index).filter((earlier) => earlier === sentence).length);
+                onSentenceClick(sentence, sentenceOccurrence(sentences, index));
               }}
               className="cursor-pointer transition-colors px-1"
               style={{
