@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EXPLANATION_CONFIG, PAGINATION_CONFIG } from '@/lib/constants';
 import { buildExplanationContext, NO_SURROUNDINGS, sentenceSurroundings } from './explanationContext';
 import type { ReaderItem } from './bookModel';
+import { sentenceOccurrence, splitIntoSentences } from './sentences';
 
 const MAX = EXPLANATION_CONFIG.MAX_CONTEXT_SIZE;
 
@@ -10,6 +11,27 @@ function paragraphs(...texts: string[]): ReaderItem[] {
 }
 
 describe('sentenceSurroundings', () => {
+  // The items cut a unit with splitIntoSentences and pass each sentence's
+  // occurrence, so every sentence they show must be found at its own place.
+  it('finds each sentence the reader shows, repeated ones included, where it stands', () => {
+    const unitText = 'はい。<ruby>漢字<rt>かんじ</rt></ruby>を読[よ]む！ はい。「え？」　はい。終わり';
+    const sentences = splitIntoSentences(unitText);
+
+    const textsBefore = sentences.map(
+      (sentence, index) =>
+        sentenceSurroundings(paragraphs(unitText), { unitIndex: 0, sentence, occurrence: sentenceOccurrence(sentences, index) }).before
+    );
+
+    expect(textsBefore).toEqual([
+      '',
+      'はい。',
+      'はい。漢字を読む！ ',
+      'はい。漢字を読む！ はい。',
+      'はい。漢字を読む！ はい。「え？',
+      'はい。漢字を読む！ はい。「え？」　はい。',
+    ]);
+  });
+
   it('takes the rest of the paragraph and the neighbouring paragraphs on each side', () => {
     const items = paragraphs('前の段落。', '一文目。二文目。三文目。', '次の段落。');
 
