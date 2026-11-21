@@ -217,6 +217,19 @@ describe('PUT /api/text-entries', () => {
     expect(readTextFile).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['a directory with a .. segment', { fileName: BOOK.fileName, directory: 'bookv2-furigana/..' }],
+    ['a leading slash', { fileName: BOOK.fileName, directory: `/${BOOK.directory}` }],
+    ['a backslash, which Windows reads as a separator', { fileName: 'ほん\\secret', directory: BOOK.directory }],
+  ])('answers 400 without reading a file for %s', async (_case, book) => {
+    vi.stubEnv('NODE_ENV', 'development');
+
+    const response = await putTextEntry(jsonRequest('PUT', book));
+
+    expect(response.status).toBe(400);
+    expect(readTextFile).not.toHaveBeenCalled();
+  });
+
   it('copies a book file into the database on the local dev server', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     vi.mocked(readTextFile).mockResolvedValue('< 本文\n>> やさしい文');
@@ -224,6 +237,7 @@ describe('PUT /api/text-entries', () => {
     const response = await putTextEntry(jsonRequest('PUT', BOOK));
 
     expect(response.status).toBe(200);
+    expect(readTextFile).toHaveBeenCalledWith('bookv2-furigana/ほん/ほん-rephrase-furigana');
     expect(upsertTextEntry).toHaveBeenCalledWith(BOOK.fileName, '< 本文\n>> やさしい文', BOOK.directory);
   });
 });

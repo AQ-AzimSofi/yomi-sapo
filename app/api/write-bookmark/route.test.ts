@@ -6,6 +6,7 @@ import { POST } from './route';
 vi.mock('@/lib/db/queries', () => ({ upsertBookmark: vi.fn() }));
 
 const TARGET = 'bookv2-furigana/ほん/ほん-rephrase-furigana';
+const BOOK = { directory: 'bookv2-furigana/ほん', fileName: 'ほん-rephrase-furigana' };
 const OWNER_HEADERS = await ownerSessionHeaders();
 
 function bookmarkRequest(body: unknown, sessionHeaders: Record<string, string> = OWNER_HEADERS): Request {
@@ -44,7 +45,7 @@ describe('POST /api/write-bookmark', () => {
     await POST(bookmarkRequest({ target: TARGET, content: '一文目', page }));
 
     expect(upsertBookmark).toHaveBeenCalledWith(expect.objectContaining({ bookmarkPage: undefined }));
-    expect(warn).toHaveBeenCalledWith('Ignoring an invalid bookmark page:', { target: TARGET, page });
+    expect(warn).toHaveBeenCalledWith('Ignoring an invalid bookmark page:', { book: TARGET, page });
     warn.mockRestore();
   });
 
@@ -82,6 +83,57 @@ describe('POST /api/write-bookmark', () => {
 
     expect(response.status).toBe(200);
     expect(upsertBookmark).toHaveBeenCalledWith(expect.objectContaining({ bookmarkText: '' }));
+  });
+
+  it('saves a bookmark sent with separate directory and fileName under the same key as the combined target', async () => {
+    const response = await POST(bookmarkRequest({ ...BOOK, content: '一文目', page: 7 }));
+
+    expect(response.status).toBe(200);
+    expect(upsertBookmark).toHaveBeenCalledWith({
+      fileName: BOOK.fileName,
+      directory: BOOK.directory,
+      bookmarkText: '一文目',
+      bookmarkPage: 7,
+    });
+  });
+
+  // Matches the key read-bookmark looks up, so the saved bookmark is the one the reader finds.
+  it('moves a slash in a separate fileName into the directory', async () => {
+    await POST(bookmarkRequest({ directory: 'bookv2-furigana', fileName: '感謝脳/感謝脳-rephrase-furigana', content: '一文目' }));
+
+    expect(upsertBookmark).toHaveBeenCalledWith(
+      expect.objectContaining({ fileName: '感謝脳-rephrase-furigana', directory: 'bookv2-furigana/感謝脳' })
+    );
+  });
+
+  it('saves a legacy target without a slash in the public folder, as before', async () => {
+    await POST(bookmarkRequest({ target: 'text-1', content: '一文目' }));
+
+    expect(upsertBookmark).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'text-1', directory: 'public' }));
+  });
+
+  it.each([
+    ['a target that climbs out of the book folders', { target: 'bookv2-furigana/../secret', content: '一文目' }],
+    ['a directory with a .. segment', { directory: 'bookv2-furigana/..', fileName: 'secret', content: '一文目' }],
+    ['a leading slash', { directory: '/bookv2-furigana/ほん', fileName: 'ほん-rephrase-furigana', content: '一文目' }],
+  ])('answers 400 without saving for %s', async (_case, body) => {
+    const response = await POST(bookmarkRequest(body));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe('invalid_request');
+    expect(upsertBookmark).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a directory but no fileName', { directory: BOOK.directory, content: '一文目' }],
+    ['a fileName that is not text', { directory: BOOK.directory, fileName: 7, content: '一文目' }],
+    ['a directory that is not text', { directory: 7, fileName: BOOK.fileName, content: '一文目' }],
+  ])('answers 400 invalid_body without saving for %s', async (_case, body) => {
+    const response = await POST(bookmarkRequest(body));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe('invalid_body');
+    expect(upsertBookmark).not.toHaveBeenCalled();
   });
 
   it('answers a generic 500 that does not leak the database error', async () => {

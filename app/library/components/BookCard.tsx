@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { COLORS } from '@/lib/constants';
 import { formatBookTitle } from '@/lib/utils/bookTitle';
+import { bookQuery } from '@/lib/books/bookRef';
 import BookCover from './BookCover';
 
 interface BookCardProps {
@@ -25,7 +26,7 @@ export default function BookCard({
   isPreview,
 }: BookCardProps) {
   const title = formatBookTitle(fileName);
-  const bookParams = `directory=${encodeURIComponent(directory)}&fileName=${encodeURIComponent(fileName)}`;
+  const bookParams = bookQuery({ directory, fileName });
   const pageParam = bookmarkPage && bookmarkPage > 1 ? `&page=${bookmarkPage}` : '';
   const progressPercent = Math.round(Math.min(100, Math.max(0, progress)));
   const characterCount = totalCharacters ?? 0;

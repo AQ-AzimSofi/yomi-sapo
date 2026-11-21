@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { bookAssetPath, bookAssetUrl } from '@/lib/utils/bookAssetPath';
+import type { BookRef } from '@/lib/books/bookRef';
 import type { BookMetadata, ImageMap } from '@/lib/types';
 
 interface UseBookMetadataResult {
@@ -16,17 +17,14 @@ interface UseBookMetadataResult {
   error: Error | null;
 }
 
-export function useBookMetadata(
-  fileName: string | null,
-  directory: string | null
-): UseBookMetadataResult {
+export function useBookMetadata(book: BookRef | null): UseBookMetadataResult {
   const [metadata, setMetadata] = useState<BookMetadata | null>(null);
   const [imageMap, setImageMap] = useState<ImageMap>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!fileName || !directory) {
+    if (!book) {
       setMetadata(null);
       setImageMap({});
       return;
@@ -37,11 +35,11 @@ export function useBookMetadata(
       setError(null);
 
       try {
-        const response = await fetch(bookAssetUrl(bookAssetPath(directory, fileName, '.json')));
+        const response = await fetch(bookAssetUrl(bookAssetPath(book.directory, book.fileName, '.json')));
 
         if (!response.ok) {
           // If JSON doesn't exist, silently fail (not all books have metadata)
-          console.log(`No metadata found for ${fileName}`);
+          console.log(`No metadata found for ${book.fileName}`);
           setMetadata(null);
           setImageMap({});
           setIsLoading(false);
@@ -89,7 +87,7 @@ export function useBookMetadata(
     };
 
     loadMetadata();
-  }, [fileName, directory]);
+  }, [book]);
 
   return { metadata, imageMap, isLoading, error };
 }

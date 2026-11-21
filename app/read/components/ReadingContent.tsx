@@ -5,12 +5,12 @@ import { pageStartIndex, type ContentType, type ReaderItem } from "@/lib/content
 import { COLORS, PRIORITY_LEVELS, type PriorityScore } from "@/lib/constants";
 import CollapsibleItem from "@/app/components/reading/CollapsibleItem";
 import ParagraphItem from "@/app/components/reading/ParagraphItem";
+import type { BookRef } from "@/lib/books/bookRef";
 
 interface ReadingContentProps {
   items: readonly ReaderItem[];
   contentType: ContentType;
-  fileName: string;
-  directory: string;
+  book: BookRef;
   bookmarkIndex: number | null;
   showFurigana: boolean;
   displayMode: "collapsed" | "expanded";
@@ -69,8 +69,7 @@ function PriorityBadge({ score }: { score: PriorityScore }) {
 export default function ReadingContent({
   items,
   contentType,
-  fileName,
-  directory,
+  book,
   bookmarkIndex,
   showFurigana,
   displayMode,
@@ -86,7 +85,6 @@ export default function ReadingContent({
   onStartFromHere,
   priorityScores,
 }: ReadingContentProps) {
-  const fullFilePath = directory ? `${directory}/${fileName}` : fileName;
   const pageStart = pageStartIndex(currentPage);
 
   const paginatedItems = useMemo(
@@ -128,8 +126,7 @@ export default function ReadingContent({
               onSubmitSuccess={onBookmarkSuccess}
               onSentenceClick={onSentenceClick}
               imageMap={imageMap}
-              bookDirectory={directory}
-              bookFileName={fileName}
+              book={book}
               currentPage={currentPage}
               audiobookEnabled={audiobookEnabled}
               isStartCursor={startCursorIndex === globalIndex}
@@ -169,7 +166,7 @@ export default function ReadingContent({
             globalIndex={globalIndex}
             text={typedItem.text}
             isBookmarked={isBookmarked}
-            fileName={fullFilePath}
+            book={book}
             showFurigana={showFurigana}
             onBookmarkSuccess={onBookmarkSuccess}
             onSentenceClick={onSentenceClick}

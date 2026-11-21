@@ -9,16 +9,12 @@ import { readTextFile } from '@/lib/services/fileService';
 import { withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isRecord } from '@/lib/utils/typeGuards';
+import { isSafeBookRef, toBookKey, type BookRef } from '@/lib/books/bookRef';
 
 // Mark as dynamic to prevent static generation during build
 export const dynamic = 'force-dynamic';
 
-interface TextEntryLocation {
-  fileName: string;
-  directory: string;
-}
-
-function isTextEntryLocation(body: unknown): body is TextEntryLocation {
+function isTextEntryLocation(body: unknown): body is BookRef {
   return isRecord(body) && isNonEmptyString(body.fileName) && isNonEmptyString(body.directory);
 }
 
@@ -39,17 +35,17 @@ export const PUT = withAuth('public', async (request) => {
     return apiError(400, 'invalid_request', 'Invalid Content-Type');
   }
 
-  const body = await parseJsonBody(request, isTextEntryLocation, 'Missing required fields: fileName and directory');
-  if (body instanceof Response) return body;
-  const { fileName, directory } = body;
+  const book = await parseJsonBody(request, isTextEntryLocation, 'Missing required fields: fileName and directory');
+  if (book instanceof Response) return book;
+  const { fileName, directory } = book;
 
   // Validation (prevent directory traversal attacks)
-  if (fileName.includes('..') || directory.includes('..')) {
+  if (!isSafeBookRef(book)) {
     return apiError(400, 'invalid_request', 'Invalid file name or directory');
   }
 
   // Read file from filesystem
-  const filePath = `${directory}/${fileName}`;
+  const filePath = toBookKey(book);
   const content = await readTextFile(filePath);
 
   if (!content) {

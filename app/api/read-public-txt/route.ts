@@ -9,7 +9,8 @@ import { NextResponse } from 'next/server';
 import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
 import { guestPreviewOnly, withAuth } from '@/lib/auth/guards';
 import { apiError, internalError } from '@/lib/api/respond';
-import { findPublicBookByPath } from '@/lib/publicBooks';
+import { findPublicBook } from '@/lib/publicBooks';
+import { LEGACY_BOOK_DIRECTORY, bookRefFromParams, isSafeBookRef, type BookRef } from '@/lib/books/bookRef';
 import { truncateToPreviewPages } from '@/lib/utils/truncatePreview';
 import { PAGINATION_CONFIG } from '@/lib/constants';
 import { BOOK_VERSION_HEADER, ifNoneMatchIncludes } from '@/lib/utils/etag';
@@ -20,28 +21,23 @@ export const dynamic = 'force-dynamic';
 // or how a preview is cut), so readers drop copies stored by an older deploy.
 const RESPONSE_FORMAT = 'v1';
 
-interface BookLocation {
-  directory: string;
-  file: string;
-}
-
 /**
- * The reader sends one combined path. Try every directory/file split, most
- * nested first ("a/b/c" -> a/b + c, then a + b/c), then the legacy public folder.
+ * Readers loaded before directory and fileName were sent apart send one combined
+ * path. Try every directory/file split, most nested first ("a/b/c" -> a/b + c,
+ * then a + b/c), then the legacy public folder.
  */
-function candidateLocations(fileName: string, directory: string | null): BookLocation[] {
-  if (directory) return [{ directory, file: fileName }];
-  const parts = fileName.split('/');
+function legacyCandidates(bookKey: string): BookRef[] {
+  const parts = bookKey.split('/');
   const splits = Array.from({ length: parts.length - 1 }, (_, offset) => parts.length - 1 - offset).map((splitAt) => ({
     directory: parts.slice(0, splitAt).join('/'),
-    file: parts.slice(splitAt).join('/'),
+    fileName: parts.slice(splitAt).join('/'),
   }));
-  return [...splits, { directory: 'public', file: fileName }];
+  return [...splits, { directory: LEGACY_BOOK_DIRECTORY, fileName: bookKey }];
 }
 
-async function locateBook(candidates: BookLocation[]): Promise<(BookLocation & { version: string }) | null> {
+async function locateBook(candidates: BookRef[]): Promise<(BookRef & { version: string }) | null> {
   for (const candidate of candidates) {
-    const version = await getTextEntryVersion(candidate.file, candidate.directory);
+    const version = await getTextEntryVersion(candidate.fileName, candidate.directory);
     if (version) return { ...candidate, version };
   }
   return null;
@@ -56,19 +52,20 @@ export const GET = withAuth('viewer', async (request, viewer) => {
   const fileName = searchParams.get('fileName');
   const directory = searchParams.get('directory');
 
-  if (!fileName || fileName.includes('..') || directory?.includes('..')) {
+  const book = fileName ? bookRefFromParams(directory, fileName) : null;
+  if (!book || !isSafeBookRef(book)) {
     return apiError(400, 'invalid_request', 'fileName is required and must stay inside the book folders');
   }
+  const legacyKey = directory ? null : fileName;
 
   try {
     // Guests may only read allowlisted books, and only a short page preview.
-    const requestedPath = directory ? `${directory}/${fileName}` : fileName;
-    const publicBook = viewer === 'owner' ? null : findPublicBookByPath(requestedPath);
+    const publicBook = viewer === 'owner' ? null : findPublicBook(book.directory, book.fileName);
     if (viewer === 'guest' && !publicBook) {
       return guestPreviewOnly();
     }
 
-    const location = await locateBook(candidateLocations(fileName, directory));
+    const location = await locateBook(legacyKey ? legacyCandidates(legacyKey) : [book]);
     if (!location) {
       return NextResponse.json({ text: '' });
     }
@@ -82,7 +79,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
       return new NextResponse(null, { status: 304, headers: cacheHeaders(etag) });
     }
 
-    const content = await getTextEntry(location.file, location.directory);
+    const content = await getTextEntry(location.fileName, location.directory);
     // A book removed between the two reads must not be cached under its old version.
     if (!content) {
       return NextResponse.json({ text: '' });

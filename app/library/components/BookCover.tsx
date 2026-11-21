@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { API_ROUTES, COLORS } from '@/lib/constants';
+import { bookQuery } from '@/lib/books/bookRef';
 
 type CoverState = 'loading' | 'loaded' | 'missing';
 type CoverSize = 'card' | 'feature';
@@ -20,7 +21,7 @@ interface BookCoverProps {
 
 export default function BookCover({ fileName, directory, title, size }: BookCoverProps) {
   const [coverState, setCoverState] = useState<CoverState>('loading');
-  const coverUrl = `${API_ROUTES.BOOK_COVER}?directory=${encodeURIComponent(directory)}&fileName=${encodeURIComponent(fileName)}`;
+  const coverUrl = `${API_ROUTES.BOOK_COVER}?${bookQuery({ directory, fileName })}`;
   const isMissing = coverState === 'missing';
 
   return (

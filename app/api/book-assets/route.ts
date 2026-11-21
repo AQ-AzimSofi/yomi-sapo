@@ -10,10 +10,10 @@
  */
 
 import { NextResponse } from 'next/server';
-import { GetObjectCommand, NoSuchKey, S3Client } from '@aws-sdk/client-s3';
 import { guestPreviewOnly, withAuth } from '@/lib/auth/guards';
 import { apiError } from '@/lib/api/respond';
 import { isPublicBookAsset } from '@/lib/publicBooks';
+import { readObjectBytes } from '@/lib/storage/s3';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,20 +53,11 @@ export const GET = withAuth('viewer', async (request, viewer) => {
     return apiError(500, 'not_configured', 'Book image storage is not configured');
   }
 
-  try {
-    const asset = await new S3Client({}).send(
-      new GetObjectCommand({ Bucket: bucket, Key: assetPath.slice(1) })
-    );
-    if (!asset.Body) {
-      throw new Error(`Empty book asset ${assetPath}`);
-    }
-    // Copied into an ArrayBuffer-backed array, which BodyInit accepts.
-    const assetBytes = new Uint8Array(await asset.Body.transformToByteArray());
-    return new NextResponse(assetBytes, {
-      headers: { 'Content-Type': contentType, 'Cache-Control': ASSET_CACHE_CONTROL },
-    });
-  } catch (error) {
-    if (!(error instanceof NoSuchKey)) throw error;
+  const assetBytes = await readObjectBytes(bucket, assetPath.slice(1));
+  if (!assetBytes) {
     return apiError(404, 'not_found', 'No such book asset');
   }
+  return new NextResponse(assetBytes, {
+    headers: { 'Content-Type': contentType, 'Cache-Control': ASSET_CACHE_CONTROL },
+  });
 });

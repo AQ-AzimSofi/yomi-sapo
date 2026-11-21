@@ -12,6 +12,7 @@ import { COLORS, EXPLANATION_CONFIG, DARK_COLORS, READER_THEME } from "@/lib/con
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
+import type { BookRef } from "@/lib/books/bookRef";
 import { guestKeyHeaders, promptGuestKeyOnFailure } from "@/lib/guestKeys";
 
 const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
@@ -28,8 +29,7 @@ interface CollapsibleItemProps {
   isDarkMode?: boolean;
   onSentenceClick?: (sentence: string) => void;
   imageMap?: Record<string, string>;
-  bookDirectory?: string;
-  bookFileName?: string;
+  book: BookRef;
   currentPage?: number;
   audiobookEnabled?: boolean;
   isStartCursor?: boolean;
@@ -50,8 +50,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   isDarkMode = false,
   onSentenceClick,
   imageMap,
-  bookDirectory,
-  bookFileName,
+  book,
   currentPage,
   audiobookEnabled,
   isStartCursor,
@@ -60,14 +59,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   onStartContinuousPlay,
 }) => {
   const searchParams = useSearchParams();
-  const directoryParam = searchParams.get("directory");
-  const fileNameParam = searchParams.get("fileName");
   const highlightWord = searchParams.get("highlight");
-
-  const fileName: string =
-    (directoryParam && fileNameParam
-      ? `${directoryParam}/${fileNameParam}`
-      : fileNameParam) || "text-1";
 
   const [isOpen, setIsOpen] = useState(initialDropdownState);
   const [loading, setLoading] = useState(false);
@@ -109,7 +101,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ target: fileName, content: head, page: currentPage }),
+        body: JSON.stringify({ ...book, content: head, page: currentPage }),
       });
       if (!response.ok) {
         throw new Error("Failed");
@@ -258,7 +250,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
       imageMap?.[originalName] ||
       imageMap?.[`image/${originalName}`] ||
       originalName;
-    const imagePath = bookImagePath(bookDirectory ?? "", bookFileName ?? "", actualFileName);
+    const imagePath = bookImagePath(book.directory, book.fileName, actualFileName);
     return { actualFileName, imagePath };
   };
 
@@ -326,7 +318,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
                 key={index}
                 fileName={actualFileName}
                 imagePath={imagePath}
-                altText={`Illustration from ${bookFileName}`}
+                altText={`Illustration from ${book.fileName}`}
                 onUnavailable={() => markImageUnavailable(imagePath)}
               />
             );
