@@ -3,6 +3,7 @@ import { getAllTextEntries } from '@/lib/db/queries';
 import { withAuth } from '@/lib/auth/guards';
 import { PUBLIC_BOOKS } from '@/lib/publicBooks';
 import { toBookKey } from '@/lib/books/bookRef';
+import type { TextFileListResponse } from '@/lib/api/contracts';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
     const available = PUBLIC_BOOKS.filter((book) =>
       (filesByDirectory[book.directory] || []).includes(book.fileName)
     );
-    return NextResponse.json({
+    return NextResponse.json<TextFileListResponse>({
       directories: available.map((book) => book.directory),
       filesByDirectory: Object.fromEntries(
         available.map((book) => [book.directory, [book.fileName]])
@@ -30,7 +31,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
     });
   });
 
-  return NextResponse.json({
+  return NextResponse.json<TextFileListResponse>({
     directories,
     filesByDirectory,
     files: flatFiles,

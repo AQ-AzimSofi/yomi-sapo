@@ -5,10 +5,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { API_ROUTES, STORAGE_KEYS, TTS_CONFIG, type TTSVoiceGender } from '@/lib/constants';
-import type { TTSRequest, TTSResponse } from '@/lib/types';
+import { STORAGE_KEYS, TTS_CONFIG, type TTSVoiceGender } from '@/lib/constants';
 import { cleanTextForTTS } from '@/lib/utils/ttsTextCleaner';
-import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
+import { ApiError, synthesizeSpeech } from '@/lib/api/client';
 
 interface UseTTSOptions {
   onPlayStart?: () => void;
@@ -32,6 +31,15 @@ interface UseTTSReturn {
   stop: () => void;
   setSpeed: (speed: number) => void;
   setVoiceGender: (gender: TTSVoiceGender) => void;
+}
+
+function toPlaybackError(error: unknown): Error {
+  if (error instanceof ApiError && error.promptedGuestKey) {
+    return new Error('Add or update your Google TTS API key to play audio.');
+  }
+  if (error instanceof ApiError) return new Error(`TTS生成に失敗しました: ${error.statusText}`);
+  if (error instanceof Error) return error;
+  return new Error('不明なエラー');
 }
 
 /**
@@ -136,31 +144,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
     currentTextRef.current = text;
 
     try {
-      const requestData: TTSRequest = {
-        text,
-        speed,
-        voiceGender,
-      };
-
-      const response = await fetch(API_ROUTES.TTS, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...guestKeyHeaders('tts'),
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        const prompted = await promptGuestKeyOnFailure('tts', response);
-        throw new Error(
-          prompted
-            ? 'Add or update your Google TTS API key to play audio.'
-            : `TTS生成に失敗しました: ${response.statusText}`
-        );
-      }
-
-      const data: TTSResponse = await response.json();
+      const data = await synthesizeSpeech({ text, speed, voiceGender });
 
       if (!data.audioContent) {
         throw new Error(data.message || '音声データが空です');
@@ -194,7 +178,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
       await audio.play();
 
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('不明なエラー');
+      const error = toPlaybackError(err);
       setError(error);
       setIsPlaying(false);
       setIsPaused(false);

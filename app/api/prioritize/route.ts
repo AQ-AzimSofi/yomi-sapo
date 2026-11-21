@@ -4,6 +4,7 @@ import { AI_MODELS, GUEST_KEY_HEADERS, PAGINATION_CONFIG, type PriorityScore } f
 import { guestKeyRequired, withAuth } from "@/lib/auth/guards";
 import { apiError, parseJsonBody } from "@/lib/api/respond";
 import { isRecord } from "@/lib/utils/typeGuards";
+import type { PrioritizeResponse } from "@/lib/api/contracts";
 
 export const dynamic = "force-dynamic";
 
@@ -66,5 +67,5 @@ export const POST = withAuth("viewer", async (request, viewer) => {
     return apiError(502, "upstream_failed", "The model did not return a score for every sentence.");
   }
 
-  return NextResponse.json({ scores: rawScores.map(clampScore) });
+  return NextResponse.json<PrioritizeResponse>({ scores: rawScores.map(clampScore) });
 });

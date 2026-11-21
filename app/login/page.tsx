@@ -2,9 +2,10 @@
 
 import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { API_ROUTES, COLORS } from '@/lib/constants';
+import { COLORS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { clearBookTextCache } from '@/lib/bookTextCache';
+import { ApiError, login } from '@/lib/api/client';
 
 export default function LoginPage() {
   // An expired session lands here too, not only the sign-out button, so drop
@@ -25,21 +26,16 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const response = await fetch(API_ROUTES.AUTH_LOGIN, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        router.push('/');
-        router.refresh();
-      } else {
-        setError(data.message || 'Invalid password');
-      }
+      await login(password);
+      router.push('/');
+      router.refresh();
     } catch (err) {
+      // A JSON error body is the server's answer about the password; without one
+      // the request itself failed.
+      if (err instanceof ApiError && err.body) {
+        setError(err.body.message || 'Invalid password');
+        return;
+      }
       console.error('Login error:', err);
       setError('Login failed. Please try again.');
     } finally {

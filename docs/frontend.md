@@ -581,6 +581,7 @@ All interactive elements include appropriate ARIA labels:
 
 ### API Routes
 - See \`lib/constants.ts\` -> \`API_ROUTES\` for all endpoints
+- Call them through \`lib/api/client.ts\`; request and response types are in \`lib/api/contracts.ts\`
 
 ---
 

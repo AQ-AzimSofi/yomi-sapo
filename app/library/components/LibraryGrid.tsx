@@ -1,30 +1,13 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { API_ROUTES, COLORS } from '@/lib/constants';
+import { COLORS } from '@/lib/constants';
 import { useGuestMode } from '@/app/hooks/useGuestMode';
 import { toBookKey } from '@/lib/books/bookRef';
+import { ApiError, fetchLibraryProgress, listTextFiles } from '@/lib/api/client';
+import type { LibraryProgressResponse, TextFileListResponse } from '@/lib/api/contracts';
 import BookCard from './BookCard';
 import ContinueReading from './ContinueReading';
-
-interface FileListResponse {
-  directories: string[];
-  filesByDirectory: Record<string, string[]>;
-  files: string[];
-}
-
-interface BookProgressData {
-  progress: number;
-  totalCharacters: number;
-  bookmarkPage: number | null;
-  totalPages: number;
-  bookmarkUpdatedAt: string | null;
-  createdAt: string | null;
-}
-
-interface BookProgress {
-  [key: string]: BookProgressData;
-}
 
 type SortMode = 'last-read' | 'last-added' | 'progress' | 'title';
 
@@ -58,6 +41,13 @@ function findLastReadBook(books: FlatBook[]): FlatBook | null {
   );
 }
 
+// The server's reason is not shown; the message names the list that did not load.
+function loadFailure(error: unknown, message: string): Error {
+  if (error instanceof ApiError) return new Error(message);
+  if (error instanceof Error) return error;
+  return new Error('Unknown error');
+}
+
 function formatDirectoryTag(directory: string): string {
   const topLevel = directory.split('/')[0];
   return topLevel
@@ -66,8 +56,8 @@ function formatDirectoryTag(directory: string): string {
 }
 
 export default function LibraryGrid() {
-  const [fileData, setFileData] = useState<FileListResponse | null>(null);
-  const [bookProgress, setBookProgress] = useState<BookProgress>({});
+  const [fileData, setFileData] = useState<TextFileListResponse | null>(null);
+  const [bookProgress, setBookProgress] = useState<LibraryProgressResponse>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('last-read');
@@ -78,19 +68,13 @@ export default function LibraryGrid() {
       try {
         setIsLoading(true);
 
-        const [fileResponse, progressResponse] = await Promise.all([
-          fetch(API_ROUTES.LIST_TEXT_FILES),
-          fetch(API_ROUTES.LIBRARY_PROGRESS),
-        ]);
+        const [fileList, progress] = await Promise.allSettled([listTextFiles(), fetchLibraryProgress()]);
 
-        if (!fileResponse.ok) throw new Error('Failed to load library');
-        if (!progressResponse.ok) throw new Error('Failed to load progress');
+        if (fileList.status === 'rejected') throw loadFailure(fileList.reason, 'Failed to load library');
+        if (progress.status === 'rejected') throw loadFailure(progress.reason, 'Failed to load progress');
 
-        const data: FileListResponse = await fileResponse.json();
-        setFileData(data);
-
-        const progressData: BookProgress = await progressResponse.json();
-        setBookProgress(progressData);
+        setFileData(fileList.value);
+        setBookProgress(progress.value);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {

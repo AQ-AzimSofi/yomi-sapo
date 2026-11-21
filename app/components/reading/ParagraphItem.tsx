@@ -11,7 +11,7 @@ import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import { toBookKey, type BookRef } from "@/lib/books/bookRef";
-import { guestKeyHeaders, promptGuestKeyOnFailure } from "@/lib/guestKeys";
+import { saveBookmark, translate } from "@/lib/api/client";
 
 const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
 
@@ -58,16 +58,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
     e.preventDefault();
     try {
       setLoading(true);
-      const response = await fetch("/api/write-bookmark", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ...book, content: text, page: currentPage }),
-      });
-      if (!response.ok) {
-        throw new Error("Failed");
-      }
+      await saveBookmark({ ...book, content: text, page: currentPage });
       onBookmarkSuccess();
     } catch (error) {
       console.error(error);
@@ -91,22 +82,8 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
 
     try {
       setTranslating(true);
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...guestKeyHeaders("translate"),
-        },
-        body: JSON.stringify({ text }),
-      });
-
-      if (!response.ok) {
-        await promptGuestKeyOnFailure("translate", response);
-        throw new Error("Translation failed");
-      }
-
-      const data = await response.json();
-      setTranslatedText(data.translatedText);
+      const { translatedText } = await translate(text);
+      setTranslatedText(translatedText);
       setShowTranslation(true);
     } catch (error) {
       console.error("Translation error:", error);

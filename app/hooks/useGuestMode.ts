@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { API_ROUTES } from '@/lib/constants';
 import { clearGuestKeys } from '@/lib/guestKeys';
+import { fetchSession } from '@/lib/api/client';
 
 interface GuestModeState {
   isGuest: boolean;
@@ -23,8 +23,7 @@ export function useGuestMode(): GuestModeState {
 
     const checkSession = async () => {
       try {
-        const res = await fetch(API_ROUTES.AUTH_SESSION);
-        const data = await res.json();
+        const data = await fetchSession();
         // Only show guest UI when the server explicitly reports no session; on a
         // failed/non-JSON check assume signed-in so the owner's chrome is never
         // degraded. Clear any stale guest keys once a session is confirmed.

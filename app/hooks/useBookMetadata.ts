@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { bookAssetPath, bookAssetUrl } from '@/lib/utils/bookAssetPath';
+import { fetchBookMetadata } from '@/lib/api/client';
 import type { BookRef } from '@/lib/books/bookRef';
 import type { BookMetadata, ImageMap } from '@/lib/types';
 
@@ -35,9 +35,9 @@ export function useBookMetadata(book: BookRef | null): UseBookMetadataResult {
       setError(null);
 
       try {
-        const response = await fetch(bookAssetUrl(bookAssetPath(book.directory, book.fileName, '.json')));
+        const data = await fetchBookMetadata(book);
 
-        if (!response.ok) {
+        if (!data) {
           // If JSON doesn't exist, silently fail (not all books have metadata)
           console.log(`No metadata found for ${book.fileName}`);
           setMetadata(null);
@@ -46,7 +46,6 @@ export function useBookMetadata(book: BookRef | null): UseBookMetadataResult {
           return;
         }
 
-        const data: BookMetadata = await response.json();
         setMetadata(data);
 
         // Build image mapping from original names to renamed files

@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { API_ROUTES, COLORS } from '@/lib/constants';
+import { COLORS } from '@/lib/constants';
 import { formatBookTitle } from '@/lib/utils/bookTitle';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
 import { bookQuery } from '@/lib/books/bookRef';
+import { fetchBookmark } from '@/lib/api/client';
 import BookCover from './BookCover';
 
 const PAGE_ONLY_BOOKMARK = /^page:\d+$/;
@@ -39,12 +40,8 @@ export default function ContinueReading({
 
     const fetchLastReadLine = async () => {
       try {
-        const response = await fetch(
-          `${API_ROUTES.READ_BOOKMARK}?${bookParams}`,
-          { signal: controller.signal }
-        );
-        if (!response.ok) return;
-        const bookmark: { text?: string } = await response.json();
+        const bookmark = await fetchBookmark({ directory, fileName }, controller.signal);
+        if (!bookmark) return;
         setLastReadLine(toLastReadLine(bookmark.text ?? ''));
       } catch (error) {
         // The quote is decoration; the block still works without it.
@@ -54,7 +51,7 @@ export default function ContinueReading({
 
     fetchLastReadLine();
     return () => controller.abort();
-  }, [bookParams]);
+  }, [directory, fileName]);
 
   const title = formatBookTitle(fileName);
   const progressPercent = Math.round(Math.min(100, Math.max(0, progress)));

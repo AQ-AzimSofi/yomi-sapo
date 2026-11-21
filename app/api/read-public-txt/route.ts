@@ -14,6 +14,7 @@ import { LEGACY_BOOK_DIRECTORY, bookRefFromParams, isSafeBookRef, type BookRef }
 import { truncateToPreviewPages } from '@/lib/utils/truncatePreview';
 import { PAGINATION_CONFIG } from '@/lib/constants';
 import { BOOK_VERSION_HEADER, ifNoneMatchIncludes } from '@/lib/utils/etag';
+import type { BookTextResponse } from '@/lib/api/contracts';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,7 +68,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
 
     const location = await locateBook(legacyKey ? legacyCandidates(legacyKey) : [book]);
     if (!location) {
-      return NextResponse.json({ text: '' });
+      return NextResponse.json<BookTextResponse>({ text: '' });
     }
 
     const variant = publicBook ? `preview${publicBook.maxPreviewPages}x${PAGINATION_CONFIG.ITEMS_PER_PAGE}` : 'full';
@@ -82,10 +83,10 @@ export const GET = withAuth('viewer', async (request, viewer) => {
     const content = await getTextEntry(location.fileName, location.directory);
     // A book removed between the two reads must not be cached under its old version.
     if (!content) {
-      return NextResponse.json({ text: '' });
+      return NextResponse.json<BookTextResponse>({ text: '' });
     }
     const text = publicBook ? truncateToPreviewPages(content, publicBook.maxPreviewPages) : content;
-    return NextResponse.json({ text }, { headers: cacheHeaders(etag) });
+    return NextResponse.json<BookTextResponse>({ text }, { headers: cacheHeaders(etag) });
   } catch (error) {
     console.error('Failed to read book text:', { fileName, directory }, error);
     return internalError();

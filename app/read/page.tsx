@@ -9,7 +9,6 @@ import {
   DARK_COLORS,
   READER_CONFIG,
   STORAGE_KEYS,
-  API_ROUTES,
   type PriorityScore,
 } from '@/lib/constants';
 import ProgressBar from './components/ProgressBar';
@@ -32,12 +31,12 @@ import {
   toPlayableUnits,
   totalPagesFor,
 } from '@/lib/content/bookModel';
-import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
-import { fetchBookText } from '@/lib/bookTextCache';
-import { bookQuery, bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
+import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
+import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
+import { describeLoadFailure } from './loadFailure';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -206,23 +205,21 @@ function ReaderContent({
       setBookmarkSavedPage(null);
 
       try {
-        const [bookText, bookmarkRes] = await Promise.all([
-          fetchBookText(`${API_ROUTES.READ_TEXT}?${bookQuery(book)}`, controller.signal),
-          fetch(`${API_ROUTES.READ_BOOKMARK}?${bookQuery(book)}`, { signal: controller.signal }),
+        const [bookText, bookmark] = await Promise.all([
+          fetchBookText(book, controller.signal),
+          fetchBookmark(book, controller.signal),
         ]);
 
         if (controller.signal.aborted) return;
         setContent(bookText);
 
-        if (bookmarkRes.ok) {
-          const bookmarkData = await bookmarkRes.json();
-          if (controller.signal.aborted) return;
-          setBookmarkText(bookmarkData.text || '');
-          setBookmarkSavedPage(bookmarkData.page ?? null);
+        if (bookmark) {
+          setBookmarkText(bookmark.text || '');
+          setBookmarkSavedPage(bookmark.page ?? null);
         }
       } catch (err) {
         if (controller.signal.aborted) return;
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setError(describeLoadFailure(err));
       } finally {
         if (!controller.signal.aborted) setIsLoading(false);
       }
@@ -272,28 +269,16 @@ function ReaderContent({
     setPrioritizeError(null);
     setIsPrioritizing(true);
     try {
-      const res = await fetch(API_ROUTES.PRIORITIZE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...guestKeyHeaders('gemini') },
-        body: JSON.stringify({ sentences: currentPageHeaders }),
-      });
-      if (!res.ok) {
-        // Missing/invalid guest key opens the key modal; anything else is a real
-        // failure the reader should see rather than a silent empty result.
-        if (res.status === 401) {
-          await promptGuestKeyOnFailure('gemini', res);
-        } else {
-          setPrioritizeError(PRIORITIZE_ERROR_MESSAGE);
-        }
-        return;
-      }
-      const data = await res.json();
-      const scores = (Array.isArray(data.scores) ? data.scores : []) as PriorityScore[];
+      const data = await prioritize(currentPageHeaders);
+      const scores = Array.isArray(data.scores) ? data.scores : [];
       const start = pageStartIndex(currentPage);
       setPriorityScores(
         Object.fromEntries(scores.map((score, index) => [start + index, score] as const))
       );
-    } catch {
+    } catch (err) {
+      // A 401 is a guest without a key, and it opened the key modal; anything else
+      // is a real failure the reader should see rather than a silent empty result.
+      if (err instanceof ApiError && err.status === 401) return;
       setPrioritizeError(PRIORITIZE_ERROR_MESSAGE);
     } finally {
       setIsPrioritizing(false);
@@ -410,12 +395,10 @@ function ReaderContent({
   const refetchBookmark = useCallback(async () => {
     if (!book) return;
     try {
-      const res = await fetch(`${API_ROUTES.READ_BOOKMARK}?${bookQuery(book)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setBookmarkText(data.text || '');
-        setBookmarkSavedPage(data.page ?? null);
-      }
+      const bookmark = await fetchBookmark(book);
+      if (!bookmark) return;
+      setBookmarkText(bookmark.text || '');
+      setBookmarkSavedPage(bookmark.page ?? null);
     } catch (err) {
       console.error('Failed to refetch bookmark:', err);
     }
@@ -427,12 +410,8 @@ function ReaderContent({
     if (!unit) return;
     const page = pageOfIndex(audioIndex);
     try {
-      const res = await fetch(API_ROUTES.WRITE_BOOKMARK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...book, content: unit.main, page }),
-      });
-      if (res.ok) refetchBookmark();
+      await saveBookmark({ ...book, content: unit.main, page });
+      refetchBookmark();
     } catch (err) {
       console.error('Failed to bookmark playing sentence:', err);
     }

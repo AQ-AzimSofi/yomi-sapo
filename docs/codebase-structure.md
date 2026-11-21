@@ -19,7 +19,7 @@ yomi-sapo/
 │   ├── storage/            # S3 book storage
 │   ├── utils/              # Utility functions
 │   ├── auth/               # Authentication and API route guards
-│   └── api/                # API response and request-body helpers
+│   └── api/                # Browser API client, route contracts, response helpers
 ├── scripts/                # Utility scripts (Python/JS/TS)
 ├── public/                 # Static assets & text files
 └── docs/                   # Documentation
@@ -58,7 +58,7 @@ Every handler is declared as `export const GET = withAuth(policy, handler)` (`li
 
 `read-public-txt`, `read-bookmark`, `write-bookmark`, `narration`, `covers` and `text-entries` read their book as a `BookRef` (`lib/books/bookRef.ts`) from separate `directory` and `fileName` params (`write-bookmark` and `text-entries`: body fields), and reject one that fails `isSafeBookRef` with 400. `ruby-registry` checks its `directory` and `bookName` the same way. `vocabulary` and `admin` still take a raw `fileName` and `directory` with no check; both only pass them to parameterized SQL. `read-public-txt`, `read-bookmark` and `write-bookmark` still accept the combined form (`fileName=dir/file`, or `target` in the bookmark body), because a browser can hold the reader from before a deploy. `read-public-txt` keeps its old lookup for that form: every directory/file split, most nested first, then the legacy `public` folder.
 
-Errors are `{ error: { code, message } }` from `apiError()` (`lib/api/respond.ts`), plus any field a client reads (`requiresGuestKey`, the login page's `message`). `parseJsonBody(request, check, requirement)` answers 400 for a body that is not JSON or fails `check`. An error a handler does not handle is logged and answered with a generic 500.
+Errors are `{ error: { code, message } }` from `apiError()` (`lib/api/respond.ts`), plus any field a client reads (`requiresGuestKey`, the top-level `message` of the login and vocabulary list errors). Request and response bodies are typed in `lib/api/contracts.ts`, which both the handlers and the browser client import. `parseJsonBody(request, check, requirement)` answers 400 for a body that is not JSON or fails `check`. An error a handler does not handle is logged and answered with a generic 500.
 
 ### Components (`/app/components`)
 
@@ -177,6 +177,18 @@ services/
 - `readTextFile(fileName)`
 - `readRubyRegistry`, `writeRubyRegistry`, `upsertRubyEntry`, `deleteRubyEntry`, `ignoreSuggestion`
 
+### API client (`/lib/api`)
+
+Browser code reaches the API routes only through `lib/api/client.ts`, which has one typed function per call (`fetchBookText`, `fetchBookmark`, `saveBookmark`, `translate`, `explainSentence`, `prioritize`, `synthesizeSpeech`, `fetchNarration`, the vocabulary, ruby registry, library, auth and db-sync calls). Each goes through one `request()` helper:
+
+- Builds the URL from `API_ROUTES`, encoding params the way `bookQuery` does, and sends a body as JSON.
+- Attaches the guest's own key header (`lib/guestKeys.ts`) for the paid routes and passes an `AbortSignal` through.
+- Throws `ApiError` for a response outside 2xx, with `status`, `statusText` and the parsed error `body`. A failed paid request opens the guest key modal through `promptGuestKeyOnFailure`, after any failure or (for `prioritize`) only after a 401, and `promptedGuestKey` says whether it did.
+
+`fetchBookmark` and `fetchBookMetadata` answer null for an error response, and `fetchNarration` for 401, 404 or a non-JSON answer; pages treat those as "none". Components can mock the client module in tests.
+
+`fetchBookText` reads through `lib/bookTextCache.ts`: CloudFront drops `If-None-Match`, so the reader keeps each book in Cache Storage (`book-text-v2`) and sends the stored ETag in `x-book-version`; the server answers 204 while that copy is current. Opening the cache deletes any other `book-text-*` cache, such as `book-text-v1` from before books were requested with separate `directory` and `fileName` params, and signing out deletes them all.
+
 ### Book identity (`/lib/books`)
 
 `bookRef.ts` names a book: `interface BookRef { directory: string; fileName: string }`, the same pair as a `text_entries` row.
@@ -236,6 +248,8 @@ lib/
 ├── constants.ts        # App configuration (AI_MODELS, API_ROUTES, etc.)
 ├── types.ts            # TypeScript type definitions
 ├── api/
+│   ├── client.ts       # Browser API client: request(), ApiError, one function per call
+│   ├── contracts.ts    # Request and response types of the routes the browser calls
 │   └── respond.ts      # apiError, parseJsonBody, the generic 500
 ├── auth/
 │   ├── guards.ts       # getViewer and withAuth (owner, viewer, admin-key, public)

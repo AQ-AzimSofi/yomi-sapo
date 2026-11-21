@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { verifyPassword } from '@/lib/auth/password';
 import { createSession, SESSION_COOKIE } from '@/lib/auth/session';
 import { withAuth } from '@/lib/auth/guards';
-import { apiError, errorBody, parseJsonBody, type ApiErrorCode } from '@/lib/api/respond';
+import { apiError, errorBody, parseJsonBody } from '@/lib/api/respond';
+import type { ApiErrorCode, AuthResponse, SessionResponse } from '@/lib/api/contracts';
 import { isRecord } from '@/lib/utils/typeGuards';
 
 /**
@@ -32,7 +33,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
   const action = searchParams.get('action');
 
   if (action === 'session') {
-    return NextResponse.json({ authenticated: viewer === 'owner' });
+    return NextResponse.json<SessionResponse>({ authenticated: viewer === 'owner' });
   }
 
   return apiError(400, 'invalid_request', 'Invalid action. Use action=session');
@@ -64,7 +65,7 @@ async function handleLogin(request: Request) {
     const sessionToken = await createSession();
 
     // Set cookie
-    const response = NextResponse.json({
+    const response = NextResponse.json<AuthResponse>({
       message: 'Login successful',
       success: true
     });
@@ -88,7 +89,7 @@ async function handleLogin(request: Request) {
 
 // Logout handler
 async function handleLogout() {
-  const response = NextResponse.json({
+  const response = NextResponse.json<AuthResponse>({
     message: 'Logged out successfully',
     success: true
   });

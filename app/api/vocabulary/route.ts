@@ -3,7 +3,7 @@ import { getVocabularyEntries, createVocabularyEntry } from '@/lib/db/vocabulary
 import { withAuth } from '@/lib/auth/guards';
 import { errorBody, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
-import type { VocabularyEntryResponse, VocabularyListResponse } from '@/lib/types';
+import type { VocabularyEntryResponse, VocabularyListResponse } from '@/lib/api/contracts';
 
 interface VocabularyDraft {
   word: string;

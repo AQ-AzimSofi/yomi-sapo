@@ -13,7 +13,7 @@ import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import type { BookRef } from "@/lib/books/bookRef";
-import { guestKeyHeaders, promptGuestKeyOnFailure } from "@/lib/guestKeys";
+import { saveBookmark, translate } from "@/lib/api/client";
 
 const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
 
@@ -96,16 +96,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     e.preventDefault();
     try {
       setLoading(true);
-      const response = await fetch("/api/write-bookmark", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ...book, content: head, page: currentPage }),
-      });
-      if (!response.ok) {
-        throw new Error("Failed");
-      }
+      await saveBookmark({ ...book, content: head, page: currentPage });
       onSubmitSuccess();
     } catch (error) {
       console.error(error);
@@ -129,22 +120,8 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
 
     try {
       setTranslating(true);
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...guestKeyHeaders("translate"),
-        },
-        body: JSON.stringify({ text: head }),
-      });
-
-      if (!response.ok) {
-        await promptGuestKeyOnFailure("translate", response);
-        throw new Error("Translation failed");
-      }
-
-      const data = await response.json();
-      setTranslatedText(data.translatedText);
+      const { translatedText } = await translate(head);
+      setTranslatedText(translatedText);
       setShowTranslation(true);
     } catch (error) {
       console.error("Translation error:", error);

@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { API_ROUTES } from '@/lib/constants';
-import type { RubyRegistry, RubyEntry, RubyRegistryResponse } from '@/lib/types';
+import { ApiError, fetchRubyRegistry, removeRubyRegistryItem, saveRubyEntry } from '@/lib/api/client';
+import type { RubyRegistry, RubyEntry } from '@/lib/types';
+import type { RubyRegistryResponse } from '@/lib/api/contracts';
 
 interface UseRubyRegistryOptions {
   directory: string;
@@ -19,6 +20,13 @@ interface UseRubyRegistryReturn {
   ignoreSuggestion: (kanji: string) => Promise<void>;
   refetch: () => Promise<void>;
   searchEntries: (query: string) => RubyEntry[];
+}
+
+// Names the failed action and the HTTP status text, e.g. "Failed to save entry: Not Found".
+function toRegistryError(error: unknown, failedAction: string): Error {
+  if (error instanceof ApiError) return new Error(`${failedAction}: ${error.statusText}`);
+  if (error instanceof Error) return error;
+  return new Error('Unknown error');
 }
 
 export function useRubyRegistry({
@@ -40,20 +48,12 @@ export function useRubyRegistry({
     setError(null);
 
     try {
-      const response = await fetch(
-        `${API_ROUTES.RUBY_REGISTRY}?directory=${encodeURIComponent(directory)}&bookName=${encodeURIComponent(bookName)}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to load registry: ${response.statusText}`);
-      }
-
-      const data: RubyRegistryResponse = await response.json();
+      const data = await fetchRubyRegistry({ directory, bookName });
       if (data.success && data.registry) {
         setRegistry(data.registry);
       }
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
+      const error = toRegistryError(err, 'Failed to load registry');
       setError(error);
       console.error('Error fetching ruby registry:', error);
     } finally {
@@ -61,35 +61,17 @@ export function useRubyRegistry({
     }
   }, [directory, bookName]);
 
-  const addEntry = async (entry: Omit<RubyEntry, 'source'> & { source?: 'epub' | 'user' }) => {
+  const changeRegistry = async (failedAction: string, change: () => Promise<RubyRegistryResponse>) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(API_ROUTES.RUBY_REGISTRY, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          directory,
-          bookName,
-          entry: {
-            ...entry,
-            source: entry.source || 'user',
-            note: entry.note || ''
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to save entry: ${response.statusText}`);
-      }
-
-      const data: RubyRegistryResponse = await response.json();
+      const data = await change();
       if (data.success && data.registry) {
         setRegistry(data.registry);
       }
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
+      const error = toRegistryError(err, failedAction);
       setError(error);
       throw error;
     } finally {
@@ -97,59 +79,26 @@ export function useRubyRegistry({
     }
   };
 
-  const deleteEntry = async (kanji: string) => {
-    setIsLoading(true);
-    setError(null);
+  const addEntry = (entry: Omit<RubyEntry, 'source'> & { source?: 'epub' | 'user' }) =>
+    changeRegistry('Failed to save entry', () =>
+      saveRubyEntry({
+        directory,
+        bookName,
+        entry: {
+          ...entry,
+          source: entry.source || 'user',
+          note: entry.note || ''
+        }
+      })
+    );
 
-    try {
-      const response = await fetch(
-        `${API_ROUTES.RUBY_REGISTRY}?directory=${encodeURIComponent(directory)}&bookName=${encodeURIComponent(bookName)}&kanji=${encodeURIComponent(kanji)}&type=entry`,
-        { method: 'DELETE' }
-      );
+  const deleteEntry = (kanji: string) =>
+    changeRegistry('Failed to delete entry', () => removeRubyRegistryItem({ directory, bookName }, kanji, 'entry'));
 
-      if (!response.ok) {
-        throw new Error(`Failed to delete entry: ${response.statusText}`);
-      }
-
-      const data: RubyRegistryResponse = await response.json();
-      if (data.success && data.registry) {
-        setRegistry(data.registry);
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
-      setError(error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const ignoreSuggestion = async (kanji: string) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch(
-        `${API_ROUTES.RUBY_REGISTRY}?directory=${encodeURIComponent(directory)}&bookName=${encodeURIComponent(bookName)}&kanji=${encodeURIComponent(kanji)}&type=suggestion`,
-        { method: 'DELETE' }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to ignore suggestion: ${response.statusText}`);
-      }
-
-      const data: RubyRegistryResponse = await response.json();
-      if (data.success && data.registry) {
-        setRegistry(data.registry);
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
-      setError(error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const ignoreSuggestion = (kanji: string) =>
+    changeRegistry('Failed to ignore suggestion', () =>
+      removeRubyRegistryItem({ directory, bookName }, kanji, 'suggestion')
+    );
 
   const searchEntries = useCallback((query: string): RubyEntry[] => {
     if (!registry || !query.trim()) {

@@ -38,6 +38,7 @@ export const API_ROUTES = {
   LIST_TEXT_FILES: '/api/list-text-files',
   EXPLAIN_SENTENCE: '/api/explain-sentence',
   PRIORITIZE: '/api/prioritize',
+  TRANSLATE: '/api/translate',
   NARRATION: '/api/narration',
   BOOK_COVER: '/api/covers',
   BOOK_ASSET: '/api/book-assets',

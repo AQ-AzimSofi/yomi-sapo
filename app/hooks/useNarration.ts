@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { API_ROUTES } from '@/lib/constants';
-import { bookQuery, type BookRef } from '@/lib/books/bookRef';
+import { toBookKey, type BookRef } from '@/lib/books/bookRef';
+import { ApiError, fetchNarration } from '@/lib/api/client';
 import type { NarrationCue, NarrationManifest } from '@/lib/types';
 
 export interface NarrationLoad {
@@ -21,38 +21,38 @@ function parseCue(value: unknown): NarrationCue | null {
   return { start, end };
 }
 
-function parseManifest(value: unknown, url: string): NarrationManifest | null {
+function parseManifest(value: unknown, bookKey: string): NarrationManifest | null {
   if (!value || typeof value !== 'object') {
-    console.error(`Narration manifest is not an object: ${url}`);
+    console.error(`Narration manifest is not an object: ${bookKey}`);
     return null;
   }
   const { audioUrl, unitCount, cues } = value as Record<string, unknown>;
   if (typeof audioUrl !== 'string' || !audioUrl) {
-    console.error(`Narration manifest has no audioUrl: ${url}`);
+    console.error(`Narration manifest has no audioUrl: ${bookKey}`);
     return null;
   }
   if (typeof unitCount !== 'number' || !Number.isInteger(unitCount) || unitCount <= 0) {
-    console.error(`Narration manifest has no usable unitCount: ${url}`);
+    console.error(`Narration manifest has no usable unitCount: ${bookKey}`);
     return null;
   }
   if (!Array.isArray(cues)) {
-    console.error(`Narration manifest has no cues array: ${url}`);
+    console.error(`Narration manifest has no cues array: ${bookKey}`);
     return null;
   }
   // cues is what gets indexed by unit, so a short array would quietly drop the
   // tail of the book even though unitCount looked right.
   if (cues.length !== unitCount) {
-    console.error(`Narration manifest declares ${unitCount} units but has ${cues.length} cues: ${url}`);
+    console.error(`Narration manifest declares ${unitCount} units but has ${cues.length} cues: ${bookKey}`);
     return null;
   }
 
   const parsed = cues.map(parseCue);
   const dropped = parsed.filter((cue, index) => !cue && cues[index] !== null).length;
   if (dropped > 0) {
-    console.error(`Narration manifest has ${dropped} malformed cues, those units fall back to TTS: ${url}`);
+    console.error(`Narration manifest has ${dropped} malformed cues, those units fall back to TTS: ${bookKey}`);
   }
   if (!parsed.some(Boolean)) {
-    console.error(`Narration manifest covers no units: ${url}`);
+    console.error(`Narration manifest covers no units: ${bookKey}`);
     return null;
   }
   return { audioUrl, unitCount, cues: parsed };
@@ -77,29 +77,20 @@ export function useNarration(book: BookRef | null, unitCount: number): Narration
     if (!book || unitCount <= 0) return;
 
     const controller = new AbortController();
-    const url = `${API_ROUTES.NARRATION}?${bookQuery(book)}`;
+    const bookKey = toBookKey(book);
 
     const fail = (message: string, detail: string) => {
-      console.error(`${detail}: ${url}`);
+      console.error(`${detail}: ${bookKey}`);
       setLoad({ manifest: null, error: message });
     };
 
     const loadManifest = async () => {
       try {
-        const response = await fetch(url, { signal: controller.signal });
+        const manifest = await fetchNarration(book, controller.signal);
         if (controller.signal.aborted) return;
-        if (!response.ok) {
-          // 404 means this variant has no recording and 401 means a guest, who is
-          // never served one. Both are the normal case, not a fault to show.
-          if (response.status === 404 || response.status === 401) return;
-          fail('Audiobook recording could not be loaded', `Narration manifest request failed (${response.status})`);
-          return;
-        }
-        // An edge or proxy can answer with an HTML body and a perfectly ok status.
-        if (!response.headers.get('content-type')?.includes('json')) return;
+        if (!manifest) return;
 
-        const parsed = parseManifest(await response.json(), url);
-        if (controller.signal.aborted) return;
+        const parsed = parseManifest(manifest, bookKey);
         if (!parsed) {
           fail('Audiobook recording is unusable', 'Narration manifest failed validation');
           return;
@@ -114,7 +105,11 @@ export function useNarration(book: BookRef | null, unitCount: number): Narration
         setLoad({ manifest: parsed, error: null });
       } catch (error) {
         if (controller.signal.aborted) return;
-        console.error(`Failed to load narration manifest: ${url}`, error);
+        if (error instanceof ApiError) {
+          fail('Audiobook recording could not be loaded', `Narration manifest request failed (${error.status})`);
+          return;
+        }
+        console.error(`Failed to load narration manifest: ${bookKey}`, error);
         setLoad({ manifest: null, error: 'Audiobook recording could not be loaded' });
       }
     };

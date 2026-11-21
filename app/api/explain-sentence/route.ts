@@ -11,7 +11,7 @@ import { AI_MODELS, EXPLANATION_MODES, GUEST_KEY_HEADERS } from "@/lib/constants
 import { guestKeyRequired, withAuth } from "@/lib/auth/guards";
 import { parseJsonBody } from "@/lib/api/respond";
 import { isNonEmptyString, isOptionalNumber, isOptionalString, isRecord } from "@/lib/utils/typeGuards";
-import type { ExplanationResponse } from "@/lib/types";
+import type { ExplanationResponse } from "@/lib/api/contracts";
 
 interface ExplanationBody {
   sentence: string;
