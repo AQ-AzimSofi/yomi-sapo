@@ -1,22 +1,26 @@
 import * as fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import { PUBLIC_DIR, BOOKMARK_FILE } from '@/lib/constants';
+import { BOOKMARK_FILE } from '@/lib/constants';
 import type { BookmarkData, RubyRegistry, RubyEntry } from '@/lib/types';
+
+// A literal 'public' lets Next's file tracer scope this module to public/;
+// an imported constant made it trace the whole repo into every route.
+const PUBLIC_ROOT = path.join(process.cwd(), 'public');
 
 function removeControlCharacters(text: string): string {
   return text.replace(/[\r\n]/g, '').trim();
 }
 
 export function getPublicFilePath(fileName: string): string {
-  return path.join(process.cwd(), PUBLIC_DIR, fileName);
+  return path.join(PUBLIC_ROOT, fileName);
 }
 
 export function getBookmarkFilePath(directory: string = ''): string {
   if (directory) {
-    return path.join(process.cwd(), PUBLIC_DIR, directory, BOOKMARK_FILE);
+    return path.join(PUBLIC_ROOT, directory, BOOKMARK_FILE);
   }
-  return path.join(process.cwd(), PUBLIC_DIR, BOOKMARK_FILE);
+  return path.join(PUBLIC_ROOT, BOOKMARK_FILE);
 }
 
 export async function readTextFile(fileName: string): Promise<string> {
@@ -104,9 +108,8 @@ export function updateBookmarkSync(filePath: string, content: string): void {
 }
 
 export async function listDirectories(): Promise<string[]> {
-  const publicPath = path.join(process.cwd(), PUBLIC_DIR);
   try {
-    const entries = await fs.readdir(publicPath, { withFileTypes: true });
+    const entries = await fs.readdir(PUBLIC_ROOT, { withFileTypes: true });
     return entries
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name)
@@ -118,8 +121,8 @@ export async function listDirectories(): Promise<string[]> {
 
 export async function listTextFilesInDirectory(directory: string = ''): Promise<string[]> {
   const dirPath = directory
-    ? path.join(process.cwd(), PUBLIC_DIR, directory)
-    : path.join(process.cwd(), PUBLIC_DIR);
+    ? path.join(PUBLIC_ROOT, directory)
+    : PUBLIC_ROOT;
 
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -284,7 +287,7 @@ export async function syncBookmarks(): Promise<{ cleaned: number; added: number 
 const RUBY_REGISTRY_FILE = 'ruby-registry.json';
 
 function getRubyRegistryPath(directory: string, bookName: string): string {
-  return path.join(process.cwd(), PUBLIC_DIR, directory, bookName, RUBY_REGISTRY_FILE);
+  return path.join(PUBLIC_ROOT, directory, bookName, RUBY_REGISTRY_FILE);
 }
 
 export async function readRubyRegistry(directory: string, bookName: string): Promise<RubyRegistry | null> {

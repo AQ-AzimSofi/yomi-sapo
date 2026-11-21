@@ -3,7 +3,6 @@
  */
 
 // ファイル保存パス
-export const PUBLIC_DIR = 'public';
 export const BOOKMARK_FILE = 'bookmark.json';
 
 // デフォルトのテキストファイル（サブディレクトリ対応）
