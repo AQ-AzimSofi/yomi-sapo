@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { preferenceValue, subscribeToPreferences, writePreference } from './preferences';
-import { starredWordsPreference, toggleStarredWord } from './starredWords';
+import { preferenceValue, subscribeToPreferences } from './preferences';
+import { starredWordsPreference, toggleSavedStarredWord, toggleStarredWord } from './starredWords';
 
 const BOOK_WORDS = starredWordsPreference('bookv2-furigana', 'theme-fixture');
 
@@ -48,7 +48,7 @@ describe('toggleStarredWord', () => {
   });
 });
 
-describe('starring a word', () => {
+describe('toggleSavedStarredWord', () => {
   beforeEach(() => {
     vi.stubGlobal('window', new EventTarget());
   });
@@ -57,14 +57,27 @@ describe('starring a word', () => {
     vi.unstubAllGlobals();
   });
 
-  it('saves the new list and tells every reader of the starred words', () => {
-    const saved = new Map<string, string>();
+  function storageWith(stored: string) {
+    const saved = new Map([[BOOK_WORDS.key, stored]]);
+    return { saved, getItem: (key: string) => saved.get(key) ?? null, setItem: (key: string, value: string) => saved.set(key, value) };
+  }
+
+  it('adds the word to the words already saved and tells every reader of the starred words', () => {
+    const storage = storageWith('["窓"]');
     const onChange = vi.fn();
     const unsubscribe = subscribeToPreferences(onChange);
 
-    writePreference({ setItem: (key, value) => saved.set(key, value) }, BOOK_WORDS, toggleStarredWord(new Set(['窓']), '素直'));
+    toggleSavedStarredWord(storage, BOOK_WORDS, '素直');
     unsubscribe();
 
-    expect([saved.get(BOOK_WORDS.key), onChange.mock.calls.length]).toStrictEqual(['["窓","素直"]', 1]);
+    expect([storage.saved.get(BOOK_WORDS.key), onChange.mock.calls.length]).toStrictEqual(['["窓","素直"]', 1]);
+  });
+
+  it('removes a saved word and keeps the rest', () => {
+    const storage = storageWith('["窓","素直"]');
+
+    toggleSavedStarredWord(storage, BOOK_WORDS, '窓');
+
+    expect(storage.saved.get(BOOK_WORDS.key)).toBe('["素直"]');
   });
 });

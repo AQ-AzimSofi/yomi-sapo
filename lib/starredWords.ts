@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from '@/lib/constants';
-import type { Preference } from '@/lib/preferences';
+import { preferenceValue, writePreference, type Preference } from '@/lib/preferences';
 
 const NO_STARRED_WORDS: ReadonlySet<string> = new Set();
 
@@ -29,4 +29,14 @@ export function starredWordsPreference(directory: string, bookName: string): Pre
 export function toggleStarredWord(words: ReadonlySet<string>, word: string): ReadonlySet<string> {
   if (words.has(word)) return new Set([...words].filter((starred) => starred !== word));
   return new Set([...words, word]);
+}
+
+/** Stars the word in the book's saved list, or unstars it when it is already there. */
+export function toggleSavedStarredWord(
+  storage: Pick<Storage, 'getItem' | 'setItem'>,
+  preference: Preference<ReadonlySet<string>>,
+  word: string
+): void {
+  const saved = preferenceValue(preference, storage.getItem(preference.key));
+  writePreference(storage, preference, toggleStarredWord(saved, word));
 }
