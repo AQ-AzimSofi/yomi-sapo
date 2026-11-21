@@ -68,7 +68,7 @@ function locateSentence(unitText: string, { sentence, occurrence }: SentenceLoca
 }
 
 function plainUnitTexts(items: readonly ReaderItem[]): string[] {
-  return items.map((item) => toPlainText(itemMainText(item))).filter((text) => text.trim() !== '');
+  return items.map((item) => toPlainText(itemMainText(item)).trim()).filter((text) => text !== '');
 }
 
 /** The current page's text on each side of the clicked sentence, without furigana or illustrations. */
@@ -82,8 +82,10 @@ export function sentenceSurroundings(items: readonly ReaderItem[], location: Sen
   const page = pageOfIndex(location.unitIndex);
   const unitsBefore = plainUnitTexts(items.slice(pageStartIndex(page), location.unitIndex));
   const unitsAfter = plainUnitTexts(items.slice(location.unitIndex + 1, pageStartIndex(page + 1)));
-  const textBefore = [...unitsBefore, toPlainText(unitText.slice(0, sentenceStart))].join(UNIT_SEPARATOR);
-  const textAfter = [toPlainText(unitText.slice(sentenceStart + location.sentence.length)), ...unitsAfter].join(UNIT_SEPARATOR);
+  const unitTextBefore = toPlainText(unitText.slice(0, sentenceStart)).trimStart();
+  const unitTextAfter = toPlainText(unitText.slice(sentenceStart + location.sentence.length)).trimEnd();
+  const textBefore = [...unitsBefore, unitTextBefore].join(UNIT_SEPARATOR);
+  const textAfter = [unitTextAfter, ...unitsAfter].join(UNIT_SEPARATOR);
   return {
     before: lastChars(textBefore, EXPLANATION_CONFIG.MAX_CONTEXT_SIZE),
     after: firstChars(textAfter, EXPLANATION_CONFIG.MAX_CONTEXT_SIZE),

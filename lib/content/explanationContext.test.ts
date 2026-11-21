@@ -41,6 +41,19 @@ describe('sentenceSurroundings', () => {
     });
   });
 
+  it('drops the whitespace around each unit but keeps the line between units', () => {
+    const items: ReaderItem[] = [
+      { head: ' 前の文。 ', subItems: [] },
+      { head: ' 文。 後の文。 ', subItems: [] },
+      { head: ' 次の文。', subItems: [] },
+    ];
+
+    expect(sentenceSurroundings(items, { unitIndex: 1, sentence: '文。', occurrence: 0 })).toEqual({
+      before: '前の文。\n',
+      after: ' 後の文。\n次の文。',
+    });
+  });
+
   it('leaves nothing before a sentence that opens the page', () => {
     const items = paragraphs(...Array.from({ length: PAGINATION_CONFIG.ITEMS_PER_PAGE + 2 }, (_, index) => `段落${index}。`));
     const pageStart = PAGINATION_CONFIG.ITEMS_PER_PAGE;
