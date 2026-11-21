@@ -2,8 +2,6 @@
  * アプリケーション全体で使用される定数と設定値
  */
 
-// ファイル保存パス
-export const BOOKMARK_FILE = 'bookmark.json';
 
 // デフォルト値（サブディレクトリ対応）
 // Note: No default file is set. App auto-redirects to first available file.

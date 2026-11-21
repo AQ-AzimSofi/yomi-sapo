@@ -113,11 +113,6 @@ export interface PageQueryParams {
   dropdownAlwaysOpen?: string;
 }
 
-// ファイル保存型
-export interface BookmarkData {
-  [fileName: string]: string;
-}
-
 // Book metadata types (from EPUB converter JSON)
 export interface BookImage {
   fileName: string;          // e.g., "illustration-001.jpg"
