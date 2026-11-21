@@ -1,38 +1,22 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { COLORS, THEME } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
+import FabIcon, { type FabIconName } from './FabIcon';
 
-interface ReaderFABProps {
-  onToggleFurigana: () => void;
-  onToggleRephrase: () => void;
-  onOpenSettings: () => void;
-  onGoToBookmark?: () => void;
-  onCopyPageText: () => void;
-  onCopyPageRange: () => void;
-  onToggleDarkMode: () => void;
-  onToggleRubyLookup: () => void;
-  onPrioritize: () => void;
-  isPrioritizing?: boolean;
-  hasPriority?: boolean;
-  isFuriganaEnabled: boolean;
-  showRephrase: boolean;
-  isDarkMode: boolean;
-  hasBookmark: boolean;
-  bookmarkPage?: number | null;
-  currentPage?: number;
-  copyFeedback: boolean;
+export interface FabAction {
+  id: string;
+  icon: FabIconName;
+  label: string;
+  onSelect: () => void;
+  active?: boolean;
+  keepMenuOpen?: boolean;
+  beta?: boolean;
 }
 
-interface FabMenuButton {
-  icon: ReactNode;
-  label: string;
-  action: () => void;
-  active?: boolean;
-  hidden?: boolean;
-  keepOpen?: boolean;
-  beta?: boolean;
+interface ReaderFABProps {
+  actions: FabAction[];
 }
 
 const STORAGE_KEY = 'fab_position';
@@ -66,26 +50,7 @@ function getInitialPosition(): Position {
   };
 }
 
-export default function ReaderFAB({
-  onToggleFurigana,
-  onToggleRephrase,
-  onOpenSettings,
-  onGoToBookmark,
-  onCopyPageText,
-  onCopyPageRange,
-  onToggleDarkMode,
-  onToggleRubyLookup,
-  onPrioritize,
-  isPrioritizing,
-  hasPriority,
-  isFuriganaEnabled,
-  showRephrase,
-  isDarkMode,
-  hasBookmark,
-  bookmarkPage,
-  currentPage,
-  copyFeedback,
-}: ReaderFABProps) {
+export default function ReaderFAB({ actions }: ReaderFABProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [position, setPosition] = useState<Position>({ x: 20, y: 80 });
   const [isDragging, setIsDragging] = useState(false);
@@ -208,11 +173,10 @@ export default function ReaderFAB({
     setIsExpanded(prev => !prev);
   }, []);
 
-  const handleAction = useCallback((action: () => void, keepOpen?: boolean) => {
-    action();
-    if (!keepOpen) {
-      setIsExpanded(false);
-    }
+  const handleAction = useCallback((action: FabAction) => {
+    action.onSelect();
+    if (action.keepMenuOpen) return;
+    setIsExpanded(false);
   }, []);
 
   const getMenuPosition = useCallback(() => {
@@ -227,107 +191,6 @@ export default function ReaderFAB({
     };
   }, [position]);
 
-  const isOnBookmarkPage = hasBookmark && currentPage === bookmarkPage;
-
-  const fabButtons: FabMenuButton[] = [
-    {
-      icon: (
-        <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-        </svg>
-      ),
-      label: isOnBookmarkPage ? '栞の位置へ' : `栞のページへ (p.${bookmarkPage})`,
-      action: onGoToBookmark || (() => {}),
-      active: isOnBookmarkPage,
-      hidden: !hasBookmark || !onGoToBookmark,
-    },
-    {
-      icon: (
-        <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-      ),
-      label: copyFeedback ? 'コピーしました' : 'ページをコピー',
-      action: onCopyPageText,
-      active: copyFeedback,
-      keepOpen: true,
-    },
-    {
-      icon: (
-        <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16M4 12h16M4 17h10" />
-        </svg>
-      ),
-      label: '範囲をコピー',
-      action: onCopyPageRange,
-    },
-    {
-      icon: isPrioritizing ? (
-        <span
-          className="w-[16px] h-[16px] animate-spin"
-          style={{ borderWidth: 2, borderStyle: 'solid', borderColor: 'currentColor', borderTopColor: 'transparent', borderRadius: '50%' }}
-        />
-      ) : (
-        <svg className="w-[18px] h-[18px]" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
-        </svg>
-      ),
-      label: hasPriority ? '重要度を消す' : isPrioritizing ? '分析中…' : '重要度を分析',
-      action: onPrioritize,
-      active: Boolean(hasPriority),
-      beta: true,
-    },
-    {
-      icon: <span className="text-xs font-semibold">R</span>,
-      label: showRephrase ? 'やさしい文を隠す' : 'やさしい文を表示',
-      action: onToggleRephrase,
-      active: showRephrase,
-    },
-    {
-      icon: (
-        <span className="text-xs font-semibold" style={{ fontFamily: 'serif' }}>
-          {'\u3042'}
-        </span>
-      ),
-      label: 'ふりがな',
-      action: onToggleFurigana,
-      active: isFuriganaEnabled,
-    },
-    {
-      icon: (
-        <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-      ),
-      label: 'ルビ検索',
-      action: onToggleRubyLookup,
-    },
-    {
-      icon: isDarkMode ? (
-        <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-        </svg>
-      ) : (
-        <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-        </svg>
-      ),
-      label: isDarkMode ? 'ライトモード' : 'ダークモード',
-      action: onToggleDarkMode,
-      active: isDarkMode,
-    },
-    {
-      icon: (
-        <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-        </svg>
-      ),
-      label: '表示設定',
-      action: onOpenSettings,
-    },
-  ];
-
-  const visibleButtons = fabButtons.filter(btn => !btn.hidden);
   const menuStyle = getMenuPosition();
   const isMenuAbove = 'bottom' in menuStyle;
 
@@ -374,25 +237,25 @@ export default function ReaderFAB({
                   animation: 'fab-menu-enter 200ms ease-out',
                 }}
               >
-                {visibleButtons.map((btn, index) => (
+                {actions.map((action, index) => (
                   <button
-                    key={index}
+                    key={action.id}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleAction(btn.action, btn.keepOpen);
+                      handleAction(action);
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 font-gothic interactive-nav-btn"
                     style={{
-                      backgroundColor: btn.active ? activeBg : 'transparent',
-                      color: btn.active ? THEME.PRIMARY : THEME.INK,
-                      borderBottom: index < visibleButtons.length - 1 ? `1px solid ${THEME.NEUTRAL}` : 'none',
+                      backgroundColor: action.active ? activeBg : 'transparent',
+                      color: action.active ? THEME.PRIMARY : THEME.INK,
+                      borderBottom: index < actions.length - 1 ? `1px solid ${THEME.NEUTRAL}` : 'none',
                     }}
                   >
                     <span className="flex items-center justify-center w-5 h-5 flex-shrink-0">
-                      {btn.icon}
+                      <FabIcon name={action.icon} />
                     </span>
-                    <span className="text-[13px] font-medium whitespace-nowrap">{btn.label}</span>
-                    {btn.beta && (
+                    <span className="text-[13px] font-medium whitespace-nowrap">{action.label}</span>
+                    {action.beta && (
                       <span
                         className="text-[9px] font-bold px-1.5 py-0.5"
                         style={{ backgroundColor: COLORS.START_CURSOR, color: COLORS.SURFACE, letterSpacing: '0.5px' }}

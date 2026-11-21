@@ -34,6 +34,7 @@ import { describeLoadFailure } from './loadFailure';
 import { applyReaderTheme } from './readerTheme';
 import { READER_PREFERENCES } from './readerPreferences';
 import { acceptsAudioShortcut, closePanel, togglePanel, type ActivePanel } from './readerPanels';
+import { readerMenuActions } from './readerMenuActions';
 
 const ExplanationSidebar = dynamic(
   () => import('@/app/components/reading/ExplanationSidebar'),
@@ -413,18 +414,6 @@ function ReaderContent({
     [totalPages, navigateToPage, stopAudioBook]
   );
 
-  const handleToggleFurigana = () => {
-    setShowFurigana(!showFurigana);
-  };
-
-  const handleToggleRephrase = () => {
-    setDisplayMode(showRephrase ? 'collapsed' : 'expanded');
-  };
-
-  const handleToggleDarkMode = () => {
-    setReaderTheme(isDarkMode ? 'light' : 'dark');
-  };
-
   const handleAudiobookChange = (enabled: boolean) => {
     setAudiobookEnabled(enabled);
     if (enabled) return;
@@ -541,8 +530,30 @@ function ReaderContent({
     );
   }
 
-  const hasBookmark = bookmarkPage != null && bookmarkPage > 0;
   const registryKey = rubyRegistryKey(book);
+  const menuActions = readerMenuActions(
+    {
+      bookmarkPage,
+      currentPage,
+      copyFeedback,
+      isPrioritizing,
+      hasPriority: Object.keys(priorityScores).length > 0,
+      showRephrase,
+      showFurigana,
+      isDarkMode,
+    },
+    {
+      goToBookmark: handleGoToBookmark,
+      copyPage: handleCopyPageText,
+      openCopyRange: () => setActivePanel('copyRange'),
+      prioritize: handlePrioritize,
+      toggleRephrase: () => setDisplayMode(showRephrase ? 'collapsed' : 'expanded'),
+      toggleFurigana: () => setShowFurigana(!showFurigana),
+      toggleRubyLookup: () => setActivePanel(active => togglePanel(active, 'ruby')),
+      toggleDarkMode: () => setReaderTheme(isDarkMode ? 'light' : 'dark'),
+      openSettings: () => setActivePanel('settings'),
+    }
+  );
 
   return (
     <div
@@ -697,26 +708,7 @@ function ReaderContent({
         )}
       </main>
 
-      <ReaderFAB
-        onToggleFurigana={handleToggleFurigana}
-        onToggleRephrase={handleToggleRephrase}
-        onOpenSettings={() => setActivePanel('settings')}
-        onGoToBookmark={handleGoToBookmark}
-        onCopyPageText={handleCopyPageText}
-        onCopyPageRange={() => setActivePanel('copyRange')}
-        onToggleDarkMode={handleToggleDarkMode}
-        onToggleRubyLookup={() => setActivePanel(active => togglePanel(active, 'ruby'))}
-        onPrioritize={handlePrioritize}
-        isPrioritizing={isPrioritizing}
-        hasPriority={Object.keys(priorityScores).length > 0}
-        isFuriganaEnabled={showFurigana}
-        showRephrase={showRephrase}
-        isDarkMode={isDarkMode}
-        hasBookmark={hasBookmark}
-        bookmarkPage={bookmarkPage}
-        currentPage={currentPage}
-        copyFeedback={copyFeedback}
-      />
+      <ReaderFAB actions={menuActions} />
 
       <CopyRangeModal
         isOpen={activePanel === 'copyRange'}
