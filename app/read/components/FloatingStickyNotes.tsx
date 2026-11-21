@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { STORAGE_KEYS, THEME } from '@/lib/constants';
+import type { Point, Size } from '@/lib/utils/draggablePosition';
+import { useDraggablePosition } from '@/app/hooks/useDraggablePosition';
 import { toTint } from '@/lib/utils/colorTint';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
 
@@ -18,27 +20,11 @@ const COLLAPSED_SIZE = 44;
 const PANEL_WIDTH = 280;
 const MAX_HEIGHT = 400;
 
-interface Position {
-  x: number;
-  y: number;
-}
+const COLLAPSED_BOX: Size = { width: COLLAPSED_SIZE, height: COLLAPSED_SIZE };
+// Only the header row of the open panel has to stay on screen, so it may run past the bottom edge.
+const EXPANDED_BOX: Size = { width: PANEL_WIDTH, height: COLLAPSED_SIZE };
 
-function getInitialPosition(): Position {
-  if (typeof window === 'undefined') {
-    return { x: 20, y: 200 };
-  }
-
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.STICKY_NOTES_POSITION);
-    if (stored) {
-      const pos = JSON.parse(stored);
-      return {
-        x: Math.min(Math.max(0, pos.x), window.innerWidth - COLLAPSED_SIZE),
-        y: Math.min(Math.max(0, pos.y), window.innerHeight - COLLAPSED_SIZE),
-      };
-    }
-  } catch {}
-
+function defaultStickyPosition(): Point {
   return { x: 20, y: 200 };
 }
 
@@ -56,21 +42,14 @@ export default function FloatingStickyNotes({
   directory,
   bookName,
 }: FloatingStickyNotesProps) {
-  const [position, setPosition] = useState<Position>({ x: 20, y: 200 });
   const [isCollapsed, setIsCollapsed] = useState(true);
-  const [isDragging, setIsDragging] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [starredWords, setStarredWords] = useState<Set<string>>(new Set());
-
-  const dragRef = useRef<{
-    startX: number;
-    startY: number;
-    initialX: number;
-    initialY: number;
-    hasMoved: boolean;
-  } | null>(null);
-
-  const justDraggedRef = useRef(false);
+  const { position, isDragging, dragHandlers, isClickFromDrag } = useDraggablePosition({
+    storageKey: STORAGE_KEYS.STICKY_NOTES_POSITION,
+    size: isCollapsed ? COLLAPSED_BOX : EXPANDED_BOX,
+    defaultPosition: defaultStickyPosition,
+  });
 
   // The registry only supplies readings for starred words, so skip it until one exists.
   const { registry } = useRubyRegistry({
@@ -80,18 +59,9 @@ export default function FloatingStickyNotes({
   });
 
   useEffect(() => {
-    setPosition(getInitialPosition());
     setIsCollapsed(getInitialCollapsed());
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (mounted && !isDragging) {
-      try {
-        localStorage.setItem(STORAGE_KEYS.STICKY_NOTES_POSITION, JSON.stringify(position));
-      } catch {}
-    }
-  }, [position, isDragging, mounted]);
 
   useEffect(() => {
     if (mounted) {
@@ -138,103 +108,13 @@ export default function FloatingStickyNotes({
     return Array.from(starredWords).map(kanji => ({ kanji, reading: '', note: '' }));
   }, [registry, starredWords]);
 
-  const handleDragStart = useCallback((clientX: number, clientY: number) => {
-    dragRef.current = {
-      startX: clientX,
-      startY: clientY,
-      initialX: position.x,
-      initialY: position.y,
-      hasMoved: false,
-    };
-    setIsDragging(true);
-  }, [position]);
-
-  const handleDragMove = useCallback((clientX: number, clientY: number) => {
-    if (!dragRef.current) return;
-
-    const deltaX = clientX - dragRef.current.startX;
-    const deltaY = clientY - dragRef.current.startY;
-
-    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
-      dragRef.current.hasMoved = true;
-    }
-
-    if (dragRef.current.hasMoved) {
-      const width = isCollapsed ? COLLAPSED_SIZE : PANEL_WIDTH;
-      const newX = Math.min(
-        Math.max(0, dragRef.current.initialX + deltaX),
-        window.innerWidth - width
-      );
-      const newY = Math.min(
-        Math.max(0, dragRef.current.initialY + deltaY),
-        window.innerHeight - COLLAPSED_SIZE
-      );
-
-      setPosition({ x: newX, y: newY });
-    }
-  }, [isCollapsed]);
-
-  const handleDragEnd = useCallback(() => {
-    const wasDragging = dragRef.current?.hasMoved;
-    dragRef.current = null;
-    setIsDragging(false);
-
-    if (wasDragging) {
-      justDraggedRef.current = true;
-      setTimeout(() => {
-        justDraggedRef.current = false;
-      }, 100);
-    }
-
-    return wasDragging;
-  }, []);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    handleDragStart(e.clientX, e.clientY);
-  }, [handleDragStart]);
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      handleDragMove(e.clientX, e.clientY);
-    };
-
-    const handleMouseUp = () => {
-      handleDragEnd();
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, handleDragMove, handleDragEnd]);
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    handleDragStart(touch.clientX, touch.clientY);
-  }, [handleDragStart]);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    handleDragMove(touch.clientX, touch.clientY);
-  }, [handleDragMove]);
-
-  const handleTouchEnd = useCallback(() => {
-    handleDragEnd();
-  }, [handleDragEnd]);
-
   const handleToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (dragRef.current?.hasMoved || justDraggedRef.current) return;
+    if (isClickFromDrag()) return;
     setIsCollapsed(prev => !prev);
-  }, []);
+  }, [isClickFromDrag]);
 
-  if (!mounted) return null;
+  if (!mounted || !position) return null;
   if (starredWords.size === 0) return null;
 
   return (
@@ -250,10 +130,7 @@ export default function FloatingStickyNotes({
     >
       {isCollapsed ? (
         <button
-          onMouseDown={handleMouseDown}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          {...dragHandlers}
           onClick={handleToggle}
           className="relative select-none"
           style={{
@@ -302,10 +179,7 @@ export default function FloatingStickyNotes({
           }}
         >
           <div
-            onMouseDown={handleMouseDown}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
+            {...dragHandlers}
             className="flex items-center justify-between px-4 py-3 select-none"
             style={{
               cursor: isDragging ? 'grabbing' : 'grab',

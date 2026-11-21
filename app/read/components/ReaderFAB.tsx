@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { COLORS, THEME } from '@/lib/constants';
+import { useState, useCallback } from 'react';
+import { COLORS, STORAGE_KEYS, THEME } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
+import type { Point, Size } from '@/lib/utils/draggablePosition';
+import { useDraggablePosition } from '@/app/hooks/useDraggablePosition';
 import FabIcon, { type FabIconName } from './FabIcon';
 
 export interface FabAction {
@@ -19,159 +21,38 @@ interface ReaderFABProps {
   actions: FabAction[];
 }
 
-const STORAGE_KEY = 'fab_position';
 const FAB_SIZE = 52;
+const FAB_BOX: Size = { width: FAB_SIZE, height: FAB_SIZE };
 const MENU_MARGIN = 10;
 
-interface Position {
-  x: number;
-  y: number;
+function defaultFabPosition(viewport: Size): Point {
+  return { x: viewport.width - FAB_SIZE - 20, y: viewport.height - FAB_SIZE - 80 };
 }
 
-function getInitialPosition(): Position {
-  if (typeof window === 'undefined') {
-    return { x: 20, y: 80 };
-  }
-
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const pos = JSON.parse(stored);
-      return {
-        x: Math.min(Math.max(0, pos.x), window.innerWidth - FAB_SIZE),
-        y: Math.min(Math.max(0, pos.y), window.innerHeight - FAB_SIZE),
-      };
-    }
-  } catch {}
+/** Opens the menu toward the middle of the screen, away from the edges the button is near. */
+function menuPlacement(position: Point) {
+  const isNearBottom = position.y > window.innerHeight / 2;
+  const isNearRight = position.x > window.innerWidth / 2;
 
   return {
-    x: window.innerWidth - FAB_SIZE - 20,
-    y: window.innerHeight - FAB_SIZE - 80,
+    ...(isNearBottom ? { bottom: `${FAB_SIZE + MENU_MARGIN}px` } : { top: `${FAB_SIZE + MENU_MARGIN}px` }),
+    ...(isNearRight ? { right: '0' } : { left: '0' }),
   };
 }
 
 export default function ReaderFAB({ actions }: ReaderFABProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [position, setPosition] = useState<Position>({ x: 20, y: 80 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  const dragRef = useRef<{
-    startX: number;
-    startY: number;
-    initialX: number;
-    initialY: number;
-    hasMoved: boolean;
-  } | null>(null);
-
-  const justDraggedRef = useRef(false);
-  const fabRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    setPosition(getInitialPosition());
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (mounted && !isDragging) {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(position));
-      } catch {}
-    }
-  }, [position, isDragging, mounted]);
-
-  const handleDragStart = useCallback((clientX: number, clientY: number) => {
-    dragRef.current = {
-      startX: clientX,
-      startY: clientY,
-      initialX: position.x,
-      initialY: position.y,
-      hasMoved: false,
-    };
-    setIsDragging(true);
-  }, [position]);
-
-  const handleDragMove = useCallback((clientX: number, clientY: number) => {
-    if (!dragRef.current) return;
-
-    const deltaX = clientX - dragRef.current.startX;
-    const deltaY = clientY - dragRef.current.startY;
-
-    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
-      dragRef.current.hasMoved = true;
-    }
-
-    if (dragRef.current.hasMoved) {
-      const newX = Math.min(
-        Math.max(0, dragRef.current.initialX + deltaX),
-        window.innerWidth - FAB_SIZE
-      );
-      const newY = Math.min(
-        Math.max(0, dragRef.current.initialY + deltaY),
-        window.innerHeight - FAB_SIZE
-      );
-
-      setPosition({ x: newX, y: newY });
-    }
-  }, []);
-
-  const handleDragEnd = useCallback(() => {
-    const wasDragging = dragRef.current?.hasMoved;
-    dragRef.current = null;
-    setIsDragging(false);
-
-    if (wasDragging) {
-      justDraggedRef.current = true;
-      setTimeout(() => {
-        justDraggedRef.current = false;
-      }, 100);
-    }
-  }, []);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    handleDragStart(e.clientX, e.clientY);
-  }, [handleDragStart]);
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      handleDragMove(e.clientX, e.clientY);
-    };
-
-    const handleMouseUp = () => {
-      handleDragEnd();
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, handleDragMove, handleDragEnd]);
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    handleDragStart(touch.clientX, touch.clientY);
-  }, [handleDragStart]);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    handleDragMove(touch.clientX, touch.clientY);
-  }, [handleDragMove]);
-
-  const handleTouchEnd = useCallback(() => {
-    handleDragEnd();
-  }, [handleDragEnd]);
+  const { position, isDragging, dragHandlers, isClickFromDrag } = useDraggablePosition({
+    storageKey: STORAGE_KEYS.FAB_POSITION,
+    size: FAB_BOX,
+    defaultPosition: defaultFabPosition,
+  });
 
   const handleFabClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (dragRef.current?.hasMoved || justDraggedRef.current) return;
+    if (isClickFromDrag()) return;
     setIsExpanded(prev => !prev);
-  }, []);
+  }, [isClickFromDrag]);
 
   const handleAction = useCallback((action: FabAction) => {
     action.onSelect();
@@ -179,23 +60,10 @@ export default function ReaderFAB({ actions }: ReaderFABProps) {
     setIsExpanded(false);
   }, []);
 
-  const getMenuPosition = useCallback(() => {
-    if (typeof window === 'undefined') return { bottom: '64px', right: '0' };
+  if (!position) return null;
 
-    const isNearBottom = position.y > window.innerHeight / 2;
-    const isNearRight = position.x > window.innerWidth / 2;
-
-    return {
-      ...(isNearBottom ? { bottom: `${FAB_SIZE + MENU_MARGIN}px` } : { top: `${FAB_SIZE + MENU_MARGIN}px` }),
-      ...(isNearRight ? { right: '0' } : { left: '0' }),
-    };
-  }, [position]);
-
-  const menuStyle = getMenuPosition();
+  const menuStyle = menuPlacement(position);
   const isMenuAbove = 'bottom' in menuStyle;
-
-  if (!mounted) return null;
-
   const activeBg = toTint(THEME.PRIMARY, 12);
 
   return (
@@ -270,11 +138,7 @@ export default function ReaderFAB({ actions }: ReaderFABProps) {
           )}
 
           <button
-            ref={fabRef}
-            onMouseDown={handleMouseDown}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
+            {...dragHandlers}
             onClick={handleFabClick}
             aria-label="読書メニュー"
             aria-expanded={isExpanded}
