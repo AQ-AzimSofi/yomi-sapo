@@ -156,14 +156,9 @@ export default function ExplanationSidebar({
     fetchExplanation();
   }, [isOpen, sentence, context, fileName, contextSize, mode, forceRegenerate, getCache, setCache]);
 
-  const renderTextWithFurigana = (text: string) => {
-    if (!showFurigana) {
-      return <span>{text}</span>;
-    }
-    const segments = parseFurigana(text);
-    const html = segmentsToHTML(segments, showFurigana);
-    return <span dangerouslySetInnerHTML={{ __html: html }} />;
-  };
+  const renderTextWithFurigana = (text: string) => (
+    <span dangerouslySetInnerHTML={{ __html: segmentsToHTML(parseFurigana(text), showFurigana) }} />
+  );
 
   const getTimeAgo = (timestamp: number): string => {
     const now = Date.now();
