@@ -1,17 +1,11 @@
 'use client';
 
 import { READER_CONFIG } from '@/lib/constants';
+import { usePreference } from '@/app/hooks/usePreference';
+import { READER_PREFERENCES } from '../readerPreferences';
 
 interface ReaderSettingsProps {
-  fontSize: number;
-  lineHeight: number;
-  displayMode: 'collapsed' | 'expanded';
-  aiExplanationEnabled: boolean;
-  onFontSizeChange: (size: number) => void;
-  onLineHeightChange: (height: number) => void;
-  onDisplayModeChange: (mode: 'collapsed' | 'expanded') => void;
-  onAiExplanationChange: (enabled: boolean) => void;
-  audiobookEnabled: boolean;
+  // Turning the audiobook off also stops playback, which the page owns.
   onAudiobookChange: (enabled: boolean) => void;
 }
 
@@ -20,18 +14,13 @@ function sliderGradient(value: number, min: number, max: number): string {
   return `linear-gradient(to right, var(--range-fill) 0%, var(--range-fill) ${percent}%, var(--range-track) ${percent}%, var(--range-track) 100%)`;
 }
 
-export default function ReaderSettings({
-  fontSize,
-  lineHeight,
-  displayMode,
-  aiExplanationEnabled,
-  onFontSizeChange,
-  onLineHeightChange,
-  onDisplayModeChange,
-  onAiExplanationChange,
-  audiobookEnabled,
-  onAudiobookChange,
-}: ReaderSettingsProps) {
+export default function ReaderSettings({ onAudiobookChange }: ReaderSettingsProps) {
+  const [fontSize, setFontSize] = usePreference(READER_PREFERENCES.fontSize);
+  const [lineHeight, setLineHeight] = usePreference(READER_PREFERENCES.lineHeight);
+  const [displayMode, setDisplayMode] = usePreference(READER_PREFERENCES.displayMode);
+  const [aiExplanationEnabled, setAiExplanationEnabled] = usePreference(READER_PREFERENCES.aiExplanationEnabled);
+  const [audiobookEnabled] = usePreference(READER_PREFERENCES.audiobookEnabled);
+
   return (
     <div className="space-y-6">
       <div>
@@ -43,7 +32,7 @@ export default function ReaderSettings({
             min={READER_CONFIG.MIN_FONT_SIZE}
             max={READER_CONFIG.MAX_FONT_SIZE}
             value={fontSize}
-            onChange={(e) => onFontSizeChange(Number(e.target.value))}
+            onChange={(e) => setFontSize(Number(e.target.value))}
             className="flex-1"
             style={{
               background: sliderGradient(fontSize, READER_CONFIG.MIN_FONT_SIZE, READER_CONFIG.MAX_FONT_SIZE),
@@ -62,7 +51,7 @@ export default function ReaderSettings({
             min={READER_CONFIG.MIN_LINE_HEIGHT * 10}
             max={READER_CONFIG.MAX_LINE_HEIGHT * 10}
             value={lineHeight * 10}
-            onChange={(e) => onLineHeightChange(Number(e.target.value) / 10)}
+            onChange={(e) => setLineHeight(Number(e.target.value) / 10)}
             className="flex-1"
             style={{
               background: sliderGradient(
@@ -81,13 +70,13 @@ export default function ReaderSettings({
         <div className="segmented-control">
           <button
             className={displayMode === 'collapsed' ? 'active' : ''}
-            onClick={() => onDisplayModeChange('collapsed')}
+            onClick={() => setDisplayMode('collapsed')}
           >
             Collapsed
           </button>
           <button
             className={displayMode === 'expanded' ? 'active' : ''}
-            onClick={() => onDisplayModeChange('expanded')}
+            onClick={() => setDisplayMode('expanded')}
           >
             Expanded
           </button>
@@ -102,7 +91,7 @@ export default function ReaderSettings({
           </div>
           <button
             className={`apple-toggle ${aiExplanationEnabled ? 'on' : ''}`}
-            onClick={() => onAiExplanationChange(!aiExplanationEnabled)}
+            onClick={() => setAiExplanationEnabled(!aiExplanationEnabled)}
           >
             <span className="thumb" />
           </button>

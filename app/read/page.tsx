@@ -3,13 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import {
-  COLORS,
-  READER_CONFIG,
-  STORAGE_KEYS,
-  THEME,
-  type PriorityScore,
-} from '@/lib/constants';
+import { COLORS, THEME, type PriorityScore } from '@/lib/constants';
 import ProgressBar from './components/ProgressBar';
 import ReaderFAB from './components/ReaderFAB';
 import CopyRangeModal from './components/CopyRangeModal';
@@ -33,11 +27,12 @@ import {
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
+import { usePreference } from '@/app/hooks/usePreference';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import { describeLoadFailure } from './loadFailure';
-import { applyReaderTheme, readerThemeFrom, storedDarkModeFor, type ReaderTheme } from './readerTheme';
-import type { AudioBookContentMode } from '@/lib/types';
+import { applyReaderTheme } from './readerTheme';
+import { READER_PREFERENCES } from './readerPreferences';
 
 const ExplanationSidebar = dynamic(
   () => import('@/app/components/reading/ExplanationSidebar'),
@@ -99,18 +94,18 @@ function ReaderContent({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [showFurigana, setShowFurigana] = useState(false);
-  const [fontSize, setFontSize] = useState<number>(READER_CONFIG.DEFAULT_FONT_SIZE);
-  const [lineHeight, setLineHeight] = useState<number>(READER_CONFIG.DEFAULT_LINE_HEIGHT);
-  const [displayMode, setDisplayMode] = useState<'collapsed' | 'expanded'>('collapsed');
-  const [showRephrase, setShowRephrase] = useState(false);
-  const [aiExplanationEnabled, setAiExplanationEnabled] = useState(false);
-  const [readerTheme, setReaderTheme] = useState<ReaderTheme>('light');
+  const [showFurigana, setShowFurigana] = usePreference(READER_PREFERENCES.showFurigana);
+  const [fontSize] = usePreference(READER_PREFERENCES.fontSize);
+  const [lineHeight] = usePreference(READER_PREFERENCES.lineHeight);
+  const [displayMode, setDisplayMode] = usePreference(READER_PREFERENCES.displayMode);
+  const showRephrase = displayMode === 'expanded';
+  const [aiExplanationEnabled] = usePreference(READER_PREFERENCES.aiExplanationEnabled);
+  const [readerTheme, setReaderTheme] = usePreference(READER_PREFERENCES.readerTheme);
   const isDarkMode = readerTheme === 'dark';
 
-  const [audiobookEnabled, setAudiobookEnabled] = useState(false);
+  const [audiobookEnabled, setAudiobookEnabled] = usePreference(READER_PREFERENCES.audiobookEnabled);
   const [keyboardMode, setKeyboardMode] = useState(false);
-  const [contentMode, setContentMode] = useState<AudioBookContentMode>('main');
+  const [contentMode, setContentMode] = usePreference(READER_PREFERENCES.audiobookContentMode);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [explanationOpen, setExplanationOpen] = useState(false);
@@ -134,39 +129,6 @@ function ReaderContent({
   const { isGuest } = useGuestMode();
   const hasOpenedExplanation = useOpenedOnce(explanationOpen);
   const hasOpenedRubyLookup = useOpenedOnce(rubyLookupOpen);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const storedFurigana = localStorage.getItem(STORAGE_KEYS.FURIGANA_ENABLED);
-    if (storedFurigana) setShowFurigana(storedFurigana === 'true');
-
-    const storedFontSize = localStorage.getItem(STORAGE_KEYS.READER_FONT_SIZE);
-    if (storedFontSize) setFontSize(parseInt(storedFontSize, 10));
-
-    const storedLineHeight = localStorage.getItem(STORAGE_KEYS.READER_LINE_HEIGHT);
-    if (storedLineHeight) setLineHeight(parseFloat(storedLineHeight));
-
-    const storedAiExplanation = localStorage.getItem(STORAGE_KEYS.AI_EXPLANATION_ENABLED);
-    if (storedAiExplanation) setAiExplanationEnabled(storedAiExplanation === 'true');
-
-    const storedShowRephrase = localStorage.getItem(STORAGE_KEYS.SHOW_REPHRASE);
-    if (storedShowRephrase) {
-      const isExpanded = storedShowRephrase === 'true';
-      setShowRephrase(isExpanded);
-      setDisplayMode(isExpanded ? 'expanded' : 'collapsed');
-    }
-
-    setReaderTheme(readerThemeFrom(localStorage.getItem(STORAGE_KEYS.READER_DARK_MODE)));
-
-    const storedAudiobook = localStorage.getItem(STORAGE_KEYS.AUDIOBOOK_ENABLED);
-    if (storedAudiobook) setAudiobookEnabled(storedAudiobook === 'true');
-
-    const storedContentMode = localStorage.getItem(STORAGE_KEYS.AUDIOBOOK_CONTENT_MODE);
-    if (storedContentMode === 'main' || storedContentMode === 'sub' || storedContentMode === 'both') {
-      setContentMode(storedContentMode);
-    }
-  }, []);
 
   useEffect(() => applyReaderTheme(document, readerTheme), [readerTheme]);
 
@@ -456,57 +418,22 @@ function ReaderContent({
   );
 
   const handleToggleFurigana = () => {
-    const newValue = !showFurigana;
-    setShowFurigana(newValue);
-    localStorage.setItem(STORAGE_KEYS.FURIGANA_ENABLED, newValue.toString());
-  };
-
-  const handleFontSizeChange = (size: number) => {
-    setFontSize(size);
-    localStorage.setItem(STORAGE_KEYS.READER_FONT_SIZE, size.toString());
-  };
-
-  const handleLineHeightChange = (height: number) => {
-    setLineHeight(height);
-    localStorage.setItem(STORAGE_KEYS.READER_LINE_HEIGHT, height.toString());
-  };
-
-  const handleDisplayModeChange = (mode: 'collapsed' | 'expanded') => {
-    setDisplayMode(mode);
-    setShowRephrase(mode === 'expanded');
-    localStorage.setItem(STORAGE_KEYS.SHOW_REPHRASE, (mode === 'expanded').toString());
+    setShowFurigana(!showFurigana);
   };
 
   const handleToggleRephrase = () => {
-    const newShowRephrase = !showRephrase;
-    setShowRephrase(newShowRephrase);
-    setDisplayMode(newShowRephrase ? 'expanded' : 'collapsed');
-    localStorage.setItem(STORAGE_KEYS.SHOW_REPHRASE, newShowRephrase.toString());
-  };
-
-  const handleAiExplanationChange = (enabled: boolean) => {
-    setAiExplanationEnabled(enabled);
-    localStorage.setItem(STORAGE_KEYS.AI_EXPLANATION_ENABLED, enabled.toString());
+    setDisplayMode(showRephrase ? 'collapsed' : 'expanded');
   };
 
   const handleToggleDarkMode = () => {
-    const nextTheme = isDarkMode ? 'light' : 'dark';
-    setReaderTheme(nextTheme);
-    localStorage.setItem(STORAGE_KEYS.READER_DARK_MODE, storedDarkModeFor(nextTheme));
+    setReaderTheme(isDarkMode ? 'light' : 'dark');
   };
 
   const handleAudiobookChange = (enabled: boolean) => {
     setAudiobookEnabled(enabled);
-    localStorage.setItem(STORAGE_KEYS.AUDIOBOOK_ENABLED, enabled.toString());
-    if (!enabled) {
-      stopAudioBook();
-      setKeyboardMode(false);
-    }
-  };
-
-  const handleContentModeChange = (mode: AudioBookContentMode) => {
-    setContentMode(mode);
-    localStorage.setItem(STORAGE_KEYS.AUDIOBOOK_CONTENT_MODE, mode);
+    if (enabled) return;
+    stopAudioBook();
+    setKeyboardMode(false);
   };
 
   const handleToggleKeyboardMode = () => {
@@ -805,18 +732,7 @@ function ReaderContent({
       />
 
       <BottomSheet isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Display">
-        <ReaderSettings
-          fontSize={fontSize}
-          lineHeight={lineHeight}
-          displayMode={displayMode}
-          aiExplanationEnabled={aiExplanationEnabled}
-          onFontSizeChange={handleFontSizeChange}
-          onLineHeightChange={handleLineHeightChange}
-          onDisplayModeChange={handleDisplayModeChange}
-          onAiExplanationChange={handleAiExplanationChange}
-          audiobookEnabled={audiobookEnabled}
-          onAudiobookChange={handleAudiobookChange}
-        />
+        <ReaderSettings onAudiobookChange={handleAudiobookChange} />
       </BottomSheet>
 
       {hasOpenedExplanation && (
@@ -855,7 +771,7 @@ function ReaderContent({
           onPrev={audioPrev}
           onNext={audioNext}
           onReplay={audioReplay}
-          onContentModeChange={handleContentModeChange}
+          onContentModeChange={setContentMode}
           onSpeedChange={setAudioSpeed}
           onToggleKeyboardMode={handleToggleKeyboardMode}
           onClose={() => handleAudiobookChange(false)}
