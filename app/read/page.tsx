@@ -36,7 +36,7 @@ import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import { describeLoadFailure } from './loadFailure';
-import { applyReaderTheme, readerThemeFrom, type ReaderTheme } from './readerTheme';
+import { applyReaderTheme, readerThemeFrom, storedDarkModeFor, type ReaderTheme } from './readerTheme';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -492,7 +492,7 @@ function ReaderContent({
   const handleToggleDarkMode = () => {
     const nextTheme = isDarkMode ? 'light' : 'dark';
     setReaderTheme(nextTheme);
-    localStorage.setItem(STORAGE_KEYS.READER_DARK_MODE, String(nextTheme === 'dark'));
+    localStorage.setItem(STORAGE_KEYS.READER_DARK_MODE, storedDarkModeFor(nextTheme));
   };
 
   const handleAudiobookChange = (enabled: boolean) => {

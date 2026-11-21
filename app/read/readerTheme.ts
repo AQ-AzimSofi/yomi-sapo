@@ -12,6 +12,11 @@ export function readerThemeFrom(storedDarkMode: string | null): ReaderTheme {
   return storedDarkMode === 'true' ? 'dark' : 'light';
 }
 
+/** The dark mode toggle value to store for a theme, which readerThemeFrom reads back. */
+export function storedDarkModeFor(theme: ReaderTheme): string {
+  return String(theme === 'dark');
+}
+
 /**
  * Themes the whole document, so the theme also reaches the page ground and the scrollbars.
  * The returned cleanup hands the document back unthemed, keeping the other pages light.
