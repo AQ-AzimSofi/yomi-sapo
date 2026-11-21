@@ -37,6 +37,7 @@ import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { fetchBookText } from '@/lib/bookTextCache';
+import { fetchBookmark, saveBookmark } from '@/lib/api/client';
 import { bookQuery, bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import type { AudioBookContentMode } from '@/lib/types';
 
@@ -206,19 +207,17 @@ function ReaderContent({
       setBookmarkSavedPage(null);
 
       try {
-        const [bookText, bookmarkRes] = await Promise.all([
+        const [bookText, bookmark] = await Promise.all([
           fetchBookText(`${API_ROUTES.READ_TEXT}?${bookQuery(book)}`, controller.signal),
-          fetch(`${API_ROUTES.READ_BOOKMARK}?${bookQuery(book)}`, { signal: controller.signal }),
+          fetchBookmark(book, controller.signal),
         ]);
 
         if (controller.signal.aborted) return;
         setContent(bookText);
 
-        if (bookmarkRes.ok) {
-          const bookmarkData = await bookmarkRes.json();
-          if (controller.signal.aborted) return;
-          setBookmarkText(bookmarkData.text || '');
-          setBookmarkSavedPage(bookmarkData.page ?? null);
+        if (bookmark) {
+          setBookmarkText(bookmark.text || '');
+          setBookmarkSavedPage(bookmark.page ?? null);
         }
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -410,12 +409,10 @@ function ReaderContent({
   const refetchBookmark = useCallback(async () => {
     if (!book) return;
     try {
-      const res = await fetch(`${API_ROUTES.READ_BOOKMARK}?${bookQuery(book)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setBookmarkText(data.text || '');
-        setBookmarkSavedPage(data.page ?? null);
-      }
+      const bookmark = await fetchBookmark(book);
+      if (!bookmark) return;
+      setBookmarkText(bookmark.text || '');
+      setBookmarkSavedPage(bookmark.page ?? null);
     } catch (err) {
       console.error('Failed to refetch bookmark:', err);
     }
@@ -427,12 +424,8 @@ function ReaderContent({
     if (!unit) return;
     const page = pageOfIndex(audioIndex);
     try {
-      const res = await fetch(API_ROUTES.WRITE_BOOKMARK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...book, content: unit.main, page }),
-      });
-      if (res.ok) refetchBookmark();
+      await saveBookmark({ ...book, content: unit.main, page });
+      refetchBookmark();
     } catch (err) {
       console.error('Failed to bookmark playing sentence:', err);
     }

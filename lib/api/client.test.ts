@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_ROUTES, GUEST_KEY_HEADERS, STORAGE_KEYS } from '@/lib/constants';
 import { GUEST_KEY_REQUIRED_EVENT } from '@/lib/guestKeys';
 import { bookQuery } from '@/lib/books/bookRef';
-import { ApiError, request } from './client';
+import { ApiError, fetchBookmark, request, saveBookmark } from './client';
 
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 let storedValues: Map<string, string>;
@@ -16,6 +16,8 @@ function lastCall(): { url: string; init: RequestInit } {
   const [url, init] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
   return { url, init: init ?? {} };
 }
+
+const BOOK = { directory: 'bookv2-furigana/本', fileName: '本-rephrase-furigana' };
 
 function storeGeminiKey(key: string): void {
   storedValues.set(STORAGE_KEYS.GUEST_GEMINI_KEY, key);
@@ -237,5 +239,47 @@ describe('the guest key prompt', () => {
     await request(API_ROUTES.READ_BOOKMARK).catch(() => {});
 
     expect(promptedKinds).toEqual([]);
+  });
+});
+
+describe('fetchBookmark', () => {
+  it("reads the book's bookmark with the reader's AbortSignal", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ text: '一文', page: 3 }));
+    const controller = new AbortController();
+
+    expect(await fetchBookmark(BOOK, controller.signal)).toEqual({ text: '一文', page: 3 });
+    expect(lastCall().url).toBe(`/api/read-bookmark?${bookQuery(BOOK)}`);
+    expect(lastCall().init).toMatchObject({ method: 'GET', signal: controller.signal });
+  });
+
+  it('answers null when the server refuses, as it does for a guest', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'sign_in_required', message: 'Sign in required' } }, 401));
+
+    expect(await fetchBookmark(BOOK)).toBeNull();
+  });
+
+  it('still throws when the request never reaches the server', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await expect(fetchBookmark(BOOK)).rejects.toThrow('Failed to fetch');
+  });
+});
+
+describe('saveBookmark', () => {
+  it('posts the book, the bookmarked text and its page as JSON', async () => {
+    await saveBookmark({ ...BOOK, content: '一文', page: 3 });
+
+    expect(lastCall().url).toBe('/api/write-bookmark');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory: BOOK.directory, fileName: BOOK.fileName, content: '一文', page: 3 }),
+    });
+  });
+
+  it('throws an ApiError when the bookmark is not saved', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'invalid_request', message: '無効なファイル名です' } }, 400));
+
+    await expect(saveBookmark({ ...BOOK, content: '一文' })).rejects.toBeInstanceOf(ApiError);
   });
 });

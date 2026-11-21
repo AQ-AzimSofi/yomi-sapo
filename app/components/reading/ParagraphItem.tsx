@@ -12,6 +12,7 @@ import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import { toBookKey, type BookRef } from "@/lib/books/bookRef";
 import { guestKeyHeaders, promptGuestKeyOnFailure } from "@/lib/guestKeys";
+import { saveBookmark } from "@/lib/api/client";
 
 const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
 
@@ -58,16 +59,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
     e.preventDefault();
     try {
       setLoading(true);
-      const response = await fetch("/api/write-bookmark", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ...book, content: text, page: currentPage }),
-      });
-      if (!response.ok) {
-        throw new Error("Failed");
-      }
+      await saveBookmark({ ...book, content: text, page: currentPage });
       onBookmarkSuccess();
     } catch (error) {
       console.error(error);

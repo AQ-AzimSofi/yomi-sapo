@@ -6,7 +6,8 @@
 import { API_ROUTES } from '@/lib/constants';
 import { guestKeyHeaders, promptGuestKeyOnFailure, type GuestKeyKind } from '@/lib/guestKeys';
 import { isRecord } from '@/lib/utils/typeGuards';
-import type { ApiErrorResponse } from './contracts';
+import type { BookRef } from '@/lib/books/bookRef';
+import type { ApiErrorResponse, BookmarkResponse, SaveBookmarkRequest, WriteResponse } from './contracts';
 
 export type ApiRoute = (typeof API_ROUTES)[keyof typeof API_ROUTES];
 
@@ -111,4 +112,23 @@ async function send(route: ApiRoute, options: RequestOptions = {}): Promise<Resp
 export async function request<T>(route: ApiRoute, options: RequestOptions = {}): Promise<T> {
   const response = await send(route, options);
   return response.json();
+}
+
+function bookParams(book: BookRef): Record<string, string> {
+  return { directory: book.directory, fileName: book.fileName };
+}
+
+// For a read whose failure the page shows as "nothing there"; a network failure still throws.
+function nullOnApiError(error: unknown): null {
+  if (error instanceof ApiError) return null;
+  throw error;
+}
+
+/** The saved bookmark, or null when the server gives none (guests have no bookmarks). */
+export async function fetchBookmark(book: BookRef, signal?: AbortSignal): Promise<BookmarkResponse | null> {
+  return request<BookmarkResponse>(API_ROUTES.READ_BOOKMARK, { query: bookParams(book), signal }).catch(nullOnApiError);
+}
+
+export async function saveBookmark(bookmark: SaveBookmarkRequest): Promise<WriteResponse> {
+  return request<WriteResponse>(API_ROUTES.WRITE_BOOKMARK, { method: 'POST', body: bookmark });
 }

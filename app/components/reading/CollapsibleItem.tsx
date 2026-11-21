@@ -14,6 +14,7 @@ import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import type { BookRef } from "@/lib/books/bookRef";
 import { guestKeyHeaders, promptGuestKeyOnFailure } from "@/lib/guestKeys";
+import { saveBookmark } from "@/lib/api/client";
 
 const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
 
@@ -96,16 +97,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     e.preventDefault();
     try {
       setLoading(true);
-      const response = await fetch("/api/write-bookmark", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ...book, content: head, page: currentPage }),
-      });
-      if (!response.ok) {
-        throw new Error("Failed");
-      }
+      await saveBookmark({ ...book, content: head, page: currentPage });
       onSubmitSuccess();
     } catch (error) {
       console.error(error);
