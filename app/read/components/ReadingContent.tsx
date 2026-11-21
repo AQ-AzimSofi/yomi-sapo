@@ -9,6 +9,7 @@ import ReaderItem from "@/app/components/reading/ReaderItem";
 import type { BookRef } from "@/lib/books/bookRef";
 import type { SentenceLocation } from "@/lib/content/explanationContext";
 import type { ImageMap } from "@/lib/types";
+import type { ReadAloudState } from "@/lib/audio/readAloudPlayer";
 
 interface ReadingContentProps {
   items: readonly ReaderUnit[];
@@ -27,6 +28,9 @@ interface ReadingContentProps {
   playingIndex: number;
   onStartFromHere: (unitIndex: number) => void;
   priorityScores: Record<number, PriorityScore>;
+  readAloud: ReadAloudState;
+  onReadAloud: (unitIndex: number, text: string) => void;
+  onStopReadAloud: () => void;
 }
 
 function priorityWrapperStyle(score: PriorityScore): CSSProperties {
@@ -85,6 +89,9 @@ export default function ReadingContent({
   playingIndex,
   onStartFromHere,
   priorityScores,
+  readAloud,
+  onReadAloud,
+  onStopReadAloud,
 }: ReadingContentProps) {
   const searchParams = useSearchParams();
   const pageStart = pageStartIndex(currentPage);
@@ -140,9 +147,12 @@ export default function ReadingContent({
               isStartCursor={startCursorIndex === globalIndex}
               isPlaying={playingIndex === globalIndex}
               audiobookEnabled={audiobookEnabled}
+              readAloudStatus={readAloud.unitIndex === globalIndex ? readAloud.status : "idle"}
               onBookmarkSaved={onBookmarkSuccess}
               onSentenceClick={onSentenceClick}
               onStartFromHere={onStartFromHere}
+              onReadAloud={onReadAloud}
+              onStopReadAloud={onStopReadAloud}
             />
           </div>
         );

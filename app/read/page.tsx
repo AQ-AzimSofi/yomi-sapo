@@ -33,6 +33,7 @@ import {
 import { copyTextForPages } from '@/lib/content/copyText';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
+import { useReadAloud } from '@/app/hooks/useReadAloud';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { usePreference } from '@/app/hooks/usePreference';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
@@ -293,6 +294,13 @@ function ReaderContent({
     narration,
     getStartIndex,
   });
+
+  const { state: readAloud, toggle: toggleReadAloud, stop: stopReadAloud } = useReadAloud();
+
+  // Each item used to own its player, so leaving the page or the book silenced it.
+  useEffect(() => {
+    stopReadAloud();
+  }, [currentPage, book, stopReadAloud]);
 
   const buildReadHref = useCallback(
     (page: number) => {
@@ -676,6 +684,9 @@ function ReaderContent({
           playingIndex={audioStatus === 'idle' ? -1 : audioIndex}
           onStartFromHere={setStartCursor}
           priorityScores={priorityScores}
+          readAloud={readAloud}
+          onReadAloud={toggleReadAloud}
+          onStopReadAloud={stopReadAloud}
         />
 
         {totalPages > 1 && (

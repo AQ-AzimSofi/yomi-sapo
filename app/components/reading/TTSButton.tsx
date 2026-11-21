@@ -1,123 +1,64 @@
 'use client';
 
-import { useTTS } from '@/app/hooks/useTTS';
+import type { MouseEvent } from 'react';
 import SpeakerIcon from '@/app/components/icons/SpeakerIcon';
 import { THEME } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
-import { useRef, useCallback } from 'react';
+import type { ReadAloudStatus } from '@/lib/audio/readAloudPlayer';
 
 interface TTSButtonProps {
-  text: string;
-  className?: string;
-  size?: 'sm' | 'md';
-  /** 長押し時に呼ばれるコールバック（連続再生開始用） */
-  onLongPress?: () => void;
+  status: ReadAloudStatus;
+  onToggle: () => void;
+  onStop: () => void;
 }
 
-const LONG_PRESS_DURATION = 700; // ミリ秒
+const TITLES: Record<ReadAloudStatus, string> = {
+  idle: '読み上げる',
+  loading: '読み込み中...',
+  playing: '一時停止 (ダブルクリックで停止)',
+  paused: '再開 (ダブルクリックで停止)',
+};
 
 /**
- * 個別テキスト再生ボタン
- * - クリック: 単一アイテム再生/一時停止
- * - 長押し(700ms): 連続再生モード開始（onLongPress）
- * - ダブルクリック: 停止
+ * An item's read-aloud button, drawn from the reader's player state.
+ * A click plays, pauses or resumes the item; a double click stops it.
  */
-export default function TTSButton({ text, className = '', size = 'sm', onLongPress }: TTSButtonProps) {
-  const { isPlaying, isPaused, isLoading, play, pause, resume, stop } = useTTS();
+export default function TTSButton({ status, onToggle, onStop }: TTSButtonProps) {
+  const isLoading = status === 'loading';
+  const isActive = status === 'playing' || status === 'paused';
 
-  const longPressTimerRef = useRef<number | null>(null);
-  const isLongPressRef = useRef(false);
-
-  const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  }, []);
-
-  const handlePointerDown = useCallback(() => {
-    if (isLoading || !onLongPress) return;
-
-    isLongPressRef.current = false;
-
-    longPressTimerRef.current = window.setTimeout(() => {
-      isLongPressRef.current = true;
-      onLongPress();
-    }, LONG_PRESS_DURATION);
-  }, [isLoading, onLongPress]);
-
-  const handlePointerUp = useCallback(() => {
-    clearLongPressTimer();
-  }, [clearLongPressTimer]);
-
-  const handlePointerLeave = useCallback(() => {
-    clearLongPressTimer();
-  }, [clearLongPressTimer]);
-
-  const handleClick = useCallback(async (e: React.MouseEvent) => {
+  const handleClick = (e: MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-
-    // 長押しが発動した場合はクリックを無視
-    if (isLongPressRef.current) {
-      isLongPressRef.current = false;
-      return;
-    }
-
     if (isLoading) return;
+    onToggle();
+  };
 
-    if (isPlaying && !isPaused) {
-      pause();
-    } else if (isPaused) {
-      resume();
-    } else {
-      await play(text);
-    }
-  }, [isLoading, isPlaying, isPaused, play, pause, resume, text]);
-
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+  const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    clearLongPressTimer();
-    stop();
-  }, [stop, clearLongPressTimer]);
-
-  const sizeClasses = size === 'sm' ? 'w-6 h-6' : 'w-8 h-8';
+    onStop();
+  };
 
   return (
     <button
       type="button"
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerLeave}
-      onPointerCancel={handlePointerLeave}
       disabled={isLoading}
       className={`
-        ${sizeClasses}
+        w-6 h-6
         flex items-center justify-center
         transition-colors duration-200
         ${isLoading ? 'opacity-50 cursor-wait' : 'cursor-pointer'}
-        ${className}
       `}
       style={{
-        backgroundColor: isPlaying ? toTint(THEME.PRIMARY, 12) : 'transparent',
-        borderBottom: `2px solid ${isPlaying ? THEME.PRIMARY : 'transparent'}`,
+        backgroundColor: isActive ? toTint(THEME.PRIMARY, 12) : 'transparent',
+        borderBottom: `2px solid ${isActive ? THEME.PRIMARY : 'transparent'}`,
       }}
-      title={
-        isLoading
-          ? '読み込み中...'
-          : isPlaying
-            ? isPaused
-              ? '再開 (ダブルクリックで停止)'
-              : '一時停止 (ダブルクリックで停止)'
-            : onLongPress
-              ? '読み上げる (長押しで連続再生)'
-              : '読み上げる'
-      }
+      title={TITLES[status]}
     >
-      <SpeakerIcon isPlaying={isPlaying && !isPaused} isLoading={isLoading} />
+      <SpeakerIcon isPlaying={status === 'playing'} isLoading={isLoading} />
     </button>
   );
 }

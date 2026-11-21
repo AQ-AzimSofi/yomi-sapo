@@ -13,6 +13,7 @@ import { useItemActions } from "@/app/hooks/useItemActions";
 import { COLORS, THEME } from "@/lib/constants";
 import { hasIllustration, splitUnitParts, type UnitPart } from "@/lib/content/unitParts";
 import type { SentenceLocation } from "@/lib/content/explanationContext";
+import type { ReadAloudStatus } from "@/lib/audio/readAloudPlayer";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import { toBookKey, type BookRef } from "@/lib/books/bookRef";
@@ -42,9 +43,13 @@ interface ReaderItemProps {
   isStartCursor: boolean;
   isPlaying: boolean;
   audiobookEnabled: boolean;
+  /** Where the reader's read-aloud player is with this item. */
+  readAloudStatus: ReadAloudStatus;
   onBookmarkSaved: () => void;
   onSentenceClick: (location: SentenceLocation) => void;
   onStartFromHere: (unitIndex: number) => void;
+  onReadAloud: (unitIndex: number, text: string) => void;
+  onStopReadAloud: () => void;
 }
 
 interface CardState {
@@ -124,9 +129,12 @@ function ReaderItem({
   isStartCursor,
   isPlaying,
   audiobookEnabled,
+  readAloudStatus,
   onBookmarkSaved,
   onSentenceClick,
   onStartFromHere,
+  onReadAloud,
+  onStopReadAloud,
 }: ReaderItemProps) {
   const [isOpen, setIsOpen] = useState(isExpanded);
   const [unavailableImagePaths, setUnavailableImagePaths] = useState<ReadonlySet<string>>(() => new Set());
@@ -234,7 +242,9 @@ function ReaderItem({
           <StartHereIcon isActive={isStartCursor} />
         </IconButton>
       )}
-      {subItems && <TTSButton text={text} />}
+      {subItems && (
+        <TTSButton status={readAloudStatus} onToggle={() => onReadAloud(globalIndex, text)} onStop={onStopReadAloud} />
+      )}
       <IconButton
         disabled={isTranslating}
         onClick={toggleTranslation}
