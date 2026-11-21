@@ -6,10 +6,9 @@ import BookmarkFilled from "@/app/components/icons/BookmarkFilled";
 import TranslateIcon from "@/app/components/icons/TranslateIcon";
 import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
+import ParagraphText from "@/app/components/reading/ParagraphText";
 import { COLORS, THEME } from "@/lib/constants";
-import { sentenceOccurrence, splitIntoSentences } from "@/lib/content/sentences";
 import { hasIllustration, splitUnitParts } from "@/lib/content/unitParts";
-import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import { toBookKey, type BookRef } from "@/lib/books/bookRef";
@@ -120,50 +119,6 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
     }
   };
 
-  const renderTextWithFurigana = (
-    renderText: string,
-    isClickable: boolean = false
-  ) => {
-    if (!isClickable || !onSentenceClick) {
-      const segments = parseFurigana(renderText);
-      const html = segmentsToHTML(segments, showFurigana);
-      return <span dangerouslySetInnerHTML={{ __html: html }} />;
-    }
-
-    const sentences = splitIntoSentences(renderText);
-
-    return (
-      <>
-        {sentences.map((sentence, index) => {
-          const segments = parseFurigana(sentence);
-          const html = segmentsToHTML(segments, showFurigana);
-
-          return (
-            <span
-              key={index}
-              dangerouslySetInnerHTML={{ __html: html }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSentenceClick(sentence, sentenceOccurrence(sentences, index));
-              }}
-              className="cursor-pointer transition-colors px-1"
-              style={{
-                backgroundColor: "transparent",
-                transition: "background-color 0.2s ease",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = toTint(THEME.PRIMARY, 10);
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            />
-          );
-        })}
-      </>
-    );
-  };
-
   const renderContentWithImages = () => {
     if (showTranslation && translatedText) {
       return (
@@ -182,7 +137,18 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
           className="head-text font-bold text-lg whitespace-pre-wrap"
           onClickCapture={handleTripleClickSelect}
         >
-          {renderTextWithFurigana(text, true)}
+          {paragraphParts.map(
+            (part, index) =>
+              part.kind === "text" && (
+                <ParagraphText
+                  key={index}
+                  text={part.text}
+                  sentences={part.sentences}
+                  showFurigana={showFurigana}
+                  onSentenceClick={onSentenceClick}
+                />
+              )
+          )}
         </div>
       );
     }
@@ -197,7 +163,12 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
                 className="head-text font-bold text-lg whitespace-pre-wrap"
                 onClickCapture={handleTripleClickSelect}
               >
-                {renderTextWithFurigana(part.text, true)}
+                <ParagraphText
+                  text={part.text}
+                  sentences={part.sentences}
+                  showFurigana={showFurigana}
+                  onSentenceClick={onSentenceClick}
+                />
               </div>
             );
           } else {

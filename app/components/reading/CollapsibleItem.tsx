@@ -6,12 +6,11 @@ import BookmarkFilled from "@/app/components/icons/BookmarkFilled";
 import TranslateIcon from "@/app/components/icons/TranslateIcon";
 import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
+import ParagraphText from "@/app/components/reading/ParagraphText";
 import TTSButton from "@/app/components/reading/TTSButton";
 import { useSearchParams } from "next/navigation";
 import { COLORS, THEME } from "@/lib/constants";
-import { sentenceOccurrence, splitIntoSentences } from "@/lib/content/sentences";
 import { hasIllustration, splitUnitParts } from "@/lib/content/unitParts";
-import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import type { BookRef } from "@/lib/books/bookRef";
@@ -136,64 +135,9 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     }
   };
 
-  const renderTextWithFurigana = (
-    text: string,
-    isClickable: boolean = false
-  ) => {
-    if (!isClickable || !aiExplanationEnabled) {
-      const segments = parseFurigana(text);
-      const html = segmentsToHTML(segments, showFurigana);
-      return <span dangerouslySetInnerHTML={{ __html: html }} />;
-    }
-
-    const sentences = splitIntoSentences(text);
-
-    return (
-      <>
-        {sentences.map((sentence, index) => {
-          const segments = parseFurigana(sentence);
-          const html = segmentsToHTML(segments, showFurigana);
-
-          return (
-            <span
-              key={index}
-              dangerouslySetInnerHTML={{ __html: html }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSentenceClick?.(sentence, sentenceOccurrence(sentences, index));
-              }}
-              className={
-                onSentenceClick
-                  ? "cursor-pointer transition-colors px-1"
-                  : ""
-              }
-              style={
-                onSentenceClick
-                  ? {
-                      backgroundColor: "transparent",
-                      transition: "background-color 0.2s ease",
-                    }
-                  : {}
-              }
-              onMouseEnter={(e) => {
-                if (onSentenceClick) {
-                  e.currentTarget.style.backgroundColor = toTint(THEME.PRIMARY, 10);
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (onSentenceClick) {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }
-              }}
-            />
-          );
-        })}
-      </>
-    );
-  };
-
   const headParts = splitUnitParts(head);
   const hasImage = hasIllustration(headParts);
+  const headSentenceClick = aiExplanationEnabled ? onSentenceClick : undefined;
 
   const resolveImage = (originalName: string) => {
     const actualFileName =
@@ -217,7 +161,18 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     }
 
     if (!hasImage) {
-      return renderTextWithFurigana(head, true);
+      return headParts.map(
+        (part, index) =>
+          part.kind === "text" && (
+            <ParagraphText
+              key={index}
+              text={part.text}
+              sentences={part.sentences}
+              showFurigana={showFurigana}
+              onSentenceClick={headSentenceClick}
+            />
+          )
+      );
     }
 
     return (
@@ -226,7 +181,12 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
           if (part.kind === "text") {
             return (
               <div key={index} className="whitespace-pre-wrap">
-                {renderTextWithFurigana(part.text, true)}
+                <ParagraphText
+                  text={part.text}
+                  sentences={part.sentences}
+                  showFurigana={showFurigana}
+                  onSentenceClick={headSentenceClick}
+                />
               </div>
             );
           } else {
@@ -436,7 +396,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
                 onClick={handleTripleClickSelect}
                 style={{ color: THEME.SECONDARY_DARK }}
               >
-                {index === 4 ? "" : renderTextWithFurigana(subItem, false)}
+                {index === 4 ? "" : <ParagraphText text={subItem} showFurigana={showFurigana} />}
               </div>
             ))}
           </div>
