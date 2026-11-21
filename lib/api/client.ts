@@ -17,6 +17,8 @@ import type {
   SaveBookmarkRequest,
   TranslateRequest,
   TranslateResponse,
+  TTSRequest,
+  TTSResponse,
   WriteResponse,
 } from './contracts';
 
@@ -158,6 +160,15 @@ export async function explainSentence(explanation: ExplanationRequest): Promise<
     method: 'POST',
     body: explanation,
     guestKey: { kind: 'gemini', promptOn: 'any-failure' },
+  });
+}
+
+/** Base64 MP3 of the text, in the guest's own TTS key when they have one. */
+export async function synthesizeSpeech(speech: TTSRequest): Promise<TTSResponse> {
+  return request<TTSResponse>(API_ROUTES.TTS, {
+    method: 'POST',
+    body: speech,
+    guestKey: { kind: 'tts', promptOn: 'any-failure' },
   });
 }
 

@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_ROUTES, GUEST_KEY_HEADERS, STORAGE_KEYS } from '@/lib/constants';
 import { GUEST_KEY_REQUIRED_EVENT } from '@/lib/guestKeys';
 import { bookQuery } from '@/lib/books/bookRef';
-import { ApiError, explainSentence, fetchBookmark, prioritize, request, saveBookmark, translate } from './client';
+import {
+  ApiError,
+  explainSentence,
+  fetchBookmark,
+  prioritize,
+  request,
+  saveBookmark,
+  synthesizeSpeech,
+  translate,
+} from './client';
 
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 let storedValues: Map<string, string>;
@@ -360,5 +369,30 @@ describe('prioritize', () => {
 
     await expect(prioritize(['一文。'])).rejects.toMatchObject({ status: 401, promptedGuestKey: true });
     expect(promptedKinds).toEqual(['gemini']);
+  });
+});
+
+describe('synthesizeSpeech', () => {
+  it("posts the text, speed and voice with the guest's TTS key", async () => {
+    storedValues.set(STORAGE_KEYS.GUEST_TTS_KEY, 'guest-tts-key');
+    fetchMock.mockResolvedValue(jsonResponse({ audioContent: 'bXAz', message: '音声を生成しました' }));
+
+    expect(await synthesizeSpeech({ text: '本', speed: 1, voiceGender: 'FEMALE' })).toEqual({
+      audioContent: 'bXAz',
+      message: '音声を生成しました',
+    });
+    expect(lastCall().url).toBe('/api/tts');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [GUEST_KEY_HEADERS.TTS]: 'guest-tts-key' },
+      body: '{"text":"本","speed":1,"voiceGender":"FEMALE"}',
+    });
+  });
+
+  it('opens the key prompt when a guest has no TTS key', async () => {
+    fetchMock.mockResolvedValue(guestKeyRequired('tts'));
+
+    await expect(synthesizeSpeech({ text: '本' })).rejects.toMatchObject({ promptedGuestKey: true });
+    expect(promptedKinds).toEqual(['tts']);
   });
 });

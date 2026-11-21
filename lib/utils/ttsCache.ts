@@ -1,7 +1,6 @@
-import { API_ROUTES, type TTSVoiceGender } from '@/lib/constants';
-import type { TTSRequest, TTSResponse } from '@/lib/api/contracts';
+import type { TTSVoiceGender } from '@/lib/constants';
 import { cleanTextForTTS } from '@/lib/utils/ttsTextCleaner';
-import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
+import { synthesizeSpeech } from '@/lib/api/client';
 
 interface FetchTTSParams {
   text: string;
@@ -29,17 +28,7 @@ function rememberAudio(key: string, audioBase64: string): void {
 }
 
 async function synthesize({ text, speed, voiceGender }: FetchTTSParams): Promise<string> {
-  const body: TTSRequest = { text, speed, voiceGender };
-  const response = await fetch(API_ROUTES.TTS, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...guestKeyHeaders('tts') },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    await promptGuestKeyOnFailure('tts', response);
-    throw new Error(`TTS request failed: ${response.status}`);
-  }
-  const data: TTSResponse = await response.json();
+  const data = await synthesizeSpeech({ text, speed, voiceGender });
   if (!data.audioContent) {
     throw new Error(data.message || 'Empty audio content');
   }
