@@ -136,11 +136,14 @@ db/
 ├── connection.ts           # PostgreSQL connection pool
 ├── schema.ts               # TypeScript interfaces & CREATE TABLE SQL
 ├── queries.ts              # Bookmark & text entry queries
-└── vocabularyQueries.sql.ts # Vocabulary queries
+├── vocabularyQueries.sql.ts # Vocabulary queries
+└── vocabularyDto.ts        # Vocabulary row -> camelCase API entry
 ```
 
 **Key Interfaces:**
-- `Bookmark`, `TextEntry`, `VocabularyEntry`
+- `Bookmark`, `TextEntry`, `VocabularyRow`
+
+Rows come back from postgres.js in snake_case. The vocabulary queries map each `VocabularyRow` through `toVocabularyDto` (`vocabularyDto.ts`) and return the camelCase `VocabularyEntry` from `lib/types.ts`, the shape `/api/vocabulary` sends and the vocabulary page reads.
 
 **Usage:**
 ```typescript
