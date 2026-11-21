@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ownerSessionHeaders, TEST_SESSION_SECRET } from '@/lib/auth/testSession';
-import { readRubyRegistry, upsertRubyEntry } from '@/lib/services/fileService';
+import { deleteRubyEntry, readRubyRegistry, upsertRubyEntry } from '@/lib/services/fileService';
 import { PUBLIC_BOOKS } from '@/lib/publicBooks';
 import type { RubyRegistry } from '@/lib/types';
-import { GET, POST } from './route';
+import { DELETE, GET, POST } from './route';
 
 vi.mock('@/lib/services/fileService', () => ({
   readRubyRegistry: vi.fn(),
@@ -93,5 +93,16 @@ describe('POST /api/ruby-registry', () => {
       source: 'user',
       note: '',
     });
+  });
+});
+
+describe('DELETE /api/ruby-registry', () => {
+  it('rejects a guest without deleting', async () => {
+    const query = new URLSearchParams({ directory: 'bookv2-furigana', bookName: 'ほん', kanji: '本' });
+
+    const response = await DELETE(new Request(`http://localhost/api/ruby-registry?${query}`, { method: 'DELETE' }));
+
+    expect(response.status).toBe(401);
+    expect(deleteRubyEntry).not.toHaveBeenCalled();
   });
 });
