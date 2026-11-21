@@ -275,7 +275,8 @@ describe('fetchBookmark', () => {
 
     expect(await fetchBookmark(BOOK, controller.signal)).toEqual({ text: '一文', page: 3 });
     expect(lastCall().url).toBe(`/api/read-bookmark?${bookQuery(BOOK)}`);
-    expect(lastCall().init).toMatchObject({ method: 'GET', signal: controller.signal });
+    expect(lastCall().init).toMatchObject({ method: 'GET' });
+    expect(lastCall().init.signal).toBe(controller.signal);
   });
 
   it('answers null when the server refuses, as it does for a guest', async () => {
@@ -434,7 +435,8 @@ describe('fetchBookText', () => {
 
     expect(await fetchBookText(BOOK, controller.signal)).toBe('本文');
     expect(lastCall().url).toBe(bookTextUrl);
-    expect(lastCall().init).toMatchObject({ method: 'GET', cache: 'no-store', headers: {}, signal: controller.signal });
+    expect(lastCall().init).toMatchObject({ method: 'GET', cache: 'no-store', headers: {} });
+    expect(lastCall().init.signal).toBe(controller.signal);
   });
 
   it('sends the version of the copy stored under the same URL and reuses it on 204', async () => {
@@ -461,7 +463,8 @@ describe('fetchNarration', () => {
 
     expect(await fetchNarration(BOOK, controller.signal)).toEqual(manifest);
     expect(lastCall().url).toBe(`/api/narration?${bookQuery(BOOK)}`);
-    expect(lastCall().init).toMatchObject({ method: 'GET', signal: controller.signal });
+    expect(lastCall().init).toMatchObject({ method: 'GET' });
+    expect(lastCall().init.signal).toBe(controller.signal);
   });
 
   it.each([
