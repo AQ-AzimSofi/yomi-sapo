@@ -63,6 +63,7 @@ const GuestApiKeyModal = dynamic(
 );
 
 const PRIORITIZE_ERROR_MESSAGE = 'このページを分析できませんでした。もう一度お試しください。';
+const COPY_ERROR_MESSAGE = 'クリップボードにコピーできませんでした。';
 
 function SearchParamsReader({
   children,
@@ -121,7 +122,8 @@ function ReaderContent({
 
   const [priorityScores, setPriorityScores] = useState<Record<number, PriorityScore>>({});
   const [isPrioritizing, setIsPrioritizing] = useState(false);
-  const [prioritizeError, setPrioritizeError] = useState<string | null>(null);
+  // A failed copy or analysis, shown in the reader's error toast.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const book = useMemo(
     () => (fileNameParam ? bookRefFromParams(directoryParam, fileNameParam) : null),
@@ -209,14 +211,14 @@ function ReaderContent({
   // Priority scores are per-page; drop them (and any error) on page/book change.
   useEffect(() => {
     setPriorityScores({});
-    setPrioritizeError(null);
+    setActionError(null);
   }, [currentPage, book]);
 
   useEffect(() => {
-    if (!prioritizeError) return;
-    const timer = setTimeout(() => setPrioritizeError(null), 4000);
+    if (!actionError) return;
+    const timer = setTimeout(() => setActionError(null), 4000);
     return () => clearTimeout(timer);
-  }, [prioritizeError]);
+  }, [actionError]);
 
   const handlePrioritize = useCallback(async () => {
     if (isPrioritizing || currentPageHeaders.length === 0) return;
@@ -225,7 +227,7 @@ function ReaderContent({
       return;
     }
 
-    setPrioritizeError(null);
+    setActionError(null);
     setIsPrioritizing(true);
     try {
       const data = await prioritize(currentPageHeaders);
@@ -238,7 +240,7 @@ function ReaderContent({
       // A 401 is a guest without a key, and it opened the key modal; anything else
       // is a real failure the reader should see rather than a silent empty result.
       if (err instanceof ApiError && err.status === 401) return;
-      setPrioritizeError(PRIORITIZE_ERROR_MESSAGE);
+      setActionError(PRIORITIZE_ERROR_MESSAGE);
     } finally {
       setIsPrioritizing(false);
     }
@@ -469,6 +471,7 @@ function ReaderContent({
       setTimeout(() => setCopyFeedback(false), 2000);
     } catch (error) {
       console.error('Failed to copy:', error);
+      setActionError(COPY_ERROR_MESSAGE);
     }
   }, [unitMainTexts, currentPage]);
 
@@ -484,6 +487,7 @@ function ReaderContent({
       }, 1000);
     } catch (error) {
       console.error('Failed to copy:', error);
+      setActionError(COPY_ERROR_MESSAGE);
     }
   }, [unitMainTexts]);
 
@@ -602,14 +606,16 @@ function ReaderContent({
         </div>
       )}
 
-      {prioritizeError && !isPrioritizing && (
+      {actionError && !isPrioritizing && (
         <div
+          role="alert"
           style={{
             position: 'fixed',
             bottom: audiobookEnabled ? 150 : 24,
             left: '50%',
             transform: 'translateX(-50%)',
-            zIndex: 60,
+            // Above the open menu and the copy dialog, where a copy can fail.
+            zIndex: 10001,
             padding: '8px 16px',
             backgroundColor: THEME.SURFACE,
             color: THEME.DANGER,
@@ -619,7 +625,7 @@ function ReaderContent({
             fontWeight: 500,
           }}
         >
-          {prioritizeError}
+          {actionError}
         </div>
       )}
 
