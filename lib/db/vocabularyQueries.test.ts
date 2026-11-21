@@ -1,14 +1,22 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sql } from './connection';
 import {
   createVocabularyEntry,
+  deleteVocabularyEntry,
   getVocabularyEntries,
   getVocabularyEntryById,
   updateVocabularyEntry,
   type VocabularyFilter,
 } from './vocabularyQueries.sql';
 
-vi.mock('./connection', () => ({ sql: vi.fn() }));
+vi.mock('./connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }) }));
+
+// Statements on the transaction are answered by the sql mock too, so answerQueries covers both in order.
+const transaction = vi.fn((...query: unknown[]) => (sql as unknown as (...args: unknown[]) => unknown)(...query));
+
+function transactionQueryTexts(): string[] {
+  return transaction.mock.calls.map(([strings]) => (strings as string[]).join('?').replace(/\s+/g, ' ').trim());
+}
 
 const ROW = {
   id: 'entry-1',
@@ -167,8 +175,14 @@ const FILTER_CASES: [string, VocabularyFilter, string, unknown[]][] = [
   ],
 ];
 
+beforeEach(() => {
+  vi.mocked(sql.begin).mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+});
+
 afterEach(() => {
   vi.mocked(sql).mockReset();
+  vi.mocked(sql.begin).mockReset();
+  transaction.mockClear();
   vi.useRealTimers();
 });
 
@@ -257,6 +271,36 @@ describe('vocabulary queries', () => {
     await updateVocabularyEntry('entry-1', { notes: 'メモ' });
 
     expect(vi.mocked(sql).mock.calls[0].slice(1)).toEqual([null, null, null, null, 'メモ', expect.any(Date), 'entry-1']);
+  });
+});
+
+describe('vocabulary writes', () => {
+  it('inserts a new entry inside a transaction', async () => {
+    answerQueries([], [ROW]);
+
+    await createVocabularyEntry(CREATE_INPUT);
+
+    expect(sql.begin).toHaveBeenCalledTimes(1);
+    expect(transactionQueryTexts()).toEqual([expect.stringMatching(/^INSERT INTO vocabulary_entries /)]);
+  });
+
+  it('updates an entry inside a transaction', async () => {
+    answerQueries([], [ROW]);
+
+    await updateVocabularyEntry('entry-1', UPDATE_INPUT);
+
+    expect(sql.begin).toHaveBeenCalledTimes(1);
+    expect(transactionQueryTexts()).toEqual([expect.stringMatching(/^UPDATE vocabulary_entries /)]);
+  });
+
+  it('deletes an entry inside a transaction', async () => {
+    answerQueries([]);
+
+    await deleteVocabularyEntry('entry-1');
+
+    expect(sql.begin).toHaveBeenCalledTimes(1);
+    expect(transactionQueryTexts()).toEqual(['DELETE FROM vocabulary_entries WHERE id = ?']);
+    expect(transaction.mock.calls[0].slice(1)).toEqual(['entry-1']);
   });
 });
 
