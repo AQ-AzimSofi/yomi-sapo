@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db/connection';
 import { NextResponse } from 'next/server';
 import { CREATE_TABLES_SQL } from '@/lib/db/schema';
+import { isAuthenticated } from '@/lib/auth/apiSession';
 
 const MIGRATIONS_SQL = `
   ALTER TABLE text_entries ADD COLUMN IF NOT EXISTS total_pages INT DEFAULT 0;
@@ -18,7 +19,14 @@ const MIGRATIONS_SQL = `
   ALTER TABLE text_entries ALTER COLUMN updated_at SET DEFAULT CURRENT_TIMESTAMP;
 `;
 
+// `npm run db:init` calls this on the local dev server without a cookie; in
+// production only the signed-in owner may run schema changes.
 export async function GET() {
+  const isDevServer = process.env.NODE_ENV === 'development';
+  if (!isDevServer && !(await isAuthenticated())) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const execSql = typeof sql.unsafe === 'function'
       ? sql.unsafe.bind(sql)

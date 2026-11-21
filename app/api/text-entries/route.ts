@@ -139,8 +139,18 @@ export async function DELETE(request: Request) {
  * PUT /api/text-entries
  * Update/re-migrate specific file from filesystem to database
  * Body: { fileName: string, directory: string }
+ *
+ * Only the local dev server has the book files under public/, and the book
+ * pipeline calls this there without credentials, so production never serves it.
  */
 export async function PUT(request: Request) {
+  if (process.env.NODE_ENV !== 'development') {
+    return NextResponse.json(
+      { success: false, message: 'text-entries PUT runs only on the local dev server (NODE_ENV=development)' },
+      { status: 404 }
+    );
+  }
+
   if (request.headers.get('content-type') !== 'application/json') {
     return NextResponse.json(
       {

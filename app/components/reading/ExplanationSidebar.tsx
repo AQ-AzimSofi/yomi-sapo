@@ -1,10 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { marked } from 'marked';
 import { API_ROUTES, COLORS, EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG } from '@/lib/constants';
 import { useExplanationCache } from '@/app/hooks/useExplanationCache';
-import { parseFurigana, segmentsToHTML, stripFurigana } from '@/lib/utils/furiganaParser';
+import { parseFurigana, segmentsToHTML, stripAiFurigana } from '@/lib/utils/furiganaParser';
+import { renderSafeMarkdown } from '@/lib/utils/safeMarkdown';
 import { toTint } from '@/lib/utils/colorTint';
 import { guestKeyHeaders, promptGuestKeyOnFailure, GUEST_KEY_UPDATED_EVENT } from '@/lib/guestKeys';
 import type { ExplanationRequest, ExplanationResponse } from '@/lib/types';
@@ -194,10 +194,7 @@ export default function ExplanationSidebar({
     return 'Just now';
   };
 
-  const renderMarkdown = (text: string): string => {
-    const textWithoutFurigana = stripFurigana(text);
-    return marked(textWithoutFurigana, { async: false });
-  };
+  const renderMarkdown = (text: string): string => renderSafeMarkdown(stripAiFurigana(text));
 
   const contextPercent =
     ((contextSize - EXPLANATION_CONFIG.MIN_CONTEXT_SIZE) /

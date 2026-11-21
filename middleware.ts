@@ -24,7 +24,7 @@ function isGuestAllowed(request: NextRequest): boolean {
 }
 
 export async function middleware(request: NextRequest) {
-  if (request.nextUrl.pathname.startsWith('/login')) {
+  if (request.nextUrl.pathname === '/login') {
     return NextResponse.next();
   }
 
@@ -48,9 +48,10 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - api (ALL API routes - they handle their own auth)
+     * - api/ (ALL API routes - they handle their own auth). The trailing slash
+     *   matters: without it, any page whose name starts with "api" skips login.
      * - public files (images, etc)
      */
-    '/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

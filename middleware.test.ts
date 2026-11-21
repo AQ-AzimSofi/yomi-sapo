@@ -48,7 +48,9 @@ describe('config.matcher', () => {
     }
   );
 
-  it.todo('runs the middleware on the /api-docs page, which the api lookahead currently skips (bug)');
+  it.each(['/api-docs', '/apis', '/api'])('runs the middleware on page route %s, whose name only starts with api', (path) => {
+    expect(isMatched(path)).toBe(true);
+  });
 });
 
 describe('middleware', () => {
@@ -62,6 +64,10 @@ describe('middleware', () => {
 
   it('lets a guest open /login', async () => {
     expect(await runMiddleware('/login')).toEqual(PASS_THROUGH);
+  });
+
+  it.each(['/loginx', '/login-admin', '/login/extra'])('redirects a guest opening %s, which only starts with /login', async (path) => {
+    expect(await runMiddleware(path)).toEqual(REDIRECT_TO_LOGIN);
   });
 
   it('lets a guest open the home page', async () => {
