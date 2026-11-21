@@ -4,11 +4,10 @@ import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
-  READER_THEME,
   COLORS,
-  DARK_COLORS,
   READER_CONFIG,
   STORAGE_KEYS,
+  THEME,
   type PriorityScore,
 } from '@/lib/constants';
 import ProgressBar from './components/ProgressBar';
@@ -37,6 +36,7 @@ import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import { describeLoadFailure } from './loadFailure';
+import { applyReaderTheme, readerThemeFrom, storedDarkModeFor, type ReaderTheme } from './readerTheme';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -105,7 +105,8 @@ function ReaderContent({
   const [displayMode, setDisplayMode] = useState<'collapsed' | 'expanded'>('collapsed');
   const [showRephrase, setShowRephrase] = useState(false);
   const [aiExplanationEnabled, setAiExplanationEnabled] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [readerTheme, setReaderTheme] = useState<ReaderTheme>('light');
+  const isDarkMode = readerTheme === 'dark';
 
   const [audiobookEnabled, setAudiobookEnabled] = useState(false);
   const [keyboardMode, setKeyboardMode] = useState(false);
@@ -156,8 +157,7 @@ function ReaderContent({
       setDisplayMode(isExpanded ? 'expanded' : 'collapsed');
     }
 
-    const storedDarkMode = localStorage.getItem(STORAGE_KEYS.READER_DARK_MODE);
-    if (storedDarkMode) setIsDarkMode(storedDarkMode === 'true');
+    setReaderTheme(readerThemeFrom(localStorage.getItem(STORAGE_KEYS.READER_DARK_MODE)));
 
     const storedAudiobook = localStorage.getItem(STORAGE_KEYS.AUDIOBOOK_ENABLED);
     if (storedAudiobook) setAudiobookEnabled(storedAudiobook === 'true');
@@ -168,12 +168,7 @@ function ReaderContent({
     }
   }, []);
 
-  useEffect(() => {
-    document.body.style.backgroundColor = isDarkMode ? DARK_COLORS.BASE : READER_THEME.SURFACE;
-    return () => {
-      document.body.style.backgroundColor = '';
-    };
-  }, [isDarkMode]);
+  useEffect(() => applyReaderTheme(document, readerTheme), [readerTheme]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -495,9 +490,9 @@ function ReaderContent({
   };
 
   const handleToggleDarkMode = () => {
-    const newValue = !isDarkMode;
-    setIsDarkMode(newValue);
-    localStorage.setItem(STORAGE_KEYS.READER_DARK_MODE, newValue.toString());
+    const nextTheme = isDarkMode ? 'light' : 'dark';
+    setReaderTheme(nextTheme);
+    localStorage.setItem(STORAGE_KEYS.READER_DARK_MODE, storedDarkModeFor(nextTheme));
   };
 
   const handleAudiobookChange = (enabled: boolean) => {
@@ -577,15 +572,15 @@ function ReaderContent({
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ backgroundColor: isDarkMode ? DARK_COLORS.BASE : READER_THEME.SURFACE }}
+        style={{ backgroundColor: THEME.READER_BG }}
       >
         <div
           className="w-10 h-10 rounded-full animate-spin"
           style={{
             borderWidth: '2px',
             borderStyle: 'solid',
-            borderColor: isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL,
-            borderTopColor: isDarkMode ? DARK_COLORS.TEXT : COLORS.INK,
+            borderColor: THEME.NEUTRAL,
+            borderTopColor: THEME.INK,
           }}
         />
       </div>
@@ -596,25 +591,25 @@ function ReaderContent({
     return (
       <div
         className="min-h-screen flex items-center justify-center p-4"
-        style={{ backgroundColor: isDarkMode ? DARK_COLORS.BASE : READER_THEME.SURFACE }}
+        style={{ backgroundColor: THEME.READER_BG }}
       >
         <div
           className="p-8 text-center max-w-md border"
           style={{
-            backgroundColor: isDarkMode ? DARK_COLORS.SURFACE : READER_THEME.SURFACE,
-            borderColor: isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL,
+            backgroundColor: THEME.SURFACE,
+            borderColor: THEME.NEUTRAL,
           }}
         >
-          <p className="font-mincho font-bold text-lg mb-2" style={{ color: isDarkMode ? DARK_COLORS.TEXT : COLORS.INK }}>
+          <p className="font-mincho font-bold text-lg mb-2" style={{ color: THEME.INK }}>
             本を読み込めませんでした
           </p>
-          <p className="text-sm mb-5" style={{ color: isDarkMode ? DARK_COLORS.TEXT_MUTED : COLORS.SECONDARY }}>
+          <p className="text-sm mb-5" style={{ color: THEME.SECONDARY }}>
             {error}
           </p>
           <button
             onClick={() => router.push('/library')}
             className="min-h-11 px-5 text-sm font-bold interactive-btn"
-            style={{ backgroundColor: COLORS.PRIMARY, color: COLORS.SURFACE }}
+            style={{ backgroundColor: THEME.PRIMARY, color: THEME.ON_PRIMARY }}
           >
             本棚に戻る
           </button>
@@ -623,21 +618,16 @@ function ReaderContent({
     );
   }
 
-  const theme = isDarkMode
-    ? { bg: DARK_COLORS.BASE, surface: DARK_COLORS.SURFACE, text: DARK_COLORS.TEXT, muted: DARK_COLORS.TEXT_MUTED, rule: DARK_COLORS.NEUTRAL }
-    : { bg: READER_THEME.SURFACE, surface: READER_THEME.SURFACE_MUTED, text: COLORS.INK, muted: COLORS.SECONDARY, rule: COLORS.NEUTRAL };
-
   const hasBookmark = bookmarkPage != null && bookmarkPage > 0;
   const registryKey = rubyRegistryKey(book);
 
   return (
     <div
       className="min-h-screen transition-colors duration-300"
-      style={{ backgroundColor: theme.bg, color: theme.text }}
+      style={{ backgroundColor: THEME.READER_BG, color: THEME.INK }}
     >
       {isGuest && (
         <GuestModeBanner
-          isDarkMode={isDarkMode}
           message="Preview only. Sign in to read the full book and use your saved bookmarks."
         />
       )}
@@ -654,10 +644,10 @@ function ReaderContent({
             alignItems: 'center',
             gap: 8,
             padding: '8px 16px',
-            backgroundColor: isDarkMode ? DARK_COLORS.SURFACE : COLORS.SURFACE,
-            color: theme.text,
+            backgroundColor: THEME.SURFACE,
+            color: THEME.INK,
             boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
-            border: `1px solid ${theme.rule}`,
+            border: `1px solid ${THEME.NEUTRAL}`,
             fontSize: 13,
             fontWeight: 500,
           }}
@@ -679,10 +669,10 @@ function ReaderContent({
             transform: 'translateX(-50%)',
             zIndex: 60,
             padding: '8px 16px',
-            backgroundColor: isDarkMode ? DARK_COLORS.SURFACE : COLORS.SURFACE,
-            color: COLORS.DANGER,
+            backgroundColor: THEME.SURFACE,
+            color: THEME.DANGER,
             boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
-            border: `1px solid ${COLORS.DANGER}`,
+            border: `1px solid ${THEME.DANGER}`,
             fontSize: 13,
             fontWeight: 500,
           }}
@@ -691,13 +681,12 @@ function ReaderContent({
         </div>
       )}
 
-      <ProgressBar progress={progress} isDarkMode={isDarkMode} />
+      <ProgressBar progress={progress} />
 
       <ReaderHeader
         currentPage={currentPage}
         totalPages={totalPages}
         bookmarkPage={bookmarkPage}
-        isDarkMode={isDarkMode}
         directoryParam={directoryParam}
         fileNameParam={fileNameParam}
         onPageChange={handlePageChange}
@@ -720,7 +709,6 @@ function ReaderContent({
           displayMode={displayMode}
           aiExplanationEnabled={aiExplanationEnabled}
           currentPage={currentPage}
-          isDarkMode={isDarkMode}
           onBookmarkSuccess={refetchBookmark}
           onSentenceClick={handleSentenceClick}
           imageMap={imageMap}
@@ -734,7 +722,7 @@ function ReaderContent({
         {totalPages > 1 && (
           <div
             className="flex justify-between items-center gap-4 mt-10 pt-5 border-t font-gothic"
-            style={{ borderColor: theme.rule }}
+            style={{ borderColor: THEME.NEUTRAL }}
           >
             <button
               onClick={(e) => {
@@ -743,11 +731,11 @@ function ReaderContent({
               }}
               disabled={currentPage <= 1}
               className="min-h-11 px-4 border disabled:opacity-30 text-sm interactive-page-btn"
-              style={{ borderColor: theme.rule, color: theme.text }}
+              style={{ borderColor: THEME.NEUTRAL, color: THEME.INK }}
             >
               前のページ
             </button>
-            <span className="text-sm" style={{ color: theme.muted }}>
+            <span className="text-sm" style={{ color: THEME.SECONDARY }}>
               {currentPage} / {totalPages}
             </span>
             <button
@@ -757,7 +745,7 @@ function ReaderContent({
               }}
               disabled={currentPage >= totalPages}
               className="min-h-11 px-4 border disabled:opacity-30 text-sm font-bold interactive-page-btn"
-              style={{ borderColor: theme.text, color: theme.text }}
+              style={{ borderColor: THEME.INK, color: THEME.INK }}
             >
               次のページ
             </button>
@@ -767,18 +755,18 @@ function ReaderContent({
         {isGuest && (
           <div
             className="mt-10 p-6 text-center font-gothic"
-            style={{ backgroundColor: theme.surface, border: `1px solid ${theme.rule}` }}
+            style={{ backgroundColor: THEME.SURFACE_MUTED, border: `1px solid ${THEME.NEUTRAL}` }}
           >
-            <p className="text-base font-semibold mb-1" style={{ color: theme.text }}>
+            <p className="text-base font-semibold mb-1" style={{ color: THEME.INK }}>
               End of preview
             </p>
-            <p className="text-sm mb-4" style={{ color: theme.muted }}>
+            <p className="text-sm mb-4" style={{ color: THEME.SECONDARY }}>
               You are reading a free sample. Sign in to read the full book.
             </p>
             <button
               onClick={() => router.push('/login')}
               className="min-h-11 px-5 text-sm font-bold interactive-btn"
-              style={{ backgroundColor: COLORS.PRIMARY, color: COLORS.SURFACE }}
+              style={{ backgroundColor: THEME.PRIMARY, color: THEME.ON_PRIMARY }}
             >
               Sign in
             </button>
@@ -813,11 +801,10 @@ function ReaderContent({
         onCopy={handleCopyPageRange}
         currentPage={currentPage}
         totalPages={totalPages}
-        isDarkMode={isDarkMode}
         copyFeedback={copyRangeFeedback}
       />
 
-      <BottomSheet isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Display" isDarkMode={isDarkMode}>
+      <BottomSheet isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Display">
         <ReaderSettings
           fontSize={fontSize}
           lineHeight={lineHeight}
@@ -861,7 +848,6 @@ function ReaderContent({
           total={audioTotal}
           contentMode={contentMode}
           speed={audioSpeed}
-          isDarkMode={isDarkMode}
           keyboardMode={keyboardMode}
           hasNarration={hasNarration}
           playbackError={playbackError ?? narrationLoadError}
@@ -877,7 +863,7 @@ function ReaderContent({
       )}
 
       {/* Always mounted: a failed session check reports a guest as signed in, and the key prompt must still reach them. */}
-      <GuestApiKeyModal isDarkMode={isDarkMode} />
+      <GuestApiKeyModal />
     </div>
   );
 }
@@ -888,13 +874,13 @@ export default function ReadPage() {
       fallback={
         <div
           className="min-h-screen flex items-center justify-center"
-          style={{ backgroundColor: READER_THEME.SURFACE }}
+          style={{ backgroundColor: THEME.READER_BG }}
         >
           <div
             className="w-10 h-10 border-2 rounded-full animate-spin"
             style={{
-              borderColor: COLORS.NEUTRAL,
-              borderTopColor: COLORS.INK,
+              borderColor: THEME.NEUTRAL,
+              borderTopColor: THEME.INK,
             }}
           />
         </div>

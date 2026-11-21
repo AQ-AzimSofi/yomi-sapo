@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { COLORS } from '@/lib/constants';
+import { THEME } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { bookAssetUrl } from '@/lib/utils/bookAssetPath';
 
@@ -38,13 +38,13 @@ const BookImage: React.FC<BookImageProps> = ({
       <div
         className="relative overflow-hidden border max-w-full"
         style={{
-          borderColor: toTint(COLORS.SECONDARY, 35),
-          backgroundColor: isLoading ? toTint(COLORS.SECONDARY, 8) : 'transparent',
+          borderColor: toTint(THEME.SECONDARY, 35),
+          backgroundColor: isLoading ? toTint(THEME.SECONDARY, 8) : 'transparent',
         }}
       >
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <p style={{ color: COLORS.SECONDARY }}>画像を読み込んでいます...</p>
+            <p style={{ color: THEME.SECONDARY }}>画像を読み込んでいます...</p>
           </div>
         )}
         <img
@@ -66,7 +66,7 @@ const BookImage: React.FC<BookImageProps> = ({
       {chapterName && !isLoading && (
         <p
           className="text-sm mt-2 text-center"
-          style={{ color: COLORS.SECONDARY }}
+          style={{ color: THEME.SECONDARY }}
         >
           {chapterName}
         </p>

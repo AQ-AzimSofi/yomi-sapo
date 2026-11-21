@@ -1,18 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { COLORS, DARK_COLORS } from '@/lib/constants';
-import { toTint } from '@/lib/utils/colorTint';
+import { THEME } from '@/lib/constants';
 import {
   type GuestKeyKind,
   getGuestKey,
   setGuestKey,
   GUEST_KEY_REQUIRED_EVENT,
 } from '@/lib/guestKeys';
-
-interface GuestApiKeyModalProps {
-  isDarkMode?: boolean;
-}
 
 const COPY: Record<GuestKeyKind, { title: string; help: string; link: string; linkLabel: string }> = {
   gemini: {
@@ -35,7 +30,7 @@ const COPY: Record<GuestKeyKind, { title: string; help: string; link: string; li
   },
 };
 
-export default function GuestApiKeyModal({ isDarkMode = false }: GuestApiKeyModalProps) {
+export default function GuestApiKeyModal() {
   const [kind, setKind] = useState<GuestKeyKind | null>(null);
   const [value, setValue] = useState('');
 
@@ -53,30 +48,6 @@ export default function GuestApiKeyModal({ isDarkMode = false }: GuestApiKeyModa
 
   const copy = COPY[kind];
 
-  const theme = isDarkMode
-    ? {
-        card: DARK_COLORS.SURFACE,
-        title: DARK_COLORS.TEXT,
-        help: DARK_COLORS.TEXT_MUTED,
-        inputBg: DARK_COLORS.BASE,
-        inputBorder: DARK_COLORS.NEUTRAL,
-        cancelBg: 'transparent',
-        cancelText: DARK_COLORS.TEXT,
-        primary: DARK_COLORS.PRIMARY,
-        onPrimary: DARK_COLORS.BASE,
-      }
-    : {
-        card: COLORS.SURFACE,
-        title: COLORS.INK,
-        help: COLORS.SECONDARY,
-        inputBg: COLORS.SURFACE,
-        inputBorder: COLORS.NEUTRAL,
-        cancelBg: 'transparent',
-        cancelText: COLORS.INK,
-        primary: COLORS.PRIMARY,
-        onPrimary: COLORS.SURFACE,
-      };
-
   const handleSave = () => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -87,18 +58,18 @@ export default function GuestApiKeyModal({ isDarkMode = false }: GuestApiKeyModa
   return (
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
-      style={{ backgroundColor: toTint(COLORS.INK, isDarkMode ? 60 : 40) }}
+      style={{ backgroundColor: THEME.SCRIM_STRONG }}
       onClick={() => setKind(null)}
     >
       <div
         className="w-full max-w-md p-6"
-        style={{ backgroundColor: theme.card, border: `1px solid ${theme.title}` }}
+        style={{ backgroundColor: THEME.SURFACE, border: `1px solid ${THEME.INK}` }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="font-mincho font-bold text-lg tracking-[0.04em] mb-2" style={{ color: theme.title }}>
+        <h2 className="font-mincho font-bold text-lg tracking-[0.04em] mb-2" style={{ color: THEME.INK }}>
           {copy.title}
         </h2>
-        <p className="text-sm mb-4 leading-relaxed" style={{ color: theme.help }}>
+        <p className="text-sm mb-4 leading-relaxed" style={{ color: THEME.SECONDARY }}>
           {copy.help}
         </p>
 
@@ -113,10 +84,10 @@ export default function GuestApiKeyModal({ isDarkMode = false }: GuestApiKeyModa
           autoFocus
           className="w-full px-3 py-2.5 text-sm mb-3 focus:outline-2"
           style={{
-            border: `1px solid ${theme.inputBorder}`,
-            backgroundColor: theme.inputBg,
-            color: theme.title,
-            outlineColor: theme.primary,
+            border: `1px solid ${THEME.NEUTRAL}`,
+            backgroundColor: THEME.FIELD,
+            color: THEME.INK,
+            outlineColor: THEME.PRIMARY,
           }}
         />
 
@@ -125,7 +96,7 @@ export default function GuestApiKeyModal({ isDarkMode = false }: GuestApiKeyModa
           target="_blank"
           rel="noreferrer"
           className="text-sm font-bold underline underline-offset-4 interactive-link"
-          style={{ color: theme.primary }}
+          style={{ color: THEME.PRIMARY }}
         >
           {copy.linkLabel}
         </a>
@@ -135,9 +106,9 @@ export default function GuestApiKeyModal({ isDarkMode = false }: GuestApiKeyModa
             onClick={() => setKind(null)}
             className="min-h-11 px-5 text-sm font-bold interactive-page-btn"
             style={{
-              backgroundColor: theme.cancelBg,
-              border: `1px solid ${theme.inputBorder}`,
-              color: theme.cancelText,
+              backgroundColor: 'transparent',
+              border: `1px solid ${THEME.NEUTRAL}`,
+              color: THEME.INK,
             }}
           >
             Cancel
@@ -146,7 +117,7 @@ export default function GuestApiKeyModal({ isDarkMode = false }: GuestApiKeyModa
             onClick={handleSave}
             disabled={!value.trim()}
             className="min-h-11 px-5 text-sm font-bold disabled:opacity-40 interactive-btn"
-            style={{ backgroundColor: theme.primary, color: theme.onPrimary }}
+            style={{ backgroundColor: THEME.PRIMARY, color: THEME.ON_PRIMARY }}
           >
             Save key
           </button>

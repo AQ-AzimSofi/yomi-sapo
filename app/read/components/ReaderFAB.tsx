@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
-import { COLORS, DARK_COLORS } from '@/lib/constants';
+import { COLORS, THEME } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 
 interface ReaderFABProps {
@@ -333,11 +333,7 @@ export default function ReaderFAB({
 
   if (!mounted) return null;
 
-  const surfaceBg = isDarkMode ? DARK_COLORS.SURFACE : COLORS.SURFACE;
-  const textColor = isDarkMode ? DARK_COLORS.TEXT : COLORS.INK;
-  const ruleColor = isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL;
-  const activeColor = isDarkMode ? DARK_COLORS.PRIMARY : COLORS.PRIMARY;
-  const activeBg = toTint(activeColor, 12);
+  const activeBg = toTint(THEME.PRIMARY, 12);
 
   return (
     <>
@@ -345,7 +341,7 @@ export default function ReaderFAB({
         <div
           className="fixed inset-0 z-[9998]"
           onClick={() => setIsExpanded(false)}
-          style={{ backgroundColor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)' }}
+          style={{ backgroundColor: THEME.FAB_SCRIM }}
         />
       )}
 
@@ -370,11 +366,9 @@ export default function ReaderFAB({
             >
               <div
                 style={{
-                  backgroundColor: surfaceBg,
-                  border: `1px solid ${textColor}`,
-                  boxShadow: isDarkMode
-                    ? '0 8px 32px rgba(0,0,0,0.5)'
-                    : '0 8px 32px rgba(0,0,0,0.12)',
+                  backgroundColor: THEME.SURFACE,
+                  border: `1px solid ${THEME.INK}`,
+                  boxShadow: THEME.SHADOW_MENU,
                   overflow: 'hidden',
                   minWidth: '180px',
                   animation: 'fab-menu-enter 200ms ease-out',
@@ -390,8 +384,8 @@ export default function ReaderFAB({
                     className="w-full flex items-center gap-3 px-4 py-2.5 font-gothic interactive-nav-btn"
                     style={{
                       backgroundColor: btn.active ? activeBg : 'transparent',
-                      color: btn.active ? activeColor : textColor,
-                      borderBottom: index < visibleButtons.length - 1 ? `1px solid ${ruleColor}` : 'none',
+                      color: btn.active ? THEME.PRIMARY : THEME.INK,
+                      borderBottom: index < visibleButtons.length - 1 ? `1px solid ${THEME.NEUTRAL}` : 'none',
                     }}
                   >
                     <span className="flex items-center justify-center w-5 h-5 flex-shrink-0">
@@ -425,12 +419,10 @@ export default function ReaderFAB({
             style={{
               width: `${FAB_SIZE}px`,
               height: `${FAB_SIZE}px`,
-              backgroundColor: textColor,
-              color: isDarkMode ? DARK_COLORS.BASE : COLORS.SURFACE,
+              backgroundColor: THEME.INK,
+              color: THEME.ON_INK,
               border: 'none',
-              boxShadow: isDragging
-                ? (isDarkMode ? '0 8px 32px rgba(0,0,0,0.6)' : '0 8px 32px rgba(0,0,0,0.18)')
-                : (isDarkMode ? '0 2px 16px rgba(0,0,0,0.4)' : '0 2px 16px rgba(0,0,0,0.1)'),
+              boxShadow: isDragging ? THEME.SHADOW_FAB_LIFTED : THEME.SHADOW_FAB,
               cursor: isDragging ? 'grabbing' : 'grab',
               transition: isDragging ? 'none' : 'color 200ms, box-shadow 200ms, transform 200ms',
               transform: isDragging ? 'scale(1.06)' : 'scale(1)',
