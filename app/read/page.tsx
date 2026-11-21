@@ -398,8 +398,8 @@ function ReaderContent({
     };
 
     const handleAudioKey = (e: KeyboardEvent) => {
-      if (isGuestKeyPromptOpen) return;
-      if (!acceptsAudioShortcut(activePanel, e.target as HTMLElement | null)) return;
+      const target = e.target as HTMLElement | null;
+      if (!acceptsAudioShortcut({ activePanel, isKeyPromptOpen: isGuestKeyPromptOpen, target })) return;
       if (e.key === 'Escape') {
         setKeyboardMode(false);
         return;

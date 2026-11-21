@@ -3,6 +3,7 @@ import { acceptsAudioShortcut, closePanel, togglePanel, type ReaderPanel } from 
 
 const PANELS: ReaderPanel[] = ['settings', 'explanation', 'ruby', 'copyRange'];
 const PAGE_BODY = { tagName: 'BODY', isContentEditable: false };
+const NO_OVERLAY = { activePanel: null, isKeyPromptOpen: false, target: PAGE_BODY };
 
 describe('togglePanel', () => {
   it('opens a panel when none is open', () => {
@@ -34,22 +35,26 @@ describe('closePanel', () => {
 
 describe('acceptsAudioShortcut', () => {
   it('accepts a key pressed on the page with no panel open', () => {
-    expect(acceptsAudioShortcut(null, PAGE_BODY)).toBe(true);
+    expect(acceptsAudioShortcut(NO_OVERLAY)).toBe(true);
   });
 
   it('accepts a key with no target', () => {
-    expect(acceptsAudioShortcut(null, null)).toBe(true);
+    expect(acceptsAudioShortcut({ ...NO_OVERLAY, target: null })).toBe(true);
   });
 
   it.each(PANELS)('ignores keys while the %s panel is open', (panel) => {
-    expect(acceptsAudioShortcut(panel, PAGE_BODY)).toBe(false);
+    expect(acceptsAudioShortcut({ ...NO_OVERLAY, activePanel: panel })).toBe(false);
+  });
+
+  it('ignores keys while the guest key prompt is open with no panel', () => {
+    expect(acceptsAudioShortcut({ ...NO_OVERLAY, isKeyPromptOpen: true })).toBe(false);
   });
 
   it.each(['INPUT', 'TEXTAREA'])('ignores keys typed into an %s', (tagName) => {
-    expect(acceptsAudioShortcut(null, { tagName, isContentEditable: false })).toBe(false);
+    expect(acceptsAudioShortcut({ ...NO_OVERLAY, target: { tagName, isContentEditable: false } })).toBe(false);
   });
 
   it('ignores keys typed into editable content', () => {
-    expect(acceptsAudioShortcut(null, { tagName: 'DIV', isContentEditable: true })).toBe(false);
+    expect(acceptsAudioShortcut({ ...NO_OVERLAY, target: { tagName: 'DIV', isContentEditable: true } })).toBe(false);
   });
 });

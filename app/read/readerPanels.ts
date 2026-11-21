@@ -20,9 +20,19 @@ interface KeyTarget {
 
 const TEXT_ENTRY_TAGS = ['INPUT', 'TEXTAREA'];
 
-/** Audio shortcuts act only while no panel is open and the reader is not typing. */
-export function acceptsAudioShortcut(active: ActivePanel, target: KeyTarget | null): boolean {
-  if (active !== null) return false;
+interface ShortcutContext {
+  activePanel: ActivePanel;
+  isKeyPromptOpen: boolean;
+  target: KeyTarget | null;
+}
+
+/**
+ * Audio shortcuts act only while no panel or guest key prompt is open and the reader is not typing.
+ * The prompt is not a panel because it opens on top of the panel that asked for the key.
+ */
+export function acceptsAudioShortcut({ activePanel, isKeyPromptOpen, target }: ShortcutContext): boolean {
+  if (activePanel !== null) return false;
+  if (isKeyPromptOpen) return false;
   if (!target) return true;
   return !TEXT_ENTRY_TAGS.includes(target.tagName) && !target.isContentEditable;
 }
