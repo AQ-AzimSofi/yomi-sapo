@@ -1,5 +1,6 @@
 import { sql } from './connection';
 import type { Bookmark, TextEntry } from './schema';
+import { runWriteTransaction } from './writeTransaction';
 import { normalizeNewlines } from '@/lib/content/bookModel';
 
 export interface SavedBookmark {
@@ -40,15 +41,17 @@ interface BookmarkWrite {
 export async function upsertBookmark({ fileName, directory, bookmarkText, bookmarkPage }: BookmarkWrite): Promise<void> {
   const page = bookmarkPage ?? null;
   try {
-    await sql`
-      INSERT INTO bookmarks (file_name, directory, bookmark_text, bookmark_page, updated_at)
-      VALUES (${fileName}, ${directory}, ${bookmarkText}, ${page}, CURRENT_TIMESTAMP)
-      ON CONFLICT (file_name, directory)
-      DO UPDATE SET
-        bookmark_text = EXCLUDED.bookmark_text,
-        bookmark_page = EXCLUDED.bookmark_page,
-        updated_at = CURRENT_TIMESTAMP
-    `;
+    await runWriteTransaction(sql, async (tx) => {
+      await tx`
+        INSERT INTO bookmarks (file_name, directory, bookmark_text, bookmark_page, updated_at)
+        VALUES (${fileName}, ${directory}, ${bookmarkText}, ${page}, CURRENT_TIMESTAMP)
+        ON CONFLICT (file_name, directory)
+        DO UPDATE SET
+          bookmark_text = EXCLUDED.bookmark_text,
+          bookmark_page = EXCLUDED.bookmark_page,
+          updated_at = CURRENT_TIMESTAMP
+      `;
+    });
   } catch (error) {
     console.error('Error upserting bookmark:', error);
     throw error;
@@ -60,7 +63,7 @@ export async function initializeBookmarksForFiles(
   directory: string = 'public'
 ): Promise<void> {
   try {
-    await sql.begin(async (tx) => {
+    await runWriteTransaction(sql, async (tx) => {
       const existing = await tx<Pick<Bookmark, 'file_name'>[]>`
         SELECT file_name FROM bookmarks WHERE directory = ${directory}
       `;
@@ -129,14 +132,16 @@ export async function upsertTextEntry(
 ): Promise<void> {
   const content = normalizeNewlines(rawContent);
   try {
-    await sql`
-      INSERT INTO text_entries (file_name, directory, content, created_at, updated_at)
-      VALUES (${fileName}, ${directory}, ${content}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      ON CONFLICT (file_name, directory)
-      DO UPDATE SET
-        content = ${content},
-        updated_at = CURRENT_TIMESTAMP
-    `;
+    await runWriteTransaction(sql, async (tx) => {
+      await tx`
+        INSERT INTO text_entries (file_name, directory, content, created_at, updated_at)
+        VALUES (${fileName}, ${directory}, ${content}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (file_name, directory)
+        DO UPDATE SET
+          content = ${content},
+          updated_at = CURRENT_TIMESTAMP
+      `;
+    });
   } catch (error) {
     console.error('Error upserting text entry:', error);
     throw error;

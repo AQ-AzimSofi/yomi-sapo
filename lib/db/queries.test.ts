@@ -4,8 +4,14 @@ import { getBookmark, getTextEntryVersion, initializeBookmarksForFiles, upsertBo
 
 vi.mock('@/lib/db/connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }) }));
 
-function queryValues(): unknown[] {
-  const [, ...values] = vi.mocked(sql).mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+type Transaction = ReturnType<typeof vi.fn>;
+
+function runTransactionsOn(transaction: Transaction): void {
+  vi.mocked(sql.begin).mockImplementation(((callback: (tx: Transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+}
+
+function transactionWrite(transaction: Transaction): unknown[] {
+  const [, ...values] = transaction.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
   return values;
 }
 
@@ -15,19 +21,30 @@ afterEach(() => {
 
 describe('upsertBookmark', () => {
   it('sends NULL, never undefined, for a bookmark without a page', async () => {
-    vi.mocked(sql).mockResolvedValue([] as never);
+    const transaction = vi.fn().mockResolvedValue([]);
+    runTransactionsOn(transaction);
 
     await upsertBookmark({ fileName: 'ほん', directory: 'd', bookmarkText: '一文目' });
 
-    expect(queryValues()).toEqual(['ほん', 'd', '一文目', null]);
+    expect(transactionWrite(transaction)).toEqual(['ほん', 'd', '一文目', null]);
   });
 
   it('sends the page it was given', async () => {
-    vi.mocked(sql).mockResolvedValue([] as never);
+    const transaction = vi.fn().mockResolvedValue([]);
+    runTransactionsOn(transaction);
 
     await upsertBookmark({ fileName: 'ほん', directory: 'd', bookmarkText: '一文目', bookmarkPage: 7 });
 
-    expect(queryValues()).toEqual(['ほん', 'd', '一文目', 7]);
+    expect(transactionWrite(transaction)).toEqual(['ほん', 'd', '一文目', 7]);
+  });
+
+  it('writes inside a transaction, so a commit-time conflict reaches the caller', async () => {
+    runTransactionsOn(vi.fn().mockResolvedValue([]));
+
+    await upsertBookmark({ fileName: 'ほん', directory: 'd', bookmarkText: '一文目' });
+
+    expect(sql).not.toHaveBeenCalled();
+    expect(sql.begin).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -52,19 +69,29 @@ describe('getTextEntryVersion', () => {
 
 describe('upsertTextEntry', () => {
   it('stores Windows (CRLF) text with LF line endings', async () => {
-    vi.mocked(sql).mockResolvedValue([] as never);
+    const transaction = vi.fn().mockResolvedValue([]);
+    runTransactionsOn(transaction);
 
     await upsertTextEntry('ほん', '< 本文\r\n>> やさしい文\r\n', 'd');
 
-    expect(queryValues()).toContain('< 本文\n>> やさしい文\n');
-    expect(queryValues().some((value) => typeof value === 'string' && value.includes('\r'))).toBe(false);
+    expect(transactionWrite(transaction)).toContain('< 本文\n>> やさしい文\n');
+    expect(transactionWrite(transaction).some((value) => typeof value === 'string' && value.includes('\r'))).toBe(false);
+  });
+
+  it('writes inside a transaction, so a commit-time conflict reaches the caller', async () => {
+    runTransactionsOn(vi.fn().mockResolvedValue([]));
+
+    await upsertTextEntry('ほん', '本文', 'd');
+
+    expect(sql).not.toHaveBeenCalled();
+    expect(sql.begin).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('initializeBookmarksForFiles', () => {
   it('reads the existing bookmarks and inserts the missing ones in one transaction', async () => {
     const transaction = vi.fn().mockResolvedValueOnce([{ file_name: 'ある本' }]).mockResolvedValue([]);
-    vi.mocked(sql.begin).mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+    runTransactionsOn(transaction);
 
     await initializeBookmarksForFiles(['ある本', '新しい本', '次の本'], 'd');
 
