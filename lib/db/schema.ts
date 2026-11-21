@@ -1,5 +1,5 @@
 /**
- * Database schema definitions for Vercel Postgres
+ * Row types and the schema SQL that GET /api/init-db and npm run db:migrate apply.
  */
 
 export interface Bookmark {
@@ -34,8 +34,7 @@ export interface VocabularyRow {
 }
 
 /**
- * SQL schema for creating tables
- * Run this in Vercel Postgres dashboard or via migration script
+ * Creates every table and index that does not exist yet.
  */
 export const CREATE_TABLES_SQL = `
   -- Bookmarks table

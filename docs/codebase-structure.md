@@ -306,5 +306,5 @@ npm run dev           # Start dev server (port 3333)
 npm run build         # Production build
 npm run db:start      # Start PostgreSQL container
 npm run db:init       # Initialize database schema
-npm run db:migrate    # Migrate text files to database
+npm run db:migrate    # Bring the local database to the current schema
 ```

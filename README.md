@@ -162,7 +162,7 @@ GEMINI_API_KEY=your_gemini_api_key
 
 ```bash
 npm run db:start    # Start PostgreSQL container
-npm run db:init     # Initialize tables
+npm run db:migrate  # Create or update the tables (refuses any database that is not local)
 ```
 
 3. **Add books** (choose one method):
@@ -287,18 +287,3 @@ Production runs at https://yomi-sapo.click on AWS (Lambda + CloudFront via SST, 
 - **Directory structure preserved** - `.gitkeep` files maintain folder structure
 - **ADMIN_API_KEY** - needed locally for the admin API and EPUB API mode; intentionally not set in production
 - **Database backup** - recommended for production (Neon PG17); before risky changes run `docker run --rm postgres:17-alpine pg_dump '<NEON_URL>' --no-owner --no-acl > backup.sql` (the local PG15 tools refuse a newer server)
-
-### Migrating Existing Files
-
-If you have existing text files in `public/` and want to migrate them to the database:
-
-```bash
-# One-time migration
-npm run db:migrate
-
-# Or use the API endpoint
-curl -X POST http://localhost:3333/api/migrate-text-files
-```
-
-After migration, the app will read from database instead of files.
-
