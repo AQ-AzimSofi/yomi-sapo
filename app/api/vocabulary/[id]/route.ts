@@ -7,7 +7,7 @@ import {
 import { withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isOptionalString, isRecord } from '@/lib/utils/typeGuards';
-import type { VocabularyEntryResponse } from '@/lib/api/contracts';
+import type { DeleteVocabularyResponse, VocabularyEntryResponse } from '@/lib/api/contracts';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -60,7 +60,7 @@ export const DELETE = withAuth('owner', async (request: Request, { params }: Rou
   const { id } = await params;
   await deleteVocabularyEntry(id);
 
-  return NextResponse.json({
+  return NextResponse.json<DeleteVocabularyResponse>({
     success: true,
     message: 'Vocabulary entry deleted',
   });

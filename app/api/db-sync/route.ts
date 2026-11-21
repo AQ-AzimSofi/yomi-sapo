@@ -9,16 +9,13 @@ import {
 import { withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isRecord } from '@/lib/utils/typeGuards';
+import type { DbSyncDirection, DbSyncRequest, DbSyncResponse, DbSyncStatusResponse } from '@/lib/api/contracts';
 
 export const dynamic = 'force-dynamic';
 
-const SYNC_DIRECTIONS = ['pull', 'push', 'full'] as const;
+const SYNC_DIRECTIONS: readonly DbSyncDirection[] = ['pull', 'push', 'full'];
 
-interface SyncRequest {
-  direction: (typeof SYNC_DIRECTIONS)[number];
-}
-
-function isSyncRequest(body: unknown): body is SyncRequest {
+function isSyncRequest(body: unknown): body is DbSyncRequest {
   return isRecord(body) && SYNC_DIRECTIONS.some((direction) => direction === body.direction);
 }
 
@@ -41,7 +38,7 @@ export const GET = withAuth('owner', async () => {
     process.env.DATABASE_URL!,
     computeDiffs
   );
-  return NextResponse.json({ diffs });
+  return NextResponse.json<DbSyncStatusResponse>({ diffs });
 });
 
 export const POST = withAuth('owner', async (request) => {
@@ -62,5 +59,5 @@ export const POST = withAuth('owner', async (request) => {
     }
   );
 
-  return NextResponse.json({ success: true, results });
+  return NextResponse.json<DbSyncResponse>({ success: true, results });
 });

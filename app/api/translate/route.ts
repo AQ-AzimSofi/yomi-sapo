@@ -3,13 +3,9 @@ import { GUEST_KEY_HEADERS } from '@/lib/constants';
 import { guestKeyRequired, withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
+import type { TranslateRequest, TranslateResponse } from '@/lib/api/contracts';
 
-interface TranslateBody {
-  text: string;
-  targetLanguage?: string;
-}
-
-function isTranslateBody(body: unknown): body is TranslateBody {
+function isTranslateBody(body: unknown): body is TranslateRequest {
   return isRecord(body) && isNonEmptyString(body.text) && isOptionalString(body.targetLanguage);
 }
 
@@ -63,5 +59,5 @@ export const POST = withAuth('viewer', async (request, viewer) => {
   const data = await response.json();
   const translatedText = data.data.translations[0].translatedText;
 
-  return NextResponse.json({ translatedText });
+  return NextResponse.json<TranslateResponse>({ translatedText });
 });

@@ -3,23 +3,11 @@ import { withAuth } from '@/lib/auth/guards';
 import { findPublicBook } from '@/lib/publicBooks';
 import { toBookKey } from '@/lib/books/bookRef';
 import { getLibraryRows, type LibraryRow } from '@/lib/db/libraryProgressQueries.sql';
+import type { LibraryBookProgress, LibraryProgressResponse } from '@/lib/api/contracts';
 
 export const dynamic = 'force-dynamic';
 
-interface BookProgress {
-  progress: number;
-  totalCharacters: number;
-  bookmarkPage: number | null;
-  totalPages: number;
-  bookmarkUpdatedAt: string | null;
-  createdAt: string | null;
-}
-
-interface ProgressResponse {
-  [key: string]: BookProgress;
-}
-
-function toBookProgress(row: LibraryRow, isSignedIn: boolean): BookProgress {
+function toBookProgress(row: LibraryRow, isSignedIn: boolean): LibraryBookProgress {
   const fullPages = row.total_pages ?? 0;
   // Guests only see the preview, so their card reflects the capped page count
   // and does not disclose the full work's length.
@@ -42,7 +30,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
   const rows = await getLibraryRows(
     (row) => isSignedIn || findPublicBook(row.directory, row.file_name) !== null
   );
-  const progressData: ProgressResponse = Object.fromEntries(
+  const progressData: LibraryProgressResponse = Object.fromEntries(
     rows.map((row) => [toBookKey({ directory: row.directory, fileName: row.file_name }), toBookProgress(row, isSignedIn)])
   );
   return NextResponse.json(progressData);

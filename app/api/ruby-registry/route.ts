@@ -10,23 +10,9 @@ import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import { isPublicDirectory } from '@/lib/publicBooks';
 import { isSafeBookRef } from '@/lib/books/bookRef';
-import type { RubyEntry } from '@/lib/types';
-import type { RubyRegistryResponse } from '@/lib/api/contracts';
+import type { RubyEntryDraft, RubyRegistryResponse, SaveRubyEntryRequest } from '@/lib/api/contracts';
 
 export const dynamic = 'force-dynamic';
-
-interface RubyEntryDraft {
-  kanji: string;
-  reading: string;
-  source?: RubyEntry['source'];
-  note?: string;
-}
-
-interface RubyEntryRequest {
-  directory: string;
-  bookName: string;
-  entry: RubyEntryDraft;
-}
 
 function isRubyEntryDraft(entry: unknown): entry is RubyEntryDraft {
   return (
@@ -44,7 +30,7 @@ function isSafeRegistryKey(directory: string, bookName: string): boolean {
   return isSafeBookRef({ directory, fileName: bookName });
 }
 
-function isRubyEntryRequest(body: unknown): body is RubyEntryRequest {
+function isRubyEntryRequest(body: unknown): body is SaveRubyEntryRequest {
   return (
     isRecord(body) &&
     isNonEmptyString(body.directory) &&

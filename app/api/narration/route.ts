@@ -12,6 +12,7 @@ import { withAuth } from '@/lib/auth/guards';
 import { apiError } from '@/lib/api/respond';
 import { presignGet } from '@/lib/storage/s3';
 import { bookRefFromParams, isSafeBookRef } from '@/lib/books/bookRef';
+import type { NarrationManifest } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +45,7 @@ export const GET = withAuth('owner', async (request) => {
 
   const audioUrl = await presignGet(bucket, narration.audio_key, SIGNED_URL_TTL_SECONDS);
 
-  return NextResponse.json({
+  return NextResponse.json<NarrationManifest>({
     audioUrl,
     unitCount: narration.unit_count,
     cues: narration.cues,
