@@ -161,6 +161,7 @@ describe('PUT /api/text-entries', () => {
     const response = await putTextEntry(jsonRequest('PUT', BOOK));
 
     expect(response.status).toBe(404);
+    expect(readTextFile).not.toHaveBeenCalled();
     expect(upsertTextEntry).not.toHaveBeenCalled();
   });
 
