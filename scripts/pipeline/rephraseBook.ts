@@ -1,19 +1,29 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { isClaudeModel } from '../utils/claude-rephrase';
-import { chunkText, stripRubyTags } from './chunking';
-import { createProgress, getProgressPath, loadProgress, saveProgress, simpleHash } from './progress';
-import {
-  createClaudeRephraser,
-  createGeminiRephraser,
-  sleep,
-  type ChunkOutput,
-  type ChunkRephraser,
-} from './rephraseChunk';
+import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { createKeyPool } from '../shared/geminiKeyPool';
-import { findReaderMismatches } from './rephraseFormat';
 import { resolvePython, runPython } from '../shared/python';
 import { CORE_SCRIPTS_DIR, REPO_ROOT } from '../shared/repoPaths';
+import { getBookFiles, getChunkPath, readFileOrEmpty, rebuildOutputs, type BookFiles } from './chunkFiles';
+import { chunkText, stripRubyTags } from './chunking';
+import {
+  createProgress,
+  isChunkFinished,
+  listSavedChunkIndexes,
+  loadProgress,
+  resetChangedChunks,
+  saveProgress,
+  simpleHash,
+  updateChunk,
+  type ChunkProgress,
+  type ProgressFile,
+  type ProgressFileV1,
+} from './progress';
+import { migrateV1Progress, type ChunkTexts } from './progressMigration';
+import { createClaudeRephraser, createGeminiRephraser, sleep, type ChunkRephraser } from './rephraseChunk';
+import { findReaderMismatches } from './rephraseFormat';
 
 export interface RephraseOptions {
   outputDir: string;
@@ -25,6 +35,57 @@ export interface RephraseOptions {
   apiUrl: string;
 }
 
+/** On failure `text` is the input unchanged and `error` says why. */
+export interface FuriganaResult {
+  text: string;
+  error?: string;
+}
+
+export interface TextEntryTarget {
+  apiUrl: string;
+  fileName: string;
+  directory: string;
+}
+
+export type CreateRephraser = (model: string) => ChunkRephraser;
+
+export interface RephraseDeps {
+  createRephraser: CreateRephraser;
+  addFurigana: (readerText: string) => FuriganaResult;
+  syncToDatabase: (target: TextEntryTarget) => Promise<boolean>;
+  writeFile: WriteFile;
+}
+
+interface BookLocation {
+  bookName: string;
+  sourceDir: string;
+}
+
+interface BookSource {
+  bookName: string;
+  files: BookFiles;
+  sourceText: string;
+}
+
+interface RunStart {
+  progress: ProgressFile;
+  chunks: string[];
+  isFreshStart: boolean;
+  /** Chunk files to write before the first save: the earlier version's outputs split per chunk. */
+  migratedChunkTexts: ChunkTexts[];
+}
+
+type RunPlan = { start: RunStart } | { problem: string };
+
+interface ChunkRun {
+  files: BookFiles;
+  chunks: string[];
+  rephraser: ChunkRephraser;
+  deps: RephraseDeps;
+  textEntry: TextEntryTarget;
+  shouldStop: () => boolean;
+}
+
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -34,24 +95,11 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-interface ChunkOutputTarget {
-  rawPath: string;
-  furiganaPath: string;
-  sourceDir: string;
-  apiUrl: string;
-  fileName: string;
-  directory: string;
-}
-
 // ============================================================================
 // Database Sync
 // ============================================================================
 
-async function syncToDatabase(
-  apiUrl: string,
-  fileName: string,
-  directory: string
-): Promise<boolean> {
+async function syncToDatabase({ apiUrl, fileName, directory }: TextEntryTarget): Promise<boolean> {
   try {
     const response = await fetch(`${apiUrl}/api/text-entries`, {
       method: 'PUT',
@@ -76,245 +124,308 @@ async function syncToDatabase(
 // Furigana Addition
 // ============================================================================
 
-function addFuriganaToChunk(chunkText: string, outputDir: string): string {
-  const tempInput = path.join(outputDir, 'temp-chunk.txt');
-  const tempOutput = path.join(outputDir, 'temp-chunk-furigana.txt');
+const MAX_FURIGANA_ERROR_CHARS = 300;
 
-  fs.writeFileSync(tempInput, chunkText, 'utf-8');
-
+function addFuriganaWithPython(readerText: string): FuriganaResult {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yomi-furigana-'));
   try {
-    const furiganaRun = runPython(resolvePython(), [path.join(CORE_SCRIPTS_DIR, 'add-furigana-to-text.py'), tempInput, '-o', tempOutput], {
+    const inputPath = path.join(workDir, 'chunk.txt');
+    const outputPath = path.join(workDir, 'chunk-furigana.txt');
+    fs.writeFileSync(inputPath, readerText, 'utf-8');
+    const furiganaRun = runPython(resolvePython(), [path.join(CORE_SCRIPTS_DIR, 'add-furigana-to-text.py'), inputPath, '-o', outputPath], {
       cwd: REPO_ROOT,
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-    if (furiganaRun.status !== 0) {
-      throw furiganaRun.error ?? new Error(`add-furigana-to-text.py exited with ${furiganaRun.status}: ${furiganaRun.stderr}`);
-    }
-
-    const result = fs.readFileSync(tempOutput, 'utf-8');
-
-    fs.unlinkSync(tempInput);
-    fs.unlinkSync(tempOutput);
-
-    return result;
-  } catch (error) {
-    console.error(`    Furigana addition failed:`, error);
-    fs.unlinkSync(tempInput);
-    if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
-    return chunkText;
+    if (furiganaRun.status === 0) return { text: fs.readFileSync(outputPath, 'utf-8') };
+    const reason = furiganaRun.error?.message ?? `add-furigana-to-text.py exited with ${furiganaRun.status ?? 'no code (killed)'}: ${furiganaRun.stderr}`;
+    return { text: readerText, error: reason.slice(0, MAX_FURIGANA_ERROR_CHARS) };
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
 
+export function createRephraser(model: string): ChunkRephraser {
+  return isClaudeModel(model) ? createClaudeRephraser(model) : createGeminiRephraser(model, () => createKeyPool());
+}
+
+export const defaultRephraseDeps: RephraseDeps = {
+  createRephraser,
+  addFurigana: addFuriganaWithPython,
+  syncToDatabase,
+  writeFile: writeFileAtomic,
+};
+
 // ============================================================================
-// Batch Rephrase Processing
+// Run Start: fresh, resumed, or moved over from the version 1 progress file
 // ============================================================================
 
-// Chunks are appended, so a fresh start on top of an earlier run's output would repeat its passages.
+function planFreshStart({ bookName, sourceText }: BookSource, options: RephraseOptions): RunStart {
+  const chunking = chunkText(sourceText, options.chunkSize);
+  // The Claude subscription has no per-minute quota to wait out, so its chunks run back to back
+  const delaySeconds = isClaudeModel(options.model) ? 0 : options.delaySeconds;
+  const progress = createProgress({
+    bookName,
+    directory: `${options.outputDir}/${bookName}`,
+    sourceText,
+    chunking,
+    settings: { chunkSize: options.chunkSize, delaySeconds, model: options.model },
+  });
+  return { progress, chunks: chunking.chunks, isFreshStart: true, migratedChunkTexts: [] };
+}
+
+function planMigration(legacy: ProgressFileV1, chunks: string[], files: BookFiles): RunPlan {
+  const outputs = { rawText: readFileOrEmpty(files.rawPath), furiganaText: readFileOrEmpty(files.furiganaPath) };
+  const result = migrateV1Progress(legacy, chunks, outputs);
+  if ('problem' in result) return { problem: `This book's progress predates chunk files and cannot be moved over: ${result.problem}` };
+
+  const { migrated } = result;
+  console.log(`\nProgress predates chunk files: the earlier output splits into ${migrated.chunkTexts.length} chunk file(s)`);
+  if (migrated.droppedChunkIndex !== undefined) {
+    console.log(`Chunk ${migrated.droppedChunkIndex + 1} was only half saved when the earlier run stopped; it is redone`);
+  }
+  return { start: { progress: migrated.progress, chunks, isFreshStart: false, migratedChunkTexts: migrated.chunkTexts } };
+}
+
+function planRun(book: BookSource, options: RephraseOptions): RunPlan {
+  const storedProgress = options.reset ? null : loadProgress(book.files.progressPath);
+  if (!storedProgress) return { start: planFreshStart(book, options) };
+  if (storedProgress.source.hash !== simpleHash(book.sourceText)) {
+    return { problem: 'Source file has changed since last run.\nUse --reset to start fresh.' };
+  }
+
+  const { chunks } = chunkText(book.sourceText, storedProgress.settings.chunkSize);
+  if (storedProgress.chunks.total !== chunks.length) {
+    return { problem: `The progress file lists ${storedProgress.chunks.total} chunks, but the source now splits into ${chunks.length}.\nUse --reset to start fresh.` };
+  }
+  if (storedProgress.version === 1) return planMigration(storedProgress, chunks, book.files);
+
+  const { progress, resetIndexes } = resetChangedChunks(storedProgress, chunks);
+  if (resetIndexes.length > 0) {
+    console.log(`\nChunk(s) ${resetIndexes.map((index) => index + 1).join(', ')} no longer match the source and are redone`);
+  }
+  return { start: { progress, chunks, isFreshStart: false, migratedChunkTexts: [] } };
+}
+
+function logRunPlan(start: RunStart, rephraser: ChunkRephraser, options: RephraseOptions): void {
+  const { progress, chunks } = start;
+  if (!start.isFreshStart) {
+    console.log(`\nResuming from progress: ${progress.chunks.completed}/${progress.chunks.total} chunks done`);
+    console.log(`Model: ${progress.settings.model} (the model this book started with; --reset starts over with --model)`);
+    return;
+  }
+
+  console.log(`\nChunks: ${chunks.length} (target size: ${options.chunkSize} chars)`);
+  if (isClaudeModel(options.model)) {
+    console.log(`Rephraser: claude -p (no delay between chunks)`);
+  } else {
+    const keyCount = rephraser.keyCount;
+    const effectiveDelay = Math.ceil(progress.settings.delaySeconds / keyCount);
+    console.log(`API Keys: ${keyCount} (rotating for faster processing)`);
+    console.log(`Delay: ${effectiveDelay}s (${formatDuration(effectiveDelay)}) between chunks (base: ${progress.settings.delaySeconds}s / ${keyCount} keys)`);
+    console.log(`Estimated total time: ${formatDuration(chunks.length * effectiveDelay)}`);
+  }
+  console.log(`Model: ${options.model}`);
+  console.log(`Database sync: ${options.apiUrl}`);
+  console.log(`Furigana: enabled (adding after each chunk)`);
+}
+
+function printChunkPreview(chunks: readonly string[]): void {
+  console.log('\n=== Dry Run - Chunk Preview ===');
+  chunks.forEach((chunk, i) => {
+    const stripped = stripRubyTags(chunk);
+    const preview = stripped.slice(0, 50).replace(/\n/g, ' ');
+    console.log(`\nChunk ${i + 1}/${chunks.length} (${stripped.length} chars):`);
+    console.log(`  ${preview}...`);
+  });
+}
+
+// A fresh start writes new chunk files, so an earlier run's output is kept aside rather than mixed in.
 function setAsideEarlierOutput(outputPaths: string[]): void {
   outputPaths.filter((outputPath) => fs.existsSync(outputPath)).forEach((outputPath) => {
     const asidePath = `${outputPath}.bak`;
+    fs.rmSync(asidePath, { recursive: true, force: true });
     fs.renameSync(outputPath, asidePath);
     console.log(`Starting fresh: moved the earlier output to ${path.basename(asidePath)}`);
   });
 }
 
-async function saveChunkOutput(target: ChunkOutputTarget, output: ChunkOutput): Promise<void> {
-  const rawSeparator = fs.existsSync(target.rawPath) ? '\n\n' : '';
-  fs.appendFileSync(target.rawPath, rawSeparator + output.rawText, 'utf-8');
+// Saving the progress file is the commit point: until then a rerun plans the same start again.
+function commitRunStart(files: BookFiles, start: RunStart, writeFile: WriteFile): void {
+  if (start.isFreshStart) setAsideEarlierOutput([files.rawPath, files.furiganaPath, files.chunksDir]);
+  fs.mkdirSync(files.chunksDir, { recursive: true });
+  start.migratedChunkTexts.forEach((chunkTexts, chunkIndex) => {
+    writeFile(getChunkPath(files.chunksDir, chunkIndex, 'rephrase'), chunkTexts.rawText);
+    writeFile(getChunkPath(files.chunksDir, chunkIndex, 'furigana'), chunkTexts.furiganaText);
+  });
+  saveProgress(files.progressPath, start.progress, writeFile);
+}
 
-  console.log(`  Adding furigana...`);
-  const withFurigana = addFuriganaToChunk(output.readerText, target.sourceDir);
-  findReaderMismatches(withFurigana).forEach((mismatch) => console.log(`    ! the reader reads this differently: ${mismatch}`));
-  const furiganaSeparator = fs.existsSync(target.furiganaPath) ? '\n\n' : '';
-  fs.appendFileSync(target.furiganaPath, furiganaSeparator + withFurigana, 'utf-8');
+// ============================================================================
+// Chunk Processing
+// ============================================================================
 
+async function syncReaderFile(run: ChunkRun): Promise<void> {
   console.log(`  Syncing to database...`);
-  const synced = await syncToDatabase(target.apiUrl, target.fileName, target.directory);
-  if (synced) {
+  const isSynced = await run.deps.syncToDatabase(run.textEntry);
+  if (isSynced) {
     console.log(`  Database synced! Users can now read the updated content.`);
     return;
   }
   console.log(`  Warning: Database sync failed. File saved locally.`);
 }
 
-interface BookLocation {
-  bookName: string;
-  sourceDir: string;
+function needsOnlyFurigana(item: ChunkProgress): boolean {
+  return item.status === 'completed' && item.furiganaError !== undefined;
 }
 
-export type CreateRephraser = (model: string) => ChunkRephraser;
-
-export function createRephraser(model: string): ChunkRephraser {
-  return isClaudeModel(model) ? createClaudeRephraser(model) : createGeminiRephraser(model, () => createKeyPool());
+function addFuriganaToChunkFile(run: ChunkRun, chunkIndex: number, readerText: string): string | undefined {
+  console.log(`  Adding furigana...`);
+  const furigana = run.deps.addFurigana(readerText);
+  if (furigana.error) console.error(`    Furigana addition failed: ${furigana.error}`);
+  findReaderMismatches(furigana.text).forEach((mismatch) => console.log(`    ! the reader reads this differently: ${mismatch}`));
+  run.deps.writeFile(getChunkPath(run.files.chunksDir, chunkIndex, 'furigana'), furigana.text);
+  return furigana.error;
 }
 
+async function rephraseToChunkFiles(run: ChunkRun, chunkIndex: number): Promise<Partial<ChunkProgress>> {
+  const output = await run.rephraser.rephraseChunk(run.chunks[chunkIndex], chunkIndex);
+  run.deps.writeFile(getChunkPath(run.files.chunksDir, chunkIndex, 'rephrase'), output.rawText);
+  // Kept so a failed furigana step can be redone later without asking the model again.
+  run.deps.writeFile(getChunkPath(run.files.chunksDir, chunkIndex, 'reader'), output.readerText);
+  const furiganaError = addFuriganaToChunkFile(run, chunkIndex, output.readerText);
+  return {
+    status: output.isFallback ? 'fallback' : 'completed',
+    attempts: output.attempts,
+    completedAt: new Date().toISOString(),
+    error: output.error,
+    furiganaError,
+  };
+}
+
+function redoFurigana(run: ChunkRun, chunkIndex: number): Partial<ChunkProgress> {
+  const readerText = fs.readFileSync(getChunkPath(run.files.chunksDir, chunkIndex, 'reader'), 'utf-8');
+  return { furiganaError: addFuriganaToChunkFile(run, chunkIndex, readerText) };
+}
+
+/**
+ * Chunk files first, then the progress file, then the outputs rebuilt from the chunk files. A
+ * kill between any two writes leaves either the chunk unsaved (it is redone) or saved with stale
+ * outputs (the next run rebuilds them), so text is never repeated or reordered.
+ */
+async function processChunk(run: ChunkRun, progress: ProgressFile, chunkIndex: number): Promise<ProgressFile> {
+  const item = progress.chunks.items[chunkIndex];
+  console.log(`Processing chunk ${chunkIndex + 1}/${run.chunks.length} (${stripRubyTags(run.chunks[chunkIndex]).length} chars)...`);
+  const changes = needsOnlyFurigana(item) ? redoFurigana(run, chunkIndex) : await rephraseToChunkFiles(run, chunkIndex);
+  const updatedProgress = updateChunk(progress, chunkIndex, changes);
+  saveProgress(run.files.progressPath, updatedProgress, run.deps.writeFile);
+  rebuildOutputs(run.files, listSavedChunkIndexes(updatedProgress), run.deps.writeFile);
+  await syncReaderFile(run);
+  return updatedProgress;
+}
+
+async function processChunks(run: ChunkRun, startProgress: ProgressFile): Promise<ProgressFile> {
+  const todoItems = startProgress.chunks.items.filter((item) => !isChunkFinished(item));
+  const { delaySeconds, model } = startProgress.settings;
+  const startTime = Date.now();
+  console.log('\n=== Starting Processing ===\n');
+
+  return todoItems.reduce(async (previous, item, todoPosition) => {
+    const progress = await previous;
+    if (run.shouldStop()) return progress;
+    const updatedProgress = await processChunk(run, progress, item.index);
+
+    const processedCount = todoPosition + 1;
+    const remainingCount = todoItems.length - processedCount;
+    const avgTime = (Date.now() - startTime) / 1000 / processedCount;
+    console.log(`  Done! (${updatedProgress.chunks.completed}/${updatedProgress.chunks.total})`);
+    console.log(`  ETA for remaining: ${formatDuration(remainingCount * Math.max(avgTime, delaySeconds))}`);
+
+    // Wait between Gemini requests (delay divided by number of API keys); Claude and furigana-only redos need none
+    const isWaitNeeded = !isClaudeModel(model) && !needsOnlyFurigana(item) && remainingCount > 0 && !run.shouldStop();
+    if (!isWaitNeeded) return updatedProgress;
+    const effectiveDelay = Math.ceil(delaySeconds / run.rephraser.keyCount);
+    console.log(`\n  Waiting ${formatDuration(effectiveDelay)} before next chunk...`);
+    console.log(`  (Press Ctrl+C to stop and save progress)\n`);
+    await sleep(effectiveDelay * 1000);
+    return updatedProgress;
+  }, Promise.resolve(startProgress));
+}
+
+function printChunkList(label: string, items: readonly ChunkProgress[]): void {
+  if (items.length === 0) return;
+  console.log(`${label}: chunk ${items.map((item) => item.index + 1).join(', ')}`);
+}
+
+function printSummary(files: BookFiles, progress: ProgressFile): void {
+  const { items } = progress.chunks;
+  console.log('\n=== Rephrasing Complete ===');
+  console.log(`Completed: ${progress.chunks.completed}/${progress.chunks.total} chunks`);
+  printChunkList('Kept the original text (retried on the next run)', items.filter((item) => item.status === 'fallback'));
+  printChunkList('Saved without furigana (added on the next run)', items.filter((item) => item.furiganaError !== undefined));
+  printChunkList('Kept some paragraphs unrephrased', items.filter((item) => item.status === 'completed' && item.error !== undefined));
+  console.log(`Output: ${files.furiganaPath}`);
+  console.log(`Progress: ${files.progressPath}`);
+}
+
+// ============================================================================
+// Batch Rephrase
+// ============================================================================
+
+/** Returns true once every chunk is rephrased with furigana; a rerun retries the rest. */
 export async function batchRephrase(
   { bookName, sourceDir }: BookLocation,
   options: RephraseOptions,
-  createChunkRephraser: CreateRephraser
+  deps: RephraseDeps
 ): Promise<boolean> {
   console.log('\n=== Step 4: Batch Rephrasing ===\n');
 
-  const sourcePath = path.join(sourceDir, `${bookName}.txt`);
-  const outputPath = path.join(sourceDir, `${bookName}-rephrase.txt`);
-  const outputPathFurigana = path.join(sourceDir, `${bookName}-rephrase-furigana.txt`);
-  const progressPath = getProgressPath(sourceDir, bookName);
-
-  if (!fs.existsSync(sourcePath)) {
-    console.error(`Source file not found: ${sourcePath}`);
+  const files = getBookFiles(sourceDir, bookName);
+  if (!fs.existsSync(files.sourcePath)) {
+    console.error(`Source file not found: ${files.sourcePath}`);
     return false;
   }
 
-  const sourceText = fs.readFileSync(sourcePath, 'utf-8');
-  const strippedLength = stripRubyTags(sourceText).length;
-  console.log(`Source: ${sourcePath}`);
-  console.log(`Total characters: ${strippedLength.toLocaleString()} (excluding furigana)`);
+  const sourceText = fs.readFileSync(files.sourcePath, 'utf-8');
+  console.log(`Source: ${files.sourcePath}`);
+  console.log(`Total characters: ${stripRubyTags(sourceText).length.toLocaleString()} (excluding furigana)`);
 
-  let progress = options.reset ? null : loadProgress(progressPath);
-  const isFreshStart = !progress;
-  let chunks: string[];
-  // A resumed run keeps the model it started with, whatever --model says now
-  const rephraser = createChunkRephraser(progress ? progress.settings.model : options.model);
-
-  if (progress) {
-    const currentHash = simpleHash(sourceText);
-    if (progress.source.hash !== currentHash) {
-      console.log('\nSource file has changed since last run.');
-      console.log('Use --reset to start fresh.');
-      return false;
-    }
-
-    console.log(`\nResuming from progress: ${progress.chunks.completed}/${progress.chunks.total} chunks done`);
-    console.log(`Model: ${progress.settings.model} (the model this book started with; --reset starts over with --model)`);
-    const result = chunkText(sourceText, progress.settings.chunkSize);
-    chunks = result.chunks;
-  } else {
-    const result = chunkText(sourceText, options.chunkSize);
-    chunks = result.chunks;
-
-    const usesClaude = isClaudeModel(options.model);
-    // The Claude subscription has no per-minute quota to wait out, so its chunks run back to back
-    const delaySeconds = usesClaude ? 0 : options.delaySeconds;
-
-    console.log(`\nChunks: ${chunks.length} (target size: ${options.chunkSize} chars)`);
-    if (usesClaude) {
-      console.log(`Rephraser: claude -p (no delay between chunks)`);
-    } else {
-      const keyCount = rephraser.keyCount;
-      const effectiveDelay = Math.ceil(delaySeconds / keyCount);
-      console.log(`API Keys: ${keyCount} (rotating for faster processing)`);
-      console.log(`Delay: ${effectiveDelay}s (${formatDuration(effectiveDelay)}) between chunks (base: ${delaySeconds}s / ${keyCount} keys)`);
-      console.log(`Estimated total time: ${formatDuration(chunks.length * effectiveDelay)}`);
-    }
-    console.log(`Model: ${options.model}`);
-    console.log(`Database sync: ${options.apiUrl}`);
-    console.log(`Furigana: enabled (adding after each chunk)`);
-
-    progress = createProgress({
-      bookName,
-      directory: `${options.outputDir}/${bookName}`,
-      sourceText,
-      boundaries: result.boundaries,
-      settings: { chunkSize: options.chunkSize, delaySeconds, model: options.model },
-    });
+  const plan = planRun({ bookName, files, sourceText }, options);
+  if ('problem' in plan) {
+    console.log(`\n${plan.problem}`);
+    return false;
   }
+  const { start } = plan;
+  // A resumed run keeps the model it started with, whatever --model says now
+  const rephraser = deps.createRephraser(start.progress.settings.model);
+  logRunPlan(start, rephraser, options);
 
   if (options.dryRun) {
-    console.log('\n=== Dry Run - Chunk Preview ===');
-    chunks.forEach((chunk, i) => {
-      const stripped = stripRubyTags(chunk);
-      const preview = stripped.slice(0, 50).replace(/\n/g, ' ');
-      console.log(`\nChunk ${i + 1}/${chunks.length} (${stripped.length} chars):`);
-      console.log(`  ${preview}...`);
-    });
+    printChunkPreview(start.chunks);
     return true;
   }
 
-  if (isFreshStart) setAsideEarlierOutput([outputPath, outputPathFurigana]);
+  commitRunStart(files, start, deps.writeFile);
+  const textEntry = { apiUrl: options.apiUrl, fileName: `${bookName}-rephrase-furigana`, directory: `${options.outputDir}/${bookName}` };
+  const stopController = new AbortController();
+  const run: ChunkRun = { files, chunks: start.chunks, rephraser, deps, textEntry, shouldStop: () => stopController.signal.aborted };
 
-  // Setup graceful shutdown
-  let shouldStop = false;
-  process.on('SIGINT', () => {
+  // An earlier run stopped after saving a chunk but before rebuilding the outputs
+  if (rebuildOutputs(files, listSavedChunkIndexes(start.progress), deps.writeFile)) {
+    console.log('Rebuilt the outputs from the chunk files');
+    await syncReaderFile(run);
+  }
+
+  const onInterrupt = () => {
     console.log('\n\nReceived SIGINT. Saving progress and exiting...');
-    shouldStop = true;
-  });
-
-  console.log('\n=== Starting Processing ===\n');
-
-  const outputTarget: ChunkOutputTarget = {
-    rawPath: outputPath,
-    furiganaPath: outputPathFurigana,
-    sourceDir,
-    apiUrl: options.apiUrl,
-    fileName: `${bookName}-rephrase-furigana`,
-    directory: `${options.outputDir}/${bookName}`,
+    stopController.abort();
   };
-  const usesClaudeForBook = isClaudeModel(progress.settings.model);
-  const startTime = Date.now();
-  let processedCount = 0;
-
-  for (let i = 0; i < chunks.length; i++) {
-    if (shouldStop) break;
-
-    const chunkProgress = progress.chunks.items[i];
-
-    if (chunkProgress.status === 'completed') {
-      continue;
-    }
-
-    const chunk = chunks[i];
-    const chunkStripped = stripRubyTags(chunk);
-
-    console.log(`Processing chunk ${i + 1}/${chunks.length} (${chunkStripped.length} chars)...`);
-
-    chunkProgress.status = 'processing';
-    saveProgress(progressPath, progress);
-
-    const output = await rephraser.rephraseChunk(chunk, i);
-    chunkProgress.status = 'completed';
-    chunkProgress.completedAt = new Date().toISOString();
-    chunkProgress.attempts = output.attempts;
-    chunkProgress.error = output.error;
-    progress.chunks.completed++;
-
-    await saveChunkOutput(outputTarget, output);
-    processedCount++;
-
-    const elapsed = (Date.now() - startTime) / 1000;
-    const avgTime = elapsed / processedCount;
-    const remaining = chunks.length - progress.chunks.completed;
-    const eta = remaining * Math.max(avgTime, progress.settings.delaySeconds);
-
-    console.log(`  Done! (${progress.chunks.completed}/${chunks.length})`);
-    console.log(`  ETA for remaining: ${formatDuration(eta)}`);
-
-    saveProgress(progressPath, progress);
-    if (usesClaudeForBook) continue;
-
-    // Wait before next chunk (delay divided by number of API keys)
-    if (i < chunks.length - 1 && !shouldStop) {
-      const pendingCount = progress.chunks.items.filter(c => c.status === 'pending').length;
-      if (pendingCount > 0) {
-        const effectiveDelay = Math.ceil(progress.settings.delaySeconds / rephraser.keyCount);
-        console.log(`\n  Waiting ${formatDuration(effectiveDelay)} before next chunk...`);
-        console.log(`  (Press Ctrl+C to stop and save progress)\n`);
-        await sleep(effectiveDelay * 1000);
-      }
-    }
+  process.on('SIGINT', onInterrupt);
+  try {
+    const finalProgress = await processChunks(run, start.progress);
+    printSummary(files, finalProgress);
+    return finalProgress.chunks.items.every(isChunkFinished);
+  } finally {
+    process.off('SIGINT', onInterrupt);
   }
-
-  // Final summary
-  console.log('\n=== Rephrasing Complete ===');
-  console.log(`Completed: ${progress.chunks.completed}/${progress.chunks.total} chunks`);
-
-  const failed = progress.chunks.items.filter(c => c.status === 'failed').length;
-  if (failed > 0) {
-    console.log(`Failed: ${failed} chunks`);
-  }
-
-  console.log(`Output: ${outputPathFurigana}`);
-  console.log(`Progress: ${progressPath}`);
-
-  return progress.chunks.completed === progress.chunks.total;
 }
