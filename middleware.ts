@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { loginPathReturningTo } from '@/lib/auth/loginPath';
 import { verifySession } from '@/lib/auth/session';
 import { findPublicBook } from '@/lib/publicBooks';
 
@@ -38,8 +39,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // The login page returns here after sign-in (see lib/auth/returnPath).
-  const returnPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-  return NextResponse.redirect(new URL(`/login?${new URLSearchParams({ next: returnPath })}`, request.url));
+  return NextResponse.redirect(new URL(loginPathReturningTo(request.nextUrl), request.url));
 }
 
 // Protect all routes except public ones

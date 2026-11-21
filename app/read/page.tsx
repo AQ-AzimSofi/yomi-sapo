@@ -37,11 +37,13 @@ import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { usePreference } from '@/app/hooks/usePreference';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
+import { loginPathReturningTo } from '@/lib/auth/loginPath';
 import { describeLoadFailure } from './loadFailure';
 import { applyReaderTheme } from './readerTheme';
 import { READER_PREFERENCES } from './readerPreferences';
 import { acceptsAudioShortcut, closePanel, togglePanel, type ActivePanel } from './readerPanels';
 import { readerMenuActions } from './readerMenuActions';
+import { showsPreviewEnd } from './previewEnd';
 
 const ExplanationSidebar = dynamic(
   () => import('@/app/components/reading/ExplanationSidebar'),
@@ -706,7 +708,7 @@ function ReaderContent({
           </div>
         )}
 
-        {isGuest && (
+        {showsPreviewEnd({ isGuest, currentPage, totalPages }) && (
           <div
             className="mt-10 p-6 text-center font-gothic"
             style={{ backgroundColor: THEME.SURFACE_MUTED, border: `1px solid ${THEME.NEUTRAL}` }}
@@ -718,7 +720,7 @@ function ReaderContent({
               You are reading a free sample. Sign in to read the full book.
             </p>
             <button
-              onClick={() => router.push('/login')}
+              onClick={() => router.push(loginPathReturningTo(window.location))}
               className="min-h-11 px-5 text-sm font-bold interactive-btn"
               style={{ backgroundColor: THEME.PRIMARY, color: THEME.ON_PRIMARY }}
             >
