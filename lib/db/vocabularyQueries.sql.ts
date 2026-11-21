@@ -156,13 +156,15 @@ export async function updateVocabularyEntry(id: string, input: UpdateVocabularyI
   try {
     const now = new Date();
 
+    // postgres.js rejects undefined, so a field the update leaves out is sent as
+    // NULL and COALESCE keeps the stored value.
     await sql`
       UPDATE vocabulary_entries
-      SET word = COALESCE(${input.word}, word),
-          reading = COALESCE(${input.reading}, reading),
-          sentence = COALESCE(${input.sentence}, sentence),
-          paragraph_text = COALESCE(${input.paragraphText}, paragraph_text),
-          notes = COALESCE(${input.notes}, notes),
+      SET word = COALESCE(${input.word ?? null}, word),
+          reading = COALESCE(${input.reading ?? null}, reading),
+          sentence = COALESCE(${input.sentence ?? null}, sentence),
+          paragraph_text = COALESCE(${input.paragraphText ?? null}, paragraph_text),
+          notes = COALESCE(${input.notes ?? null}, notes),
           updated_at = ${now}
       WHERE id = ${id}
     `;

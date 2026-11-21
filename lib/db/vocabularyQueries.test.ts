@@ -152,5 +152,11 @@ describe('vocabulary queries', () => {
     ]);
   });
 
-  it.todo('keeps the columns an update leaves out, such as the sentence and paragraphText the PUT route never sends, instead of passing undefined to the driver (bug)');
+  it('keeps the columns an update leaves out instead of passing undefined to the driver', async () => {
+    answerQueries([], [ROW]);
+
+    await updateVocabularyEntry('entry-1', { notes: 'メモ' });
+
+    expect(vi.mocked(sql).mock.calls[0].slice(1)).toEqual([null, null, null, null, 'メモ', expect.any(Date), 'entry-1']);
+  });
 });
