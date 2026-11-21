@@ -247,4 +247,40 @@ describe('useExplanationCache', () => {
 
     expect(renderToString(createElement(CacheSizeProbe))).toBe('<span>2</span>');
   });
+
+  function renderHook(storage: Pick<Storage, 'getItem' | 'setItem'>): ReturnType<typeof useExplanationCache> {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('localStorage', storage);
+    const rendered: Array<ReturnType<typeof useExplanationCache>> = [];
+    function HookProbe() {
+      rendered.push(useExplanationCache());
+      return null;
+    }
+    renderToString(createElement(HookProbe));
+    return rendered[0];
+  }
+
+  const answer = { ...QUERY, explanation: '新しい説明', requestedAt: 10 };
+
+  it('saves a stored answer to localStorage', () => {
+    const setItem = vi.fn();
+    const { setCache } = renderHook({ getItem: () => null, setItem });
+
+    setCache(answer);
+
+    expect(setItem).toHaveBeenCalledWith(STORAGE_KEYS.EXPLANATION_CACHE, JSON.stringify(storeExplanation({}, answer)));
+  });
+
+  // The answer is already paid for, so a full localStorage must not turn it into an error.
+  it('keeps the answer for this session when localStorage is full', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const setItem = vi.fn(() => {
+      throw new DOMException('full', 'QuotaExceededError');
+    });
+    const { setCache, getCache } = renderHook({ getItem: () => null, setItem });
+
+    expect(() => setCache(answer)).not.toThrow();
+    expect(getCache(QUERY)?.explanation).toBe('新しい説明');
+    error.mockRestore();
+  });
 });
