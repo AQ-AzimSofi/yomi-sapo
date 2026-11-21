@@ -1,5 +1,7 @@
 import { sql } from './connection';
 import type { VocabularyRow, QueryResult } from './schema';
+import type { VocabularyEntry } from '@/lib/types';
+import { toVocabularyDto } from './vocabularyDto';
 import { nanoid } from 'nanoid';
 
 function normalizeResult<T>(result: QueryResult<T>): T[] {
@@ -37,7 +39,7 @@ export interface UpdateVocabularyInput {
   notes?: string;
 }
 
-export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<VocabularyRow[]> {
+export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<VocabularyEntry[]> {
   try {
     let result: QueryResult<VocabularyRow>;
 
@@ -109,27 +111,27 @@ export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<V
       `;
     }
 
-    return normalizeResult(result);
+    return normalizeResult(result).map(toVocabularyDto);
   } catch (error) {
     console.error('Error fetching vocabulary entries:', error);
     throw error;
   }
 }
 
-export async function getVocabularyEntryById(id: string): Promise<VocabularyRow | null> {
+export async function getVocabularyEntryById(id: string): Promise<VocabularyEntry | null> {
   try {
     const result = await sql<VocabularyRow>`
       SELECT * FROM vocabulary_entries WHERE id = ${id}
     `;
-    const entries = normalizeResult(result);
-    return entries.length > 0 ? entries[0] : null;
+    const rows = normalizeResult(result);
+    return rows.length > 0 ? toVocabularyDto(rows[0]) : null;
   } catch (error) {
     console.error('Error fetching vocabulary entry by id:', error);
     throw error;
   }
 }
 
-export async function createVocabularyEntry(input: CreateVocabularyInput): Promise<VocabularyRow> {
+export async function createVocabularyEntry(input: CreateVocabularyInput): Promise<VocabularyEntry> {
   try {
     const id = nanoid();
     const now = new Date();
@@ -150,7 +152,7 @@ export async function createVocabularyEntry(input: CreateVocabularyInput): Promi
   }
 }
 
-export async function updateVocabularyEntry(id: string, input: UpdateVocabularyInput): Promise<VocabularyRow | null> {
+export async function updateVocabularyEntry(id: string, input: UpdateVocabularyInput): Promise<VocabularyEntry | null> {
   try {
     const now = new Date();
 
