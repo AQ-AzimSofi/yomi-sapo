@@ -110,6 +110,8 @@ function ReaderContent({
   const [contentMode, setContentMode] = usePreference(READER_PREFERENCES.audiobookContentMode);
 
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  // Not a panel: the key prompt opens over whichever panel asked for the key.
+  const [isGuestKeyPromptOpen, setIsGuestKeyPromptOpen] = useState(false);
   const [selectedSentence, setSelectedSentence] = useState('');
   const [sentenceContext, setSentenceContext] = useState('');
 
@@ -396,6 +398,7 @@ function ReaderContent({
     };
 
     const handleAudioKey = (e: KeyboardEvent) => {
+      if (isGuestKeyPromptOpen) return;
       if (!acceptsAudioShortcut(activePanel, e.target as HTMLElement | null)) return;
       if (e.key === 'Escape') {
         setKeyboardMode(false);
@@ -409,7 +412,7 @@ function ReaderContent({
 
     window.addEventListener('keydown', handleAudioKey);
     return () => window.removeEventListener('keydown', handleAudioKey);
-  }, [audiobookEnabled, keyboardMode, activePanel, togglePlayPause, audioNext, audioPrev, audioReplay, audioPlaySub, bookmarkPlayingSentence]);
+  }, [audiobookEnabled, keyboardMode, activePanel, isGuestKeyPromptOpen, togglePlayPause, audioNext, audioPrev, audioReplay, audioPlaySub, bookmarkPlayingSentence]);
 
   const handlePageChange = useCallback(
     (newPage: number) => {
@@ -778,7 +781,7 @@ function ReaderContent({
       )}
 
       {/* Always mounted: a failed session check reports a guest as signed in, and the key prompt must still reach them. */}
-      <GuestApiKeyModal />
+      <GuestApiKeyModal onOpenChange={setIsGuestKeyPromptOpen} />
     </div>
   );
 }

@@ -30,9 +30,18 @@ const COPY: Record<GuestKeyKind, { title: string; help: string; link: string; li
   },
 };
 
-export default function GuestApiKeyModal() {
+interface GuestApiKeyModalProps {
+  /** Lets the page hold back its own keyboard shortcuts while the prompt is up. */
+  onOpenChange?: (isOpen: boolean) => void;
+}
+
+export default function GuestApiKeyModal({ onOpenChange }: GuestApiKeyModalProps) {
   const [kind, setKind] = useState<GuestKeyKind | null>(null);
   const [value, setValue] = useState('');
+
+  useEffect(() => {
+    onOpenChange?.(kind !== null);
+  }, [kind, onOpenChange]);
 
   useEffect(() => {
     const handler = (event: Event) => {
