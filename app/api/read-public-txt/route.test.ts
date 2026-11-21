@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isAuthenticated } from '@/lib/auth/apiSession';
 import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
 import { PUBLIC_BOOKS } from '@/lib/publicBooks';
+import { PAGINATION_CONFIG } from '@/lib/constants';
 import { GET } from './route';
 
 vi.mock('@/lib/auth/apiSession', () => ({ isAuthenticated: vi.fn() }));
@@ -37,13 +38,13 @@ describe('GET /api/read-public-txt', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ text: BOOK_TEXT });
-    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full"');
+    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full-v1"');
     expect(response.headers.get('cache-control')).toBe('private, no-cache');
   });
 
   it('answers 304 without reading the text when the browser already has this version', async () => {
     const response = await GET(
-      readRequest(`${OWNER_BOOK.directory}/${OWNER_BOOK.fileName}`, { 'if-none-match': '"1200-1700000000000-full"' })
+      readRequest(`${OWNER_BOOK.directory}/${OWNER_BOOK.fileName}`, { 'if-none-match': '"1200-1700000000000-full-v1"' })
     );
 
     expect(response.status).toBe(304);
@@ -52,11 +53,11 @@ describe('GET /api/read-public-txt', () => {
 
   it('sends the text again when the stored version changed', async () => {
     const response = await GET(
-      readRequest(`${OWNER_BOOK.directory}/${OWNER_BOOK.fileName}`, { 'if-none-match': '"900-1600000000000-full"' })
+      readRequest(`${OWNER_BOOK.directory}/${OWNER_BOOK.fileName}`, { 'if-none-match': '"900-1600000000000-full-v1"' })
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full"');
+    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full-v1"');
   });
 
   it('resolves a combined path to the most nested directory first', async () => {
@@ -82,7 +83,7 @@ describe('GET /api/read-public-txt', () => {
     const response = await GET(readRequest(`${book.directory}/${book.fileName}`));
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('etag')).toBe(`"5000-1700000000000-preview${book.maxPreviewPages}"`);
+    expect(response.headers.get('etag')).toBe(`"5000-1700000000000-preview${book.maxPreviewPages}x${PAGINATION_CONFIG.ITEMS_PER_PAGE}-v1\"`);
   });
 
   it('refuses a guest reading a book outside the allowlist without touching the database', async () => {
@@ -101,14 +102,29 @@ describe('GET /api/read-public-txt', () => {
   });
 
   it('answers 304 to the weak form of its ETag that CloudFront sends, and repeats the ETag', async () => {
-    const response = await GET(readRequest(OWNER_PATH, { 'if-none-match': 'W/"1200-1700000000000-full"' }));
+    const response = await GET(readRequest(OWNER_PATH, { 'if-none-match': 'W/"1200-1700000000000-full-v1"' }));
 
     expect(response.status).toBe(304);
-    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full"');
+    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full-v1"');
+  });
+
+  it('answers 204 without reading the text when the reader already stores this version', async () => {
+    const response = await GET(readRequest(OWNER_PATH, { 'x-book-version': 'W/"1200-1700000000000-full-v1"' }));
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full-v1"');
+    expect(getTextEntry).not.toHaveBeenCalled();
+  });
+
+  it('sends the text when the stored version is out of date', async () => {
+    const response = await GET(readRequest(OWNER_PATH, { 'x-book-version': '"900-1600000000000-full-v1"' }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ text: BOOK_TEXT });
   });
 
   it('answers 304 when its ETag is one of several in the header', async () => {
-    const response = await GET(readRequest(OWNER_PATH, { 'if-none-match': '"old", "1200-1700000000000-full"' }));
+    const response = await GET(readRequest(OWNER_PATH, { 'if-none-match': '"old", "1200-1700000000000-full-v1"' }));
 
     expect(response.status).toBe(304);
   });
@@ -119,14 +135,14 @@ describe('GET /api/read-public-txt', () => {
     const response = await GET(readRequest(PUBLIC_PATH));
 
     expect(await response.json()).toEqual({ text: BOOK_TEXT });
-    expect(response.headers.get('etag')).toBe('"5000-1700000000000-full"');
+    expect(response.headers.get('etag')).toBe('"5000-1700000000000-full-v1"');
   });
 
   it('sends the full text to a reader who signed in after reading the guest preview', async () => {
     vi.mocked(getTextEntryVersion).mockResolvedValue('5000-1700000000000');
 
     const response = await GET(
-      readRequest(PUBLIC_PATH, { 'if-none-match': `"5000-1700000000000-preview${PUBLIC_BOOK.maxPreviewPages}"` })
+      readRequest(PUBLIC_PATH, { 'if-none-match': `"5000-1700000000000-preview${PUBLIC_BOOK.maxPreviewPages}x${PAGINATION_CONFIG.ITEMS_PER_PAGE}-v1\"` })
     );
 
     expect(response.status).toBe(200);

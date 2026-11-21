@@ -36,6 +36,7 @@ import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
+import { fetchBookText } from '@/lib/bookTextCache';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -207,16 +208,13 @@ function ReaderContent({
       setBookmarkSavedPage(null);
 
       try {
-        const [contentRes, bookmarkRes] = await Promise.all([
-          fetch(`${API_ROUTES.READ_TEXT}?fileName=${encodeURIComponent(fullFilePath)}`, { signal: controller.signal }),
+        const [bookText, bookmarkRes] = await Promise.all([
+          fetchBookText(`${API_ROUTES.READ_TEXT}?fileName=${encodeURIComponent(fullFilePath)}`, controller.signal),
           fetch(`${API_ROUTES.READ_BOOKMARK}?fileName=${encodeURIComponent(fullFilePath)}`, { signal: controller.signal }),
         ]);
 
-        if (!contentRes.ok) throw new Error('Failed to load content');
-
-        const contentData = await contentRes.json();
         if (controller.signal.aborted) return;
-        setContent(contentData.text || '');
+        setContent(bookText);
 
         if (bookmarkRes.ok) {
           const bookmarkData = await bookmarkRes.json();
