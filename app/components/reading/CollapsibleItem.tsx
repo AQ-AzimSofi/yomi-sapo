@@ -35,11 +35,6 @@ interface CollapsibleItemProps {
   isStartCursor?: boolean;
   isPlaying?: boolean;
   onStartFromHere?: (unitIndex: number) => void;
-  onVocabularySelect?: (data: {
-    word: string;
-    sentence: string;
-    paragraphText: string;
-  }) => void;
   onStartContinuousPlay?: () => void;
 }
 
@@ -62,7 +57,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   isStartCursor,
   isPlaying,
   onStartFromHere,
-  onVocabularySelect,
   onStartContinuousPlay,
 }) => {
   const searchParams = useSearchParams();
@@ -77,33 +71,11 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
 
   const [isOpen, setIsOpen] = useState(initialDropdownState);
   const [loading, setLoading] = useState(false);
-  const [vocabularyMode, setVocabularyMode] = useState(false);
   const [shouldHighlight, setShouldHighlight] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
   const [translatedText, setTranslatedText] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
   const [unavailableImagePaths, setUnavailableImagePaths] = useState<ReadonlySet<string>>(() => new Set());
-
-  useEffect(() => {
-    const handleVocabularyModeChange = (event: Event) => {
-      const customEvent = event as CustomEvent<{ enabled: boolean }>;
-      setVocabularyMode(customEvent.detail.enabled);
-    };
-
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("vocabulary_mode");
-      if (stored !== null) {
-        setVocabularyMode(stored === "true");
-      }
-    }
-
-    window.addEventListener("vocabularyModeChanged", handleVocabularyModeChange);
-    return () =>
-      window.removeEventListener(
-        "vocabularyModeChanged",
-        handleVocabularyModeChange
-      );
-  }, []);
 
   useEffect(() => {
     if (highlightWord && head.includes(highlightWord)) {
@@ -127,70 +99,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   useEffect(() => {
     setIsOpen(initialDropdownState);
   }, [initialDropdownState]);
-
-  function KanjiReadingMeaningSplit(item: string) {
-    const kanji = item.split("[")[0];
-    let reading: string = "";
-    let meaning: string = "";
-    if (item.includes("[") && item.includes("]")) {
-      if (item.split("[")[1].split("]")[0].includes("\u30FB")) {
-        reading = item.split("[")[1].split("\u30FB")[0];
-        meaning = item.split("[")[1].split("\u30FB")[1].replace("]", "").trim();
-      } else {
-        reading = "";
-        meaning = item.split("[")[1].split("]")[0];
-      }
-    } else {
-      console.error("error: ", item);
-    }
-
-    return { kanji, reading, meaning };
-  }
-
-  function Jisho(
-    subItem: string
-  ): { kanji: string; reading: string; meaning: string }[] {
-    let parsed: string[] = [];
-    if (subItem.includes("\uFF0A")) {
-      parsed = subItem.split("\uFF0A");
-    } else if (subItem.includes("]")) {
-      parsed = subItem.split("]");
-      const mappedParsed = parsed.map((element) => {
-        return element + "]";
-      });
-      mappedParsed.pop();
-      parsed = mappedParsed;
-    } else if (subItem.includes("\u3001")) {
-      parsed = subItem.split("\u3001");
-    } else {
-      if (
-        !(
-          subItem === "\u7121\u3044" ||
-          subItem === "\u306A\u3044" ||
-          subItem === "\u7121\u3057" ||
-          subItem === "\u306A\u3057" ||
-          subItem === "\u7121"
-        )
-      ) {
-        console.error("Error: ", subItem);
-      }
-      parsed = [subItem];
-    }
-    const words: { kanji: string; reading: string; meaning: string }[] = [];
-    const multipleDefinition: string[] = [];
-    parsed.forEach((item) => {
-      if (item.includes("[") && item.includes("]")) {
-        words.push(KanjiReadingMeaningSplit(item));
-      } else {
-        multipleDefinition.push(item);
-        if (item.includes("]")) {
-          words.push(KanjiReadingMeaningSplit(multipleDefinition.toString()));
-          multipleDefinition.length = 0;
-        }
-      }
-    });
-    return words;
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -253,33 +161,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     }
   };
 
-  const extractTextWithoutRuby = (range: Range): string => {
-    const fragment = range.cloneContents();
-    const rtElements = fragment.querySelectorAll("rt");
-    rtElements.forEach((rt) => rt.remove());
-    return fragment.textContent || "";
-  };
-
-  const handleTextSelection = () => {
-    if (!vocabularyMode || !onVocabularySelect) return;
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-
-    const range = selection.getRangeAt(0);
-    const cleanedText = extractTextWithoutRuby(range).trim();
-
-    if (!cleanedText) return;
-
-    onVocabularySelect({
-      word: cleanedText,
-      sentence: head,
-      paragraphText: head,
-    });
-
-    selection.removeAllRanges();
-  };
-
   const splitIntoSentences = (text: string): string[] => {
     const delimiters: readonly string[] = EXPLANATION_CONFIG.SENTENCE_DELIMITERS;
     const sentences: string[] = [];
@@ -338,15 +219,15 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
               dangerouslySetInnerHTML={{ __html: html }}
               onClick={(e) => {
                 e.stopPropagation();
-                if (!vocabularyMode) onSentenceClick?.(sentence);
+                onSentenceClick?.(sentence);
               }}
               className={
-                onSentenceClick && !vocabularyMode
+                onSentenceClick
                   ? "cursor-pointer transition-colors px-1"
                   : ""
               }
               style={
-                onSentenceClick && !vocabularyMode
+                onSentenceClick
                   ? {
                       backgroundColor: "transparent",
                       transition: "background-color 0.2s ease",
@@ -354,12 +235,12 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
                   : {}
               }
               onMouseEnter={(e) => {
-                if (onSentenceClick && !vocabularyMode) {
+                if (onSentenceClick) {
                   e.currentTarget.style.backgroundColor = toTint(accentColor, 10);
                 }
               }}
               onMouseLeave={(e) => {
-                if (onSentenceClick && !vocabularyMode) {
+                if (onSentenceClick) {
                   e.currentTarget.style.backgroundColor = "transparent";
                 }
               }}
@@ -521,11 +402,10 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
       >
         <div
           className="head-text font-bold text-lg whitespace-pre-wrap"
-          onMouseUp={handleTextSelection}
           onClickCapture={handleTripleClickSelect}
           style={{
             color: isDarkMode ? DARK_COLORS.TEXT : COLORS.INK,
-            ...(vocabularyMode || !aiExplanationEnabled
+            ...(!aiExplanationEnabled
               ? { userSelect: "text" as const, cursor: "text" }
               : {}),
           }}

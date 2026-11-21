@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import React from "react";
 import { Geist, Geist_Mono, Shippori_Mincho, Zen_Kaku_Gothic_New } from "next/font/google";
 import "./globals.css";
-import ClientLayout from "@/app/components/ClientLayout";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,7 +43,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${shipporiMincho.variable} ${zenKakuGothic.variable} antialiased`}
       >
-        <ClientLayout>{children}</ClientLayout>
+        {children}
       </body>
     </html>
   );

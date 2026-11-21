@@ -202,7 +202,6 @@ export const STORAGE_KEYS = {
   CONTEXT_SIZE_EXPANDED: 'context_size_expanded',
   READER_FONT_SIZE: 'reader_font_size',
   READER_LINE_HEIGHT: 'reader_line_height',
-  VOCABULARY_MODE: 'vocabulary_mode',
   AI_EXPLANATION_ENABLED: 'ai_explanation_enabled',
   SHOW_REPHRASE: 'show_rephrase',
   STARRED_WORDS: 'starred_words', // Format: starred_words_{directory}_{bookName}
