@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import { useSearchParams } from "next/navigation";
 import { itemMainText, pageStartIndex, type ContentType, type ReaderItem as ReaderUnit } from "@/lib/content/bookModel";
 import { PRIORITY_LEVELS, THEME, type PriorityScore } from "@/lib/constants";
 import { toTint } from "@/lib/utils/colorTint";
@@ -27,6 +26,9 @@ interface ReadingContentProps {
   startCursorIndex: number;
   playingIndex: number;
   onStartFromHere: (unitIndex: number) => void;
+  /** The unit holding the saved word the vocabulary list linked to, flashed for that word. */
+  highlightedUnitIndex: number | null;
+  highlightWord: string | null;
   priorityScores: Record<number, PriorityScore>;
   readAloud: ReadAloudState;
   onReadAloud: (unitIndex: number, text: string) => void;
@@ -88,18 +90,17 @@ export default function ReadingContent({
   startCursorIndex,
   playingIndex,
   onStartFromHere,
+  highlightedUnitIndex,
+  highlightWord,
   priorityScores,
   readAloud,
   onReadAloud,
   onStopReadAloud,
 }: ReadingContentProps) {
-  const searchParams = useSearchParams();
   const pageStart = pageStartIndex(currentPage);
   const isRephrase = contentType === "rephrase";
-  // Kept as the two former item components had them: only the rephrase layout flashes the
-  // word the vocabulary list linked to, and a paragraph's sentences are clickable even with
-  // AI explanations off (the click then does nothing).
-  const highlightWord = isRephrase ? searchParams.get("highlight") : null;
+  // Kept as the two former item components had it: a paragraph's sentences are clickable
+  // even with AI explanations off (the click then does nothing).
   const areSentencesClickable = isRephrase ? aiExplanationEnabled : true;
 
   const paginatedItems = useMemo(
@@ -142,7 +143,7 @@ export default function ReadingContent({
               showFurigana={showFurigana}
               isExpanded={displayMode === "expanded"}
               areSentencesClickable={areSentencesClickable}
-              highlightWord={highlightWord}
+              highlightWord={globalIndex === highlightedUnitIndex ? highlightWord : null}
               isBookmarked={globalIndex === bookmarkIndex}
               isStartCursor={startCursorIndex === globalIndex}
               isPlaying={playingIndex === globalIndex}
