@@ -1,7 +1,9 @@
 import { ApiError, GoogleGenAI } from '@google/genai';
 
-const FREE_API_KEY_ENV_NAMES = ['GEMINI_API_KEY', 'GEMINI_API_KEY2', 'GEMINI_API_KEY3', 'GEMINI_API_KEY4', 'GEMINI_API_KEY5'];
+const FREE_API_KEY_ENV_NAME_PATTERN = /^GEMINI_API_KEY(\d*)$/;
 export const PAID_API_KEY_ENV_NAME = 'GEMINI_API_KEY_PAID';
+
+type CreateClient = (apiKey: string) => GoogleGenAI;
 
 export interface ApiKey {
   envName: string;
@@ -15,17 +17,25 @@ export interface KeyPool {
   retiredFreeKeys: Set<ApiKey>;
 }
 
-function readApiKey(envName: string): ApiKey | undefined {
-  const apiKey = process.env[envName];
-  if (!apiKey) return undefined;
-  return { envName, client: new GoogleGenAI({ apiKey }) };
+/** GEMINI_API_KEY, GEMINI_API_KEY2, GEMINI_API_KEY3 and so on, in number order, skipping empty ones. */
+export function listFreeKeyEnvNames(env: NodeJS.ProcessEnv): string[] {
+  return Object.keys(env)
+    .map((envName) => ({ envName, match: FREE_API_KEY_ENV_NAME_PATTERN.exec(envName) }))
+    .filter(({ envName, match }) => match !== null && Boolean(env[envName]))
+    .sort((a, b) => Number(a.match?.[1] || 0) - Number(b.match?.[1] || 0))
+    .map(({ envName }) => envName);
 }
 
-export function createKeyPool(): KeyPool {
-  const freeKeys = FREE_API_KEY_ENV_NAMES.map(readApiKey).filter((key): key is ApiKey => key !== undefined);
-  const paidKey = readApiKey(PAID_API_KEY_ENV_NAME);
+function createDefaultClient(apiKey: string): GoogleGenAI {
+  return new GoogleGenAI({ apiKey });
+}
+
+export function createKeyPool(env: NodeJS.ProcessEnv = process.env, createClient: CreateClient = createDefaultClient): KeyPool {
+  const toApiKey = (envName: string): ApiKey => ({ envName, client: createClient(env[envName] ?? '') });
+  const freeKeys = listFreeKeyEnvNames(env).map(toApiKey);
+  const paidKey = env[PAID_API_KEY_ENV_NAME] ? toApiKey(PAID_API_KEY_ENV_NAME) : undefined;
   if (freeKeys.length === 0 && !paidKey) {
-    throw new Error(`No Gemini API key found. Set ${FREE_API_KEY_ENV_NAMES.join(' / ')} in .env.local or ${PAID_API_KEY_ENV_NAME}.`);
+    throw new Error(`No Gemini API key found. Set GEMINI_API_KEY (and GEMINI_API_KEY2, GEMINI_API_KEY3, ...) in .env.local or ${PAID_API_KEY_ENV_NAME}.`);
   }
   return { freeKeys, paidKey, retiredFreeKeys: new Set() };
 }
