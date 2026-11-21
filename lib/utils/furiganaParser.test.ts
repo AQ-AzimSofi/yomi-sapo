@@ -210,6 +210,14 @@ describe('stripFurigana', () => {
     expect(stripFurigana('<ruby>漢<rt>かん</rt>字</ruby>と<ruby>字<rt>じ</rt>余り</ruby>です')).toBe('漢字と字余りです');
   });
 
+  it('removes tags left between and after ruby pairs', () => {
+    expect(stripFurigana('<ruby><rb>字</rb><rt>じ</rt><rb>余</rb></ruby>')).toBe('字余');
+  });
+
+  it('reads a ruby tag with no reading as its base text', () => {
+    expect(parseFurigana('<ruby><rb>漢字</rb></ruby>')).toEqual([{ type: 'text', text: '漢字' }]);
+  });
+
   it('drops rp fallback parentheses inside a ruby tag', () => {
     expect(parseFurigana('<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>')).toEqual([
       { type: 'ruby', text: '漢字', ruby: 'かんじ' },
@@ -252,6 +260,7 @@ describe('stripAiFurigana', () => {
     ['**焦燥感**[しょうそうかん]が募る', '**焦燥感**が募る'],
     ['難しい[むずかしい]言葉[ことば]', '難しい言葉'],
     ['〇〇[まるまる]', '〇〇'],
+    ['**焦燥感**[しょうそうかん](焦りの気持ち)が募る', '**焦燥感**(焦りの気持ち)が募る'],
     ['<ruby>雨<rt>あめ</rt></ruby>の日', '雨の日'],
   ])('removes the readings from %j', (text, expected) => {
     expect(stripAiFurigana(text)).toBe(expected);

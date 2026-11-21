@@ -20,7 +20,8 @@ const RUBY_FALLBACK_PATTERN = /<rp>[^<]*<\/rp>/g;
 const BRACKET_FURIGANA_PATTERN = /([㐀-䶿一-鿿々〆ヶ]+)\[([ぁ-ゖァ-ヺー]+)\]/g;
 const TAG_PATTERN = /<[^>]*>/g;
 // AI explanations put a reading after any word (難しい[むずかしい]), not only after kanji.
-const AI_READING_PATTERN = /\[[ぁ-ゖー]+\](?!\()/g;
+// A bracket followed by a link target is link text, the only links safeMarkdown keeps.
+const AI_READING_PATTERN = /\[[ぁ-ゖー]+\](?!\((?:https?:|mailto:))/g;
 
 function escapeBookText(text: string): string {
   return escapeHtml(text).replace(ESCAPED_FOOTNOTE_TAG, '<$1sup>');
