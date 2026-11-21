@@ -33,6 +33,7 @@ export default function LibraryPage() {
         />
 
         <main>
+          <h1 className="sr-only">本棚</h1>
           <LibraryGrid />
         </main>
       </div>
