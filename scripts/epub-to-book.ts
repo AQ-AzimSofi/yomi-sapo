@@ -30,7 +30,7 @@ import * as path from 'path';
 import { execSync, spawnSync } from 'child_process';
 import { GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
-import { parseMarkdown } from './utils/rephrase-output';
+import { alignRephrase, parseMarkdown, type AlignReport } from './utils/rephrase-output';
 
 // Load environment variables
 const envLocalPath = path.join(process.cwd(), '.env.local');
@@ -169,6 +169,18 @@ function validateResponse(response: string): boolean {
   return items.every(item =>
     item.head && item.head.length > 0 && item.subItems.length >= 1
   );
+}
+
+function logAlignReport(report: AlignReport): void {
+  const summary = [
+    `${report.strayLines.length} stray line(s) dropped`,
+    `${report.restoredHeadCount} original(s) restored`,
+    `${report.insertedPassages.length} skipped passage(s) put back`,
+    `${report.unmatchedHeads.length} unmatched`,
+  ].join(', ');
+  console.log(`  Output check: ${summary}`);
+  report.insertedPassages.forEach((passage) => console.log(`    + ${passage.slice(0, 60)}`));
+  report.unmatchedHeads.forEach((head) => console.log(`    ? ${head.slice(0, 60)}`));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -768,9 +780,12 @@ async function batchRephrase(
       const separator = fs.existsSync(outputPath) ? '\n\n' : '';
       fs.appendFileSync(outputPath, separator + result.response, 'utf-8');
 
+      const aligned = alignRephrase(chunkStripped, result.response);
+      logAlignReport(aligned.report);
+
       // Add furigana
       console.log(`  Adding furigana...`);
-      const finalText = addFuriganaToChunk(result.response, sourceDir);
+      const finalText = addFuriganaToChunk(aligned.text, sourceDir);
       const furiganaSeparator = fs.existsSync(outputPathFurigana) ? '\n\n' : '';
       fs.appendFileSync(outputPathFurigana, furiganaSeparator + finalText, 'utf-8');
       console.log(`  Furigana added!`);
