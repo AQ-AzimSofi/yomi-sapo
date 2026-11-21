@@ -2,9 +2,10 @@ import { STORAGE_KEYS, GUEST_KEY_HEADERS } from '@/lib/constants';
 
 /**
  * Guest bring-your-own API keys. Keys live only in the browser's localStorage
- * and are attached to paid requests via headers. When a paid request fails,
- * call sites use promptGuestKeyOnFailure to open the key modal (GUEST_KEY_REQUIRED_EVENT) --
- * whether the key was missing or a stored key was rejected. After a key is saved,
+ * and are attached to paid requests via headers. When a paid request fails, the
+ * API client (lib/api/client.ts) uses promptGuestKeyOnFailure to open the key modal
+ * (GUEST_KEY_REQUIRED_EVENT) -- whether the key was missing or a stored key was
+ * rejected. After a key is saved,
  * GUEST_KEY_UPDATED_EVENT fires; AI explanations re-run automatically, other
  * actions resume on the next interaction.
  */
@@ -55,13 +56,14 @@ export function clearGuestKeys(): void {
   });
 }
 
-async function serverRequestedGuestKey(
-  kind: GuestKeyKind,
-  response: Response
-): Promise<boolean> {
-  if (response.status !== 401) return false;
-  const info = await response.json().catch(() => null);
-  return info?.requiresGuestKey === kind;
+/** A failed paid request: its status and the key kind its error body asked for, if any. */
+export interface GuestKeyFailure {
+  status: number;
+  requiresGuestKey?: GuestKeyKind;
+}
+
+function serverRequestedGuestKey(kind: GuestKeyKind, failure: GuestKeyFailure): boolean {
+  return failure.status === 401 && failure.requiresGuestKey === kind;
 }
 
 /**
@@ -71,11 +73,8 @@ async function serverRequestedGuestKey(
  * session is detected, so in practice this only affects guests. Returns true if
  * it prompted.
  */
-export async function promptGuestKeyOnFailure(
-  kind: GuestKeyKind,
-  response: Response
-): Promise<boolean> {
-  const needsKey = await serverRequestedGuestKey(kind, response);
+export function promptGuestKeyOnFailure(kind: GuestKeyKind, failure: GuestKeyFailure): boolean {
+  const needsKey = serverRequestedGuestKey(kind, failure);
   if (!needsKey && !getGuestKey(kind)) return false;
   promptGuestKey(kind);
   return true;

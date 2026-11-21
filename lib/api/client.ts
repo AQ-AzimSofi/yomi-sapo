@@ -115,14 +115,14 @@ async function readErrorBody(response: Response): Promise<ApiErrorResponse | nul
   return isRecord(body) ? (body as ApiErrorResponse) : null;
 }
 
-async function promptForGuestKey(guestKey: GuestKeyUse, response: Response): Promise<boolean> {
-  if (guestKey.promptOn === 'unauthorized' && response.status !== 401) return false;
-  return promptGuestKeyOnFailure(guestKey.kind, response);
+function promptForGuestKey(guestKey: GuestKeyUse, status: number, body: ApiErrorResponse | null): boolean {
+  if (guestKey.promptOn === 'unauthorized' && status !== 401) return false;
+  return promptGuestKeyOnFailure(guestKey.kind, { status, requiresGuestKey: body?.requiresGuestKey });
 }
 
 async function toApiError(response: Response, guestKey: GuestKeyUse | undefined): Promise<ApiError> {
-  const promptedGuestKey = guestKey ? await promptForGuestKey(guestKey, response.clone()) : false;
   const body = await readErrorBody(response);
+  const promptedGuestKey = guestKey ? promptForGuestKey(guestKey, response.status, body) : false;
   return new ApiError({ status: response.status, statusText: response.statusText, body, promptedGuestKey });
 }
 
