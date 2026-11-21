@@ -5,7 +5,7 @@ const PROMPT_PATH = path.join(process.cwd(), 'scripts', 'prompts', 'claude-rephr
 const MAX_ATTEMPTS = 3;
 const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_ERROR_PREVIEW_CHARS = 500;
-const NUMBERED_LINE_PATTERN = /^\[(\d+)\]\s*(.+)$/;
+const NUMBERED_LINE_PATTERN = /^[[［](\d+)[\]］]\s*(.+)$/;
 
 export type RewritesByNumber = ReadonlyMap<number, readonly string[]>;
 
@@ -25,6 +25,7 @@ interface RewriteRound {
   model: string;
   rewrites: RewritesByNumber;
   attempt: number;
+  lastReply: string;
 }
 
 export function isClaudeModel(model: string): boolean {
@@ -65,6 +66,15 @@ export function formatPairs(paragraphs: readonly string[], rewrites: RewritesByN
     .join('\n\n');
 }
 
+function parseReply(stdout: string): ClaudeReply | undefined {
+  try {
+    const reply = JSON.parse(stdout) as Partial<ClaudeReply>;
+    return typeof reply.result === 'string' ? (reply as ClaudeReply) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // Runs headless Claude Code, so the rephrase uses the Claude subscription rather than an API key.
 function runClaude(input: string, model: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -90,11 +100,15 @@ function runClaude(input: string, model: string): Promise<string> {
     child.on('close', (exitCode) => {
       const stdout = Buffer.concat(stdoutChunks).toString('utf8');
       if (exitCode !== 0) {
-        const details = stdout || Buffer.concat(stderrChunks).toString('utf8');
+        const details = parseReply(stdout)?.result || stdout || Buffer.concat(stderrChunks).toString('utf8');
         reject(new Error(`claude -p exited with ${exitCode}: ${details.slice(0, MAX_ERROR_PREVIEW_CHARS)}`));
         return;
       }
-      const reply = JSON.parse(stdout) as ClaudeReply;
+      const reply = parseReply(stdout);
+      if (!reply) {
+        reject(new Error(`claude -p printed something other than its JSON reply: ${stdout.slice(0, MAX_ERROR_PREVIEW_CHARS)}`));
+        return;
+      }
       if (reply.is_error) {
         reject(new Error(`claude -p failed: ${reply.result.slice(0, MAX_ERROR_PREVIEW_CHARS)}`));
         return;
@@ -116,11 +130,22 @@ async function collectRewrites(round: RewriteRound): Promise<RewriteRound> {
   }
   const response = await runClaude(numberParagraphs(round.paragraphs, pendingNumbers), round.model);
   const found = parseRewrites(response, new Set(pendingNumbers));
-  return collectRewrites({ ...round, rewrites: new Map([...round.rewrites, ...found]), attempt: round.attempt + 1 });
+  return collectRewrites({
+    ...round,
+    rewrites: new Map([...round.rewrites, ...found]),
+    attempt: round.attempt + 1,
+    lastReply: response,
+  });
 }
 
+// A reply with no numbered line at all (a refusal, a changed format) stops the run rather than
+// saving the whole chunk unrephrased as if it were done.
 export async function rephraseWithClaude(paragraphs: readonly string[], model: string): Promise<ClaudeRephrase> {
-  const finalRound = await collectRewrites({ paragraphs, model, rewrites: new Map(), attempt: 1 });
+  const finalRound = await collectRewrites({ paragraphs, model, rewrites: new Map(), attempt: 1, lastReply: '' });
+  if (paragraphs.length > 0 && finalRound.rewrites.size === 0) {
+    const preview = finalRound.lastReply.slice(0, MAX_ERROR_PREVIEW_CHARS);
+    throw new Error(`Claude returned no numbered rewrite in ${MAX_ATTEMPTS} attempts. Last reply: ${preview}`);
+  }
   return {
     text: formatPairs(paragraphs, finalRound.rewrites),
     skippedParagraphs: paragraphs.filter((_, index) => !finalRound.rewrites.has(index + 1)),

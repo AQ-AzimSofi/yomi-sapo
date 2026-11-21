@@ -34,6 +34,10 @@ describe('parseRewrites', () => {
     expect([...rewrites]).toEqual([[1, ['a']]]);
   });
 
+  it('Test_parseRewrites_AcceptsFullWidthBrackets', () => {
+    expect([...parseRewrites('［1］ a', new Set([1]))]).toEqual([[1, ['a']]]);
+  });
+
   it('Test_parseRewrites_IgnoresEmptyRewrite', () => {
     expect(parseRewrites('[1] ', new Set([1])).size).toBe(0);
   });
