@@ -39,11 +39,10 @@ async function migrate() {
 
   console.log('Columns added. Backfilling existing entries...');
 
-  const entries = await sql<{ id: number; content: string }>`
+  const rows = await sql<{ id: number; content: string }[]>`
     SELECT id, content FROM text_entries
   `;
 
-  const rows = Array.isArray(entries) ? entries : (entries as { rows: { id: number; content: string }[] }).rows || [];
   console.log(`Found ${rows.length} entries to backfill.`);
 
   for (const row of rows) {

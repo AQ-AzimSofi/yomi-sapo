@@ -1,5 +1,4 @@
 import { sql } from './connection';
-import type { QueryResult } from './schema';
 import {
   itemMainText,
   locateBookmark,
@@ -42,11 +41,6 @@ export interface ContentRow {
 
 // Records "computed, but the bookmark text is not in the book" so it is not retried.
 const BOOKMARK_NOT_FOUND = 0;
-
-function normalizeResult<T>(result: QueryResult<T>): T[] {
-  const rows: unknown = result && 'rows' in result && Array.isArray(result.rows) ? result.rows : result;
-  return Array.isArray(rows) ? (rows as T[]) : [];
-}
 
 function bookmarkPageOf(bookmarkText: string, items: ReaderItem[], savedPage: number | null): number {
   return locateBookmark(items.map(itemMainText), bookmarkText, savedPage).page ?? BOOKMARK_NOT_FOUND;
@@ -107,11 +101,11 @@ async function refreshStaleRows(rows: LibraryRow[]): Promise<LibraryRow[]> {
   const staleRows = rows.filter((row) => hasStaleTextCounts(row) || needsBookmarkPage(row));
   if (staleRows.length === 0) return rows;
 
-  const contentRows = normalizeResult<ContentRow>(await sql`
+  const contentRows = await sql<ContentRow[]>`
     SELECT id, content, char_length(content) AS character_count, octet_length(content) AS byte_count
     FROM text_entries
     WHERE id = ANY(${staleRows.map((row) => row.id)}::int[])
-  `);
+  `;
   const contentById = new Map(contentRows.map((content) => [content.id, content]));
   const recounted = staleRows
     .filter((row) => contentById.has(row.id))
@@ -130,13 +124,13 @@ async function refreshStaleRows(rows: LibraryRow[]): Promise<LibraryRow[]> {
  * which books are returned (and therefore recounted); callers decide what to expose.
  */
 export async function getLibraryRows(isVisible: (row: LibraryRow) => boolean): Promise<LibraryRow[]> {
-  const rows = normalizeResult<LibraryRow>(await sql`
+  const rows = await sql<LibraryRow[]>`
     SELECT
       t.id, t.file_name, t.directory, t.created_at, t.total_pages, t.total_characters, t.content_bytes,
       octet_length(t.content) AS current_bytes,
       b.bookmark_text, b.bookmark_page, b.updated_at AS bookmark_updated_at
     FROM text_entries t
     LEFT JOIN bookmarks b ON t.file_name = b.file_name AND t.directory = b.directory
-  `);
+  `;
   return refreshStaleRows(rows.filter(isVisible));
 }

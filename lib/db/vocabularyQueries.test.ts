@@ -56,10 +56,10 @@ const UPDATE_INPUT = {
 // postgres.js throws UNDEFINED_VALUE for an undefined parameter (connection.ts sets no transform.undefined), so the mock must too.
 function answerQueries(...results: object[][]): void {
   results.forEach((rows) => {
-    vi.mocked(sql).mockImplementationOnce((_strings, ...values) =>
+    vi.mocked(sql).mockImplementationOnce(((_strings: TemplateStringsArray, ...values: unknown[]) =>
       values.includes(undefined)
         ? Promise.reject(new Error('UNDEFINED_VALUE: Undefined values are not allowed'))
-        : Promise.resolve(rows)
+        : Promise.resolve(rows)) as never
     );
   });
 }

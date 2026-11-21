@@ -57,7 +57,7 @@ afterEach(() => {
 
 describe('GET /api/vocabulary', () => {
   it('lists the stored snake_case rows as camelCase entries with their count', async () => {
-    vi.mocked(sql).mockResolvedValue([ROW]);
+    vi.mocked(sql).mockResolvedValue([ROW] as never);
 
     const response = await GET(new Request('http://localhost/api/vocabulary'));
 

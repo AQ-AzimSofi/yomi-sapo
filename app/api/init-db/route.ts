@@ -28,16 +28,8 @@ export async function GET() {
   }
 
   try {
-    const execSql = typeof sql.unsafe === 'function'
-      ? sql.unsafe.bind(sql)
-      : typeof sql.query === 'function'
-        ? sql.query.bind(sql)
-        : null;
-
-    if (!execSql) throw new Error('Unsupported database client');
-
-    await execSql(CREATE_TABLES_SQL);
-    await execSql(MIGRATIONS_SQL);
+    await sql.unsafe(CREATE_TABLES_SQL);
+    await sql.unsafe(MIGRATIONS_SQL);
 
     return NextResponse.json({
       message: 'Database tables created successfully',
