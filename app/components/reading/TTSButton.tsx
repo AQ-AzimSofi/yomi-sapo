@@ -2,7 +2,7 @@
 
 import { useTTS } from '@/app/hooks/useTTS';
 import SpeakerIcon from '@/app/components/icons/SpeakerIcon';
-import { COLORS } from '@/lib/constants';
+import { THEME } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { useRef, useCallback } from 'react';
 
@@ -102,8 +102,8 @@ export default function TTSButton({ text, className = '', size = 'sm', onLongPre
         ${className}
       `}
       style={{
-        backgroundColor: isPlaying ? toTint(COLORS.PRIMARY, 12) : 'transparent',
-        borderBottom: `2px solid ${isPlaying ? COLORS.PRIMARY : 'transparent'}`,
+        backgroundColor: isPlaying ? toTint(THEME.PRIMARY, 12) : 'transparent',
+        borderBottom: `2px solid ${isPlaying ? THEME.PRIMARY : 'transparent'}`,
       }}
       title={
         isLoading
