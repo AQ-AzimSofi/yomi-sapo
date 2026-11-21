@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  bookmarkPageFor,
   buildPlayableUnits,
   detectContentType,
   findBookmarkIndex,
   itemMainText,
   legacyPageBookmark,
+  locateBookmark,
   normalizeNewlines,
   pageOfIndex,
   pageStartIndex,
@@ -226,25 +226,32 @@ describe('findBookmarkIndex', () => {
       expect(findBookmarkIndex(repeated, '同じ文。', null)).toBe(0);
     });
 
-    it('falls back to the first match when the text moved before the saved page', () => {
+    it('falls back to the only match when the text moved off the saved page', () => {
       expect(findBookmarkIndex(['同じ文。', '他。'], '同じ文。', 9)).toBe(0);
+    });
+
+    it('picks the copy nearest the saved page after a rebuild moved the text', () => {
+      // Saved on page 2 at unit 60; a rebuild dropped 15 earlier units, so the copies now sit at 45 (page 1) and 125 (page 3).
+      const rebuilt = Array.from({ length: 200 }, (_, unit_i) => (unit_i === 45 || unit_i === 125 ? '同じ文。' : `文${unit_i}。`));
+
+      expect(findBookmarkIndex(rebuilt, '同じ文。', 2)).toBe(45);
     });
   });
 });
 
-describe('bookmarkPageFor', () => {
+describe('locateBookmark', () => {
   const units = Array.from({ length: 120 }, (_, unit_i) => (unit_i === 70 ? '印の文。' : `文${unit_i}。`));
 
-  it('opens an old page:N bookmark on its page', () => {
-    expect(bookmarkPageFor(units, 'page:2')).toBe(2);
+  it('opens an old page:N bookmark on its page without marking a unit', () => {
+    expect(locateBookmark(units, 'page:2')).toEqual({ unitIndex: null, page: 2 });
   });
 
-  it('opens a text bookmark on the page of its unit', () => {
-    expect(bookmarkPageFor(units, '印の文。')).toBe(2);
+  it('finds a text bookmark and the page of its unit', () => {
+    expect(locateBookmark(units, '印の文。')).toEqual({ unitIndex: 70, page: 2 });
   });
 
-  it.each(['見つからない文。', '  '])('returns null for the bookmark %j', (bookmark) => {
-    expect(bookmarkPageFor(units, bookmark)).toBeNull();
+  it.each(['見つからない文。', '  '])('finds nothing for the bookmark %j', (bookmark) => {
+    expect(locateBookmark(units, bookmark)).toEqual({ unitIndex: null, page: null });
   });
 });
 

@@ -77,8 +77,9 @@ function bookmarkMatchText(text: string): string {
 /**
  * Bookmarks are stored as the unit's text and the page it was saved on, and
  * matched ignoring furigana and line breaks. The same text can appear more than
- * once, so the first match on or after the saved page wins; without a saved
- * page, or when the text moved earlier (a rebuilt book), the first match does.
+ * once: a match on the saved page wins, and when a rebuild moved the text off
+ * that page, the copy nearest to it does (ties go to the earlier copy). Without
+ * a saved page the first match wins.
  */
 export function findBookmarkIndex(
   mainTexts: readonly string[],
@@ -87,24 +88,39 @@ export function findBookmarkIndex(
 ): number | null {
   const target = bookmarkMatchText(bookmarkText);
   if (!target) return null;
-  const searchFrom = savedPage ? pageStartIndex(savedPage) : 0;
   const isMatch = (text: string) => bookmarkMatchText(text) === target;
-  const fromSavedPage = mainTexts.findIndex((text, unitIndex) => unitIndex >= searchFrom && isMatch(text));
-  if (fromSavedPage !== -1) return fromSavedPage;
-  const anywhere = mainTexts.findIndex(isMatch);
-  return anywhere === -1 ? null : anywhere;
+  if (!savedPage) {
+    const firstMatch = mainTexts.findIndex(isMatch);
+    return firstMatch === -1 ? null : firstMatch;
+  }
+
+  const pageStart = pageStartIndex(savedPage);
+  const pageEnd = pageStartIndex(savedPage + 1);
+  const matchOnSavedPage = mainTexts.slice(pageStart, pageEnd).findIndex(isMatch);
+  if (matchOnSavedPage !== -1) return pageStart + matchOnSavedPage;
+
+  const distanceToSavedPage = (unitIndex: number) => (unitIndex < pageStart ? pageStart - unitIndex : unitIndex - pageEnd + 1);
+  return mainTexts.reduce<number | null>((nearest, text, unitIndex) => {
+    if (!isMatch(text)) return nearest;
+    return nearest === null || distanceToSavedPage(unitIndex) < distanceToSavedPage(nearest) ? unitIndex : nearest;
+  }, null);
 }
 
-/** The page a bookmark opens on, shared by the reader and the library. */
-export function bookmarkPageFor(
+export interface BookmarkLocation {
+  unitIndex: number | null;
+  page: number | null;
+}
+
+/** Where a bookmark sits and which page it opens on, shared by the reader and the library. */
+export function locateBookmark(
   mainTexts: readonly string[],
   bookmarkText: string,
   savedPage?: number | null
-): number | null {
+): BookmarkLocation {
   const legacyPage = legacyPageBookmark(bookmarkText);
-  if (legacyPage !== null) return legacyPage;
+  if (legacyPage !== null) return { unitIndex: null, page: legacyPage };
   const unitIndex = findBookmarkIndex(mainTexts, bookmarkText, savedPage);
-  return unitIndex === null ? null : pageOfIndex(unitIndex);
+  return { unitIndex, page: unitIndex === null ? null : pageOfIndex(unitIndex) };
 }
 
 /** Bookmarks saved before text bookmarks existed were stored as "page:N". */

@@ -1,8 +1,8 @@
 import { sql } from './connection';
 import type { QueryResult } from './schema';
 import {
-  bookmarkPageFor,
   itemMainText,
+  locateBookmark,
   parseReaderItems,
   totalPagesFor,
   type ReaderItem,
@@ -33,7 +33,7 @@ export interface LibraryRow {
   bookmark_updated_at: string | null;
 }
 
-interface ContentRow {
+export interface ContentRow {
   id: number;
   content: string;
   character_count: number;
@@ -49,7 +49,7 @@ function normalizeResult<T>(result: QueryResult<T>): T[] {
 }
 
 function bookmarkPageOf(bookmarkText: string, items: ReaderItem[], savedPage: number | null): number {
-  return bookmarkPageFor(items.map(itemMainText), bookmarkText, savedPage) ?? BOOKMARK_NOT_FOUND;
+  return locateBookmark(items.map(itemMainText), bookmarkText, savedPage).page ?? BOOKMARK_NOT_FOUND;
 }
 
 function hasStaleTextCounts(row: LibraryRow): boolean {
@@ -63,7 +63,7 @@ function needsBookmarkPage(row: LibraryRow): boolean {
   return row.bookmark_page === null || hasStaleTextCounts(row);
 }
 
-function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
+export function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
   const items = parseReaderItems(content.content);
   return {
     ...row,

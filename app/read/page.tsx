@@ -25,9 +25,7 @@ import GuestModeBanner from '@/app/components/ui/GuestModeBanner';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
 import {
   detectContentType,
-  bookmarkPageFor,
-  findBookmarkIndex,
-  legacyPageBookmark,
+  locateBookmark,
   pageOfIndex,
   pageStartIndex,
   parseReaderItems,
@@ -306,15 +304,12 @@ function ReaderContent({
     }
   }, [currentPageHeaders, currentPage, priorityScores, isPrioritizing]);
 
-  const bookmarkItemIndex = useMemo(() => {
-    if (!bookmarkText || legacyPageBookmark(bookmarkText) !== null) return null;
-    return findBookmarkIndex(unitMainTexts, bookmarkText, bookmarkSavedPage);
-  }, [bookmarkText, bookmarkSavedPage, unitMainTexts]);
-
-  const bookmarkPage = useMemo(
-    () => (bookmarkText ? bookmarkPageFor(unitMainTexts, bookmarkText, bookmarkSavedPage) : null),
+  const bookmarkLocation = useMemo(
+    () => locateBookmark(unitMainTexts, bookmarkText, bookmarkSavedPage),
     [bookmarkText, bookmarkSavedPage, unitMainTexts]
   );
+  const bookmarkItemIndex = bookmarkLocation.unitIndex;
+  const bookmarkPage = bookmarkLocation.page;
 
   const getStartIndex = useCallback(() => {
     const pageTop = pageStartIndex(currentPage);
