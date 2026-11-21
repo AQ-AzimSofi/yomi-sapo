@@ -4,14 +4,30 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { STORAGE_KEYS, EXPLANATION_CONFIG, DEFAULT_EXPLANATION_MODE, EXPLANATION_MODES } from '@/lib/constants';
+import { isRecord } from '@/lib/utils/typeGuards';
 import type { ExplanationCache, CachedExplanation } from '@/lib/types';
 import type { ExplanationMode } from '@/lib/constants';
 
+interface ExplanationCacheKeyParts {
+  fileName: string;
+  sentence: string;
+  mode: ExplanationMode;
+}
+
+export interface ExplanationCacheQuery extends ExplanationCacheKeyParts {
+  contextSize: number;
+}
+
+export interface ExplanationAnswer extends ExplanationCacheQuery {
+  explanation: string;
+  requestedAt: number;
+}
+
 interface UseExplanationCacheReturn {
-  getCache: (fileName: string, sentence: string, mode: ExplanationMode) => CachedExplanation | null;
-  setCache: (fileName: string, sentence: string, explanation: string, contextSize: number, mode: ExplanationMode) => void;
+  getCache: (query: ExplanationCacheQuery) => CachedExplanation | null;
+  setCache: (answer: ExplanationAnswer) => void;
   clearCache: () => void;
   getCacheSize: () => number;
   contextSize: number;
@@ -36,10 +52,58 @@ const DEFAULT_STATE: StoredExplanationState = {
   contextSizeExpanded: EXPLANATION_CONFIG.CONTEXT_SIZE_EXPANDED_DEFAULT,
 };
 
+// The key leaves out the context size, so an answer for another size replaces
+// the entry instead of adding one. Changing the format would orphan every saved answer.
+export function explanationCacheKey({ fileName, sentence, mode }: ExplanationCacheKeyParts): string {
+  const hash = sentence.split('').reduce((acc, char) => {
+    return ((acc << 5) - acc) + char.charCodeAt(0);
+  }, 0);
+  return `${EXPLANATION_CONFIG.CACHE_KEY_PREFIX}${fileName}_${mode}_${hash}`;
+}
+
+/** A saved answer only counts when it was made for this very sentence and context size. */
+export function findCachedExplanation(cache: ExplanationCache, query: ExplanationCacheQuery): CachedExplanation | null {
+  const entry = cache[explanationCacheKey(query)];
+  if (!entry || entry.sentence !== query.sentence) return null;
+  return entry.contextSize === query.contextSize ? entry : null;
+}
+
+export function keepNewestExplanations(cache: ExplanationCache, maxEntries: number): ExplanationCache {
+  const entries = Object.entries(cache);
+  if (entries.length <= maxEntries) return cache;
+  const newestFirst = entries.sort(([, a], [, b]) => b.timestamp - a.timestamp);
+  return Object.fromEntries(newestFirst.slice(0, maxEntries));
+}
+
+export function storeExplanation(cache: ExplanationCache, answer: ExplanationAnswer): ExplanationCache {
+  const key = explanationCacheKey(answer);
+  const stored = cache[key];
+  const isOutdatedAnswer = stored?.sentence === answer.sentence && stored.timestamp > answer.requestedAt;
+  if (isOutdatedAnswer) return cache;
+  const { sentence, explanation, contextSize, mode, requestedAt } = answer;
+  const entry: CachedExplanation = { sentence, explanation, contextSize, mode, timestamp: requestedAt };
+  return keepNewestExplanations({ ...cache, [key]: entry }, EXPLANATION_CONFIG.MAX_CACHED_EXPLANATIONS);
+}
+
+function isCachedExplanation(value: unknown): value is CachedExplanation {
+  return (
+    isRecord(value) &&
+    typeof value.sentence === 'string' &&
+    typeof value.explanation === 'string' &&
+    typeof value.contextSize === 'number' &&
+    typeof value.timestamp === 'number'
+  );
+}
+
 function parseCache(stored: string | null): ExplanationCache {
   if (!stored) return DEFAULT_STATE.cache;
   try {
-    return JSON.parse(stored);
+    const parsed: unknown = JSON.parse(stored);
+    if (!isRecord(parsed)) return DEFAULT_STATE.cache;
+    const entries = Object.entries(parsed).filter(
+      (pair): pair is [string, CachedExplanation] => isCachedExplanation(pair[1])
+    );
+    return keepNewestExplanations(Object.fromEntries(entries), EXPLANATION_CONFIG.MAX_CACHED_EXPLANATIONS);
   } catch (error) {
     console.error('キャッシュの読み込み中にエラーが発生しました:', error);
     return DEFAULT_STATE.cache;
@@ -71,6 +135,14 @@ export function readStoredExplanationState(storage: Pick<Storage, 'getItem'>): S
   };
 }
 
+function saveCache(cache: ExplanationCache): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.EXPLANATION_CACHE, JSON.stringify(cache));
+  } catch (error) {
+    console.error('キャッシュの保存中にエラーが発生しました:', error);
+  }
+}
+
 function readInitialState(): StoredExplanationState {
   return typeof window === 'undefined' ? DEFAULT_STATE : readStoredExplanationState(localStorage);
 }
@@ -81,58 +153,33 @@ function readInitialState(): StoredExplanationState {
  */
 export function useExplanationCache(): UseExplanationCacheReturn {
   const [initialState] = useState(readInitialState);
-  const [cache, setCacheState] = useState<ExplanationCache>(initialState.cache);
+  // Nothing renders the cache itself, so it lives in a ref: storing an answer never
+  // re-runs the effect that looks answers up, and a late AI response always updates
+  // the latest copy rather than an older one.
+  const cacheRef = useRef<ExplanationCache>(initialState.cache);
   const [contextSize, setContextSizeState] = useState<number>(initialState.contextSize);
   const [mode, setModeState] = useState<ExplanationMode>(initialState.mode);
   const [contextSizeExpanded, setContextSizeExpandedState] = useState<boolean>(initialState.contextSizeExpanded);
 
-  // Saved after every change. setCache updates from the latest state, so a
-  // late AI response can never write back an older copy of the cache.
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.EXPLANATION_CACHE, JSON.stringify(cache));
-    } catch (error) {
-      console.error('キャッシュの保存中にエラーが発生しました:', error);
-    }
-  }, [cache]);
+  const getCache = useCallback((query: ExplanationCacheQuery) => findCachedExplanation(cacheRef.current, query), []);
 
-  // キャッシュキーを生成（モード別にキャッシュを分離）
-  const generateCacheKey = useCallback((fileName: string, sentence: string, mode: ExplanationMode): string => {
-    // 文をハッシュ化（簡易版）
-    const hash = sentence.split('').reduce((acc, char) => {
-      return ((acc << 5) - acc) + char.charCodeAt(0);
-    }, 0);
-    return `${EXPLANATION_CONFIG.CACHE_KEY_PREFIX}${fileName}_${mode}_${hash}`;
+  const setCache = useCallback((answer: ExplanationAnswer) => {
+    const nextCache = storeExplanation(cacheRef.current, answer);
+    if (nextCache === cacheRef.current) return;
+    cacheRef.current = nextCache;
+    saveCache(nextCache);
   }, []);
-
-  // キャッシュから取得
-  const getCache = useCallback(
-    (fileName: string, sentence: string, mode: ExplanationMode): CachedExplanation | null => {
-      const key = generateCacheKey(fileName, sentence, mode);
-      return cache[key] || null;
-    },
-    [cache, generateCacheKey]
-  );
-
-  // キャッシュに保存
-  const setCache = useCallback(
-    (fileName: string, sentence: string, explanation: string, contextSize: number, mode: ExplanationMode) => {
-      const key = generateCacheKey(fileName, sentence, mode);
-      const entry: CachedExplanation = { sentence, explanation, contextSize, mode, timestamp: Date.now() };
-      setCacheState((previous) => ({ ...previous, [key]: entry }));
-    },
-    [generateCacheKey]
-  );
 
   // キャッシュをクリア
   const clearCache = useCallback(() => {
-    setCacheState({});
+    cacheRef.current = {};
+    saveCache({});
   }, []);
 
   // キャッシュサイズを取得
   const getCacheSize = useCallback((): number => {
-    return Object.keys(cache).length;
-  }, [cache]);
+    return Object.keys(cacheRef.current).length;
+  }, []);
 
   // コンテキストサイズを設定
   const setContextSize = useCallback((size: number) => {

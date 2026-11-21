@@ -111,7 +111,7 @@ export default function ExplanationSidebar({
 
     const fetchExplanation = async () => {
       if (!forceRegenerate) {
-        const cached = getCache(fileName, sentence, mode);
+        const cached = getCache({ fileName, sentence, mode, contextSize });
         if (cached) {
           setExplanation(cached.explanation);
           setIsCached(true);
@@ -135,9 +135,10 @@ export default function ExplanationSidebar({
           mode,
         };
 
+        const requestedAt = Date.now();
         const data = await explainSentence(requestData);
         setExplanation(data.explanation);
-        setCache(fileName, sentence, data.explanation, contextSize, mode);
+        setCache({ fileName, sentence, mode, contextSize, explanation: data.explanation, requestedAt });
 
         if (forceRegenerate) {
           setForceRegenerate(false);

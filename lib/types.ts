@@ -71,7 +71,9 @@ export interface CachedExplanation {
   sentence: string;
   explanation: string;
   contextSize: number;
-  mode: import('./constants').ExplanationMode;
+  // Missing on entries saved before explanation modes existed.
+  mode?: import('./constants').ExplanationMode;
+  // When the answer was requested, so a late answer never replaces a newer one.
   timestamp: number;
 }
 
