@@ -41,8 +41,7 @@ import {
 import { createKeyPool } from './shared/geminiKeyPool';
 import { describePython, resolvePython, runPython } from './shared/python';
 import { loadRepoEnv, REPO_ROOT } from './shared/repoPaths';
-
-loadRepoEnv();
+import { isEntryPoint } from './shared/entryPoint';
 
 // ============================================================================
 // Constants
@@ -56,7 +55,7 @@ const DEFAULT_REPHRASE_MODEL = 'sonnet';
 // Types
 // ============================================================================
 
-interface CLIOptions {
+export interface CLIOptions {
   epubPath: string;
   outputDir: string;
   chunkSize: number;
@@ -525,11 +524,7 @@ export async function batchRephrase(
 // Main
 // ============================================================================
 
-async function main() {
-  const args = process.argv.slice(2);
-
-  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
-    console.log(`
+const HELP_TEXT = `
 Unified EPUB to Book Processing Script
 
 Usage:
@@ -550,12 +545,11 @@ Example:
   npx tsx scripts/epub-to-book.ts "my-book.epub"
   npx tsx scripts/epub-to-book.ts "my-book.epub" --delay 300 --filter n3
   npx tsx scripts/epub-to-book.ts "my-book.epub" --skip-rephrase
-`);
-    process.exit(0);
-  }
+`;
 
+export function parseCliOptions(args: string[]): CLIOptions {
   const options: CLIOptions = {
-    epubPath: args[0],
+    epubPath: path.resolve(args[0]),
     outputDir: 'bookv2-furigana',
     chunkSize: 5000,
     delaySeconds: 120, // Base delay (divided by number of API keys)
@@ -608,6 +602,10 @@ Example:
     }
   }
 
+  return options;
+}
+
+async function main(options: CLIOptions) {
   // Validate EPUB file
   if (!fs.existsSync(options.epubPath)) {
     console.error(`Error: EPUB file not found: ${options.epubPath}`);
@@ -680,7 +678,18 @@ Example:
 `);
 }
 
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+async function runCli(args: string[]): Promise<void> {
+  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+    console.log(HELP_TEXT);
+    return;
+  }
+  await main(parseCliOptions(args));
+}
+
+if (isEntryPoint(import.meta.url)) {
+  loadRepoEnv();
+  runCli(process.argv.slice(2)).catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
