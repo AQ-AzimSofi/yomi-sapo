@@ -28,7 +28,6 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1107.0",
     "@aws-sdk/s3-request-presigner": "^3.1107.0",
-    "@google-cloud/text-to-speech": "^6.4.0",
     "@google/genai": "^1.13.0",
     "@swc/helpers": "^0.5.15",
     "bcryptjs": "^3.0.3",
@@ -45,15 +44,12 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
-    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/pg": "^8.15.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.4.5",
-    "kuroshiro": "^1.2.0",
-    "kuroshiro-analyzer-kuromoji": "^1.1.0",
     "playwright-core": "^1.64.1",
     "sst": "^3.9.37",
     "tailwindcss": "^4",
