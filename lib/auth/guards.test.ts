@@ -63,6 +63,12 @@ describe('getViewer', () => {
     expect(await getViewer(routeRequest({ cookie: `oldsession=${token}` }))).toBe('guest');
   });
 
+  it('finds the session after a cookie whose name only ends in session', async () => {
+    const token = await signSessionToken(TEST_SESSION_SECRET);
+
+    expect(await getViewer(routeRequest({ cookie: `oldsession=junk; session=${token}` }))).toBe('owner');
+  });
+
   it('sees a guest when SESSION_SECRET is not set', async () => {
     vi.stubEnv('SESSION_SECRET', '');
 
