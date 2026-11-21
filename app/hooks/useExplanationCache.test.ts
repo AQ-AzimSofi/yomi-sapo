@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { renderToString } from 'react-dom/server';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_EXPLANATION_MODE, EXPLANATION_CONFIG, EXPLANATION_MODES, STORAGE_KEYS } from '@/lib/constants';
-import { readStoredExplanationState } from './useExplanationCache';
+import { readStoredExplanationState, useExplanationCache } from './useExplanationCache';
 
 function storageWith(values: Record<string, string>): Pick<Storage, 'getItem'> {
   return { getItem: (key: string) => values[key] ?? null };
@@ -52,5 +54,24 @@ describe('readStoredExplanationState', () => {
     expect(state.contextSize).toBe(EXPLANATION_CONFIG.DEFAULT_CONTEXT_SIZE);
     expect(state.mode).toBe(DEFAULT_EXPLANATION_MODE);
     error.mockRestore();
+  });
+});
+
+describe('useExplanationCache', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function CacheSizeProbe() {
+    return createElement('span', null, useExplanationCache().getCacheSize());
+  }
+
+  // A sidebar that mounts already open decides whether to ask the AI on its
+  // first render, so the saved cache must be there before any effect runs.
+  it('has the saved cache on its first render', () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('localStorage', storageWith({ [STORAGE_KEYS.EXPLANATION_CACHE]: JSON.stringify({ key1: SAVED_ENTRY, key2: SAVED_ENTRY }) }));
+
+    expect(renderToString(createElement(CacheSizeProbe))).toBe('<span>2</span>');
   });
 });
