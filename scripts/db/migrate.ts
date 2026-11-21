@@ -25,7 +25,7 @@ function readDatabaseUrl(): string {
   return env.DATABASE_URL;
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   // IF NOT EXISTS reports every table that is already there as a notice.
   const sql = postgres(readDatabaseUrl(), { max: 1, onnotice: () => undefined });
   try {
