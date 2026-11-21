@@ -5,6 +5,7 @@ import {
   getVocabularyEntries,
   getVocabularyEntryById,
   updateVocabularyEntry,
+  type VocabularyFilter,
 } from './vocabularyQueries.sql';
 
 vi.mock('./connection', () => ({ sql: vi.fn() }));
@@ -69,8 +70,84 @@ function firstQueryText(): string {
   return strings.join('?').replace(/\s+/g, ' ').trim();
 }
 
+interface RecordedQuery {
+  strings: readonly string[];
+  values: readonly unknown[];
+}
+
+interface RenderedQuery {
+  text: string;
+  params: unknown[];
+}
+
+// Each call keeps its template on the returned promise, so a fragment passed into a later query can be inlined.
+function recordQueries(rows: object[]): void {
+  vi.mocked(sql).mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
+    Object.assign(Promise.resolve(rows), { strings, values })) as never);
+}
+
+function isRecordedQuery(value: unknown): value is RecordedQuery {
+  return typeof value === 'object' && value !== null && 'strings' in value;
+}
+
+// Inlines nested fragments as postgres.js does and leaves a ? for each parameter.
+function renderQuery({ strings, values }: RecordedQuery): RenderedQuery {
+  return values.reduce<RenderedQuery>(
+    (rendered, value, value_i) => {
+      const inlined = isRecordedQuery(value) ? renderQuery(value) : { text: '?', params: [value] };
+      return { text: rendered.text + inlined.text + strings[value_i + 1], params: [...rendered.params, ...inlined.params] };
+    },
+    { text: strings[0], params: [] }
+  );
+}
+
+function lastQuery(): RenderedQuery {
+  const [strings, ...values] = vi.mocked(sql).mock.lastCall as unknown as [TemplateStringsArray, ...unknown[]];
+  const { text, params } = renderQuery({ strings, values });
+  return { text: text.replace(/\s+/g, ' ').trim(), params };
+}
+
+function selectEntriesWhere(conditions: string): string {
+  return conditions === ''
+    ? 'SELECT * FROM vocabulary_entries ORDER BY created_at DESC'
+    : `SELECT * FROM vocabulary_entries WHERE ${conditions} ORDER BY created_at DESC`;
+}
+
+const WORD_PATTERN = `%${ROW.word}%`;
+const CREATED_TODAY = 'created_at >= ? AND created_at <= ?';
+const TODAY_BOUNDS = [expect.any(Date), expect.any(Date)];
+
+const FILTER_CASES: [string, VocabularyFilter, string, unknown[]][] = [
+  ['no filter', {}, '', []],
+  ['the route with no query parameters', { word: undefined, fileName: undefined, directory: undefined, today: false }, '', []],
+  ['today', { today: true }, CREATED_TODAY, TODAY_BOUNDS],
+  ['word', { word: ROW.word }, 'word ILIKE ?', [WORD_PATTERN]],
+  ['fileName', { fileName: ROW.file_name }, 'file_name = ?', [ROW.file_name]],
+  ['directory', { directory: ROW.directory }, 'directory = ?', [ROW.directory]],
+  [
+    'fileName and directory',
+    { fileName: ROW.file_name, directory: ROW.directory },
+    'file_name = ? AND directory = ?',
+    [ROW.file_name, ROW.directory],
+  ],
+  [
+    'word, fileName and directory',
+    { word: ROW.word, fileName: ROW.file_name, directory: ROW.directory },
+    'word ILIKE ? AND file_name = ? AND directory = ?',
+    [WORD_PATTERN, ROW.file_name, ROW.directory],
+  ],
+  ['today and word', { today: true, word: ROW.word }, `${CREATED_TODAY} AND word ILIKE ?`, [...TODAY_BOUNDS, WORD_PATTERN]],
+  [
+    'today, fileName and directory',
+    { today: true, fileName: ROW.file_name, directory: ROW.directory },
+    `${CREATED_TODAY} AND file_name = ? AND directory = ?`,
+    [...TODAY_BOUNDS, ROW.file_name, ROW.directory],
+  ],
+];
+
 afterEach(() => {
   vi.mocked(sql).mockReset();
+  vi.useRealTimers();
 });
 
 describe('vocabulary queries', () => {
@@ -158,5 +235,24 @@ describe('vocabulary queries', () => {
     await updateVocabularyEntry('entry-1', { notes: 'メモ' });
 
     expect(vi.mocked(sql).mock.calls[0].slice(1)).toEqual([null, null, null, null, 'メモ', expect.any(Date), 'entry-1']);
+  });
+});
+
+describe('getVocabularyEntries filters', () => {
+  it.each(FILTER_CASES)('applies %s', async (_name, filter, conditions, params) => {
+    recordQueries([]);
+
+    await getVocabularyEntries(filter);
+
+    expect(lastQuery()).toEqual({ text: selectEntriesWhere(conditions), params });
+  });
+
+  it('bounds today by the start and end of the local day', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 0, 2, 15, 30) });
+    recordQueries([]);
+
+    await getVocabularyEntries({ today: true });
+
+    expect(lastQuery().params).toEqual([new Date(2026, 0, 2, 0, 0, 0, 0), new Date(2026, 0, 2, 23, 59, 59, 999)]);
   });
 });
