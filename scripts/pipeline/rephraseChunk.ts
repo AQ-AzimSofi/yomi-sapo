@@ -1,5 +1,5 @@
 import { AI_MODELS, VN_RETRY_CONFIG } from '../../lib/constants';
-import { alignRephrase, parseMarkdown, type AlignReport } from '../utils/rephrase-output';
+import { alignRephrase, parseRephrasePairs, type AlignReport } from '../utils/rephrase-output';
 import { rephraseWithClaude, splitParagraphs } from '../utils/claude-rephrase';
 import { stripRubyTags } from './chunking';
 import {
@@ -42,7 +42,7 @@ const ai_instructions = `
 `;
 
 function validateResponse(response: string): boolean {
-  const items = parseMarkdown(response);
+  const items = parseRephrasePairs(response);
   if (items.length === 0) return false;
   return items.every(item =>
     item.head && item.head.length > 0 && item.subItems.length >= 1
