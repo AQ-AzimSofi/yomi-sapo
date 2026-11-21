@@ -6,6 +6,7 @@ import { bookAssetPath, bookAssetUrl } from '@/lib/utils/bookAssetPath';
 import {
   ApiError,
   deleteVocabularyEntry,
+  fetchDbSyncStatus,
   explainSentence,
   fetchBookMetadata,
   fetchBookText,
@@ -21,6 +22,7 @@ import {
   prioritize,
   removeRubyRegistryItem,
   request,
+  runDbSync,
   saveBookmark,
   saveRubyEntry,
   synthesizeSpeech,
@@ -619,5 +621,36 @@ describe('auth calls', () => {
 
     expect(await fetchSession()).toEqual({ authenticated: false });
     expect(lastCall().url).toBe('/api/auth?action=session');
+  });
+});
+
+describe('db sync calls', () => {
+  it('reads the differences between the databases', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ diffs: [] }));
+
+    expect(await fetchDbSyncStatus()).toEqual({ diffs: [] });
+    expect(lastCall().url).toBe('/api/db-sync');
+    expect(lastCall().init).toMatchObject({ method: 'GET', headers: {} });
+  });
+
+  it('posts the sync direction', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ success: true, results: [] }));
+
+    await runDbSync('pull');
+
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"direction":"pull"}',
+    });
+  });
+
+  it("shows the server's error message, or the status when there is none", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: { code: 'not_configured', message: 'Sync not available - PROD_DATABASE_URL not configured' } }, 503)
+    );
+    await expect(fetchDbSyncStatus()).rejects.toThrow('Sync not available - PROD_DATABASE_URL not configured');
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 500));
+    await expect(fetchDbSyncStatus()).rejects.toThrow('HTTP 500');
   });
 });

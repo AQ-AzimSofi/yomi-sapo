@@ -1,28 +1,10 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { API_ROUTES, COLORS } from '@/lib/constants';
+import { COLORS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
-
-interface DiffResult {
-  table: string;
-  localCount: number | null;
-  prodCount: number | null;
-  onlyLocal: string[];
-  onlyProd: string[];
-  localNewer: number;
-  prodNewer: number;
-}
-
-interface SyncResult {
-  table: string;
-  rows: number;
-  skipped: number;
-  failed: number;
-  direction: string;
-}
-
-type SyncDirection = 'pull' | 'push' | 'full';
+import { fetchDbSyncStatus, runDbSync } from '@/lib/api/client';
+import type { DbSyncDirection, DiffResult, SyncResult } from '@/lib/api/contracts';
 
 export default function DbSyncModal({ onClose }: { onClose: () => void }) {
   const [diffs, setDiffs] = useState<DiffResult[] | null>(null);
@@ -36,13 +18,8 @@ export default function DbSyncModal({ onClose }: { onClose: () => void }) {
     setError(null);
     setSyncResults(null);
     try {
-      const res = await fetch(API_ROUTES.DB_SYNC);
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error?.message || `HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      setDiffs(data.diffs);
+      const { diffs } = await fetchDbSyncStatus();
+      setDiffs(diffs);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch status');
     } finally {
@@ -50,22 +27,13 @@ export default function DbSyncModal({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
-  const runSync = useCallback(async (direction: SyncDirection) => {
+  const runSync = useCallback(async (direction: DbSyncDirection) => {
     setSyncing(true);
     setError(null);
     setSyncResults(null);
     try {
-      const res = await fetch(API_ROUTES.DB_SYNC, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direction }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error?.message || `HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      setSyncResults(data.results);
+      const { results } = await runDbSync(direction);
+      setSyncResults(results);
       await fetchStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sync failed');

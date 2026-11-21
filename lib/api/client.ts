@@ -14,6 +14,10 @@ import type {
   ApiErrorResponse,
   AuthResponse,
   BookmarkResponse,
+  DbSyncDirection,
+  DbSyncRequest,
+  DbSyncResponse,
+  DbSyncStatusResponse,
   DeleteVocabularyResponse,
   ExplanationRequest,
   ExplanationResponse,
@@ -249,6 +253,16 @@ export async function fetchVocabulary(): Promise<VocabularyListResponse> {
 
 export async function deleteVocabularyEntry(id: string): Promise<DeleteVocabularyResponse> {
   return request<DeleteVocabularyResponse>(API_ROUTES.VOCABULARY, { method: 'DELETE', pathSegment: id });
+}
+
+/** Compares the local and production databases (local dev server only). */
+export async function fetchDbSyncStatus(): Promise<DbSyncStatusResponse> {
+  return request<DbSyncStatusResponse>(API_ROUTES.DB_SYNC);
+}
+
+export async function runDbSync(direction: DbSyncDirection): Promise<DbSyncResponse> {
+  const body: DbSyncRequest = { direction };
+  return request<DbSyncResponse>(API_ROUTES.DB_SYNC, { method: 'POST', body });
 }
 
 function rubyRegistryParams({ directory, bookName }: RubyRegistryKey): Record<string, string> {
