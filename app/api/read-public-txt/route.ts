@@ -10,9 +10,14 @@ import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
 import { isAuthenticated } from '@/lib/auth/apiSession';
 import { findPublicBookByPath } from '@/lib/publicBooks';
 import { truncateToPreviewPages } from '@/lib/utils/truncatePreview';
+import { PAGINATION_CONFIG } from '@/lib/constants';
 import { BOOK_VERSION_HEADER, ifNoneMatchIncludes } from '@/lib/utils/etag';
 
 export const dynamic = 'force-dynamic';
+
+// Bump when the response body changes for the same stored text (its JSON shape,
+// or how a preview is cut), so readers drop copies stored by an older deploy.
+const RESPONSE_FORMAT = 'v1';
 
 interface BookLocation {
   directory: string;
@@ -68,8 +73,8 @@ export async function GET(request: Request): Promise<NextResponse> {
       return NextResponse.json({ text: '' });
     }
 
-    const variant = publicBook ? `preview${publicBook.maxPreviewPages}` : 'full';
-    const etag = `"${location.version}-${variant}"`;
+    const variant = publicBook ? `preview${publicBook.maxPreviewPages}x${PAGINATION_CONFIG.ITEMS_PER_PAGE}` : 'full';
+    const etag = `"${location.version}-${variant}-${RESPONSE_FORMAT}"`;
     if (ifNoneMatchIncludes(request.headers.get(BOOK_VERSION_HEADER), etag)) {
       return new NextResponse(null, { status: 204, headers: cacheHeaders(etag) });
     }
