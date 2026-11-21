@@ -6,7 +6,7 @@
  * 1. Extract text + images from EPUB
  * 2. Extract ruby registry from EPUB
  * 3. Upload illustrations + image metadata to the BookImages bucket (BOOK_IMAGES_BUCKET)
- * 4. Batch rephrase with Gemini AI
+ * 4. Batch rephrase with Claude (claude -p, on the subscription) or the Gemini API
  * 5. Add furigana to rephrased text
  * 6. Sync to database after each chunk
  *
@@ -16,8 +16,8 @@
  * Options:
  *   --output-dir <dir>   Output directory in public/ (default: bookv2-furigana)
  *   --chunk-size <n>     Target characters per chunk (default: 5000)
- *   --delay <n>          Seconds between chunks (default: 600 = 10min)
- *   --model <name>       Gemini model (default: gemini-2.5-flash)
+ *   --delay <n>          Seconds between Gemini chunks (default: 120; Claude runs without delay)
+ *   --model <name>       Claude model (sonnet, opus) or a gemini-* model (default: sonnet)
  *   --skip-rephrase      Only extract, don't rephrase
  *   --skip-images        Don't extract images
  *   --filter <level>     Kanji filter: all, n3 (default: all)
@@ -31,6 +31,7 @@ import { execSync, spawnSync } from 'child_process';
 import { GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
 import { alignRephrase, parseMarkdown, type AlignReport } from './utils/rephrase-output';
+import { isClaudeModel, rephraseWithClaude, splitParagraphs } from './utils/claude-rephrase';
 
 // Load environment variables
 const envLocalPath = path.join(process.cwd(), '.env.local');
@@ -66,6 +67,8 @@ const MODEL_FALLBACK_ORDER = [
   AI_MODELS.GEMINI_2_5_FLASH,
   AI_MODELS.GEMINI_2_5_FLASH_LITE,
 ];
+
+const DEFAULT_REPHRASE_MODEL = 'sonnet';
 
 const VN_RETRY_CONFIG = {
   MAX_ATTEMPTS: 4,
@@ -603,6 +606,59 @@ async function processChunk(
   return { success: false, response: '', attempts: maxAttempts * modelsToTry.length };
 }
 
+interface ChunkOutput {
+  rawText: string;
+  readerText: string;
+  attempts: number;
+  error?: string;
+}
+
+interface ChunkOutputTarget {
+  rawPath: string;
+  furiganaPath: string;
+  sourceDir: string;
+  apiUrl: string;
+  fileName: string;
+  directory: string;
+}
+
+async function rephraseChunkWithGemini(chunk: string, model: string): Promise<ChunkOutput> {
+  const chunkStripped = stripRubyTags(chunk);
+  const result = await processChunk(chunk, model);
+  if (result.success) {
+    const aligned = alignRephrase(chunkStripped, result.response);
+    logAlignReport(aligned.report);
+    return { rawText: result.response, readerText: aligned.text, attempts: result.attempts };
+  }
+
+  // Each line stands in as its own rephrase so no content is skipped
+  console.log(`  Failed after ${result.attempts} attempts, using original text as fallback...`);
+  const lines = chunkStripped.split('\n').filter(l => l.trim().length > 0);
+  const fallbackResponse = lines.map(line => `< ${line}\n>> ${line}`).join('\n\n');
+  return {
+    rawText: fallbackResponse,
+    readerText: fallbackResponse,
+    attempts: result.attempts,
+    error: 'Used original text (rephrase failed)',
+  };
+}
+
+// A failed claude -p call (usage limit, sign-in) stops the run; this chunk stays unfinished, so rerunning resumes it.
+async function rephraseChunkWithClaude(chunk: string, model: string): Promise<ChunkOutput> {
+  const rephrased = await rephraseWithClaude(splitParagraphs(stripRubyTags(chunk)), model).catch((error: unknown) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`${reason}\nProgress is saved. Run the same command again to resume from this chunk.`, { cause: error });
+  });
+  const skippedCount = rephrased.skippedParagraphs.length;
+  rephrased.skippedParagraphs.forEach((paragraph) => console.log(`    ? kept original: ${paragraph.slice(0, 60)}`));
+  return {
+    rawText: rephrased.text,
+    readerText: rephrased.text,
+    attempts: rephrased.attempts,
+    error: skippedCount > 0 ? `${skippedCount} paragraph(s) kept their original text` : undefined,
+  };
+}
+
 // ============================================================================
 // Database Sync
 // ============================================================================
@@ -667,6 +723,33 @@ function addFuriganaToChunk(chunkText: string, outputDir: string): string {
 // Batch Rephrase Processing
 // ============================================================================
 
+// Chunks are appended, so a fresh start on top of an earlier run's output would repeat its passages.
+function setAsideEarlierOutput(outputPaths: string[]): void {
+  outputPaths.filter((outputPath) => fs.existsSync(outputPath)).forEach((outputPath) => {
+    const asidePath = `${outputPath}.bak`;
+    fs.renameSync(outputPath, asidePath);
+    console.log(`Starting fresh: moved the earlier output to ${path.basename(asidePath)}`);
+  });
+}
+
+async function saveChunkOutput(target: ChunkOutputTarget, output: ChunkOutput): Promise<void> {
+  const rawSeparator = fs.existsSync(target.rawPath) ? '\n\n' : '';
+  fs.appendFileSync(target.rawPath, rawSeparator + output.rawText, 'utf-8');
+
+  console.log(`  Adding furigana...`);
+  const withFurigana = addFuriganaToChunk(output.readerText, target.sourceDir);
+  const furiganaSeparator = fs.existsSync(target.furiganaPath) ? '\n\n' : '';
+  fs.appendFileSync(target.furiganaPath, furiganaSeparator + withFurigana, 'utf-8');
+
+  console.log(`  Syncing to database...`);
+  const synced = await syncToDatabase(target.apiUrl, target.fileName, target.directory);
+  if (synced) {
+    console.log(`  Database synced! Users can now read the updated content.`);
+    return;
+  }
+  console.log(`  Warning: Database sync failed. File saved locally.`);
+}
+
 async function batchRephrase(
   bookName: string,
   sourceDir: string,
@@ -690,6 +773,7 @@ async function batchRephrase(
   console.log(`Total characters: ${strippedLength.toLocaleString()} (excluding furigana)`);
 
   let progress = options.reset ? null : loadProgress(progressPath);
+  const isFreshStart = !progress;
   let chunks: string[];
 
   if (progress) {
@@ -701,24 +785,30 @@ async function batchRephrase(
     }
 
     console.log(`\nResuming from progress: ${progress.chunks.completed}/${progress.chunks.total} chunks done`);
+    console.log(`Model: ${progress.settings.model} (the model this book started with; --reset starts over with --model)`);
     const result = chunkText(sourceText, progress.settings.chunkSize);
     chunks = result.chunks;
   } else {
     const result = chunkText(sourceText, options.chunkSize);
     chunks = result.chunks;
 
-    const keyCount = getApiKeyCount();
-    const effectiveDelay = Math.ceil(options.delaySeconds / keyCount);
+    const usesClaude = isClaudeModel(options.model);
+    // The Claude subscription has no per-minute quota to wait out, so its chunks run back to back
+    const delaySeconds = usesClaude ? 0 : options.delaySeconds;
 
     console.log(`\nChunks: ${chunks.length} (target size: ${options.chunkSize} chars)`);
-    console.log(`API Keys: ${keyCount} (rotating for faster processing)`);
-    console.log(`Delay: ${effectiveDelay}s (${formatDuration(effectiveDelay)}) between chunks (base: ${options.delaySeconds}s / ${keyCount} keys)`);
+    if (usesClaude) {
+      console.log(`Rephraser: claude -p (no delay between chunks)`);
+    } else {
+      const keyCount = getApiKeyCount();
+      const effectiveDelay = Math.ceil(delaySeconds / keyCount);
+      console.log(`API Keys: ${keyCount} (rotating for faster processing)`);
+      console.log(`Delay: ${effectiveDelay}s (${formatDuration(effectiveDelay)}) between chunks (base: ${delaySeconds}s / ${keyCount} keys)`);
+      console.log(`Estimated total time: ${formatDuration(chunks.length * effectiveDelay)}`);
+    }
     console.log(`Model: ${options.model}`);
     console.log(`Database sync: ${options.apiUrl}`);
     console.log(`Furigana: enabled (adding after each chunk)`);
-
-    const estimatedTime = chunks.length * effectiveDelay;
-    console.log(`Estimated total time: ${formatDuration(estimatedTime)}`);
 
     progress = createProgress(
       bookName,
@@ -726,7 +816,7 @@ async function batchRephrase(
       sourceText,
       chunks,
       result.boundaries,
-      { chunkSize: options.chunkSize, delaySeconds: options.delaySeconds, model: options.model }
+      { chunkSize: options.chunkSize, delaySeconds, model: options.model }
     );
   }
 
@@ -741,6 +831,8 @@ async function batchRephrase(
     return true;
   }
 
+  if (isFreshStart) setAsideEarlierOutput([outputPath, outputPathFurigana]);
+
   // Setup graceful shutdown
   let shouldStop = false;
   process.on('SIGINT', () => {
@@ -750,6 +842,17 @@ async function batchRephrase(
 
   console.log('\n=== Starting Processing ===\n');
 
+  const outputTarget: ChunkOutputTarget = {
+    rawPath: outputPath,
+    furiganaPath: outputPathFurigana,
+    sourceDir,
+    apiUrl: options.apiUrl,
+    fileName: `${bookName}-rephrase-furigana`,
+    directory: `${options.outputDir}/${bookName}`,
+  };
+  // A resumed run keeps the model it started with, whatever --model says now
+  const usesClaudeForBook = isClaudeModel(progress.settings.model);
+  const rephraseChunk = usesClaudeForBook ? rephraseChunkWithClaude : rephraseChunkWithGemini;
   const startTime = Date.now();
   let processedCount = 0;
 
@@ -770,79 +873,26 @@ async function batchRephrase(
     chunkProgress.status = 'processing';
     saveProgress(progressPath, progress);
 
-    const result = await processChunk(chunk, progress.settings.model);
-    chunkProgress.attempts = result.attempts;
+    const output = await rephraseChunk(chunk, progress.settings.model);
+    chunkProgress.status = 'completed';
+    chunkProgress.completedAt = new Date().toISOString();
+    chunkProgress.attempts = output.attempts;
+    chunkProgress.error = output.error;
+    progress.chunks.completed++;
 
-    if (result.success) {
-      chunkProgress.status = 'completed';
-      chunkProgress.completedAt = new Date().toISOString();
-      progress.chunks.completed++;
+    await saveChunkOutput(outputTarget, output);
+    processedCount++;
 
-      // Save raw rephrase output
-      const separator = fs.existsSync(outputPath) ? '\n\n' : '';
-      fs.appendFileSync(outputPath, separator + result.response, 'utf-8');
+    const elapsed = (Date.now() - startTime) / 1000;
+    const avgTime = elapsed / processedCount;
+    const remaining = chunks.length - progress.chunks.completed;
+    const eta = remaining * Math.max(avgTime, progress.settings.delaySeconds);
 
-      const aligned = alignRephrase(chunkStripped, result.response);
-      logAlignReport(aligned.report);
-
-      // Add furigana
-      console.log(`  Adding furigana...`);
-      const finalText = addFuriganaToChunk(aligned.text, sourceDir);
-      const furiganaSeparator = fs.existsSync(outputPathFurigana) ? '\n\n' : '';
-      fs.appendFileSync(outputPathFurigana, furiganaSeparator + finalText, 'utf-8');
-      console.log(`  Furigana added!`);
-
-      // Sync to database
-      const outputDirectory = `${options.outputDir}/${bookName}`;
-      console.log(`  Syncing to database...`);
-      const synced = await syncToDatabase(options.apiUrl, `${bookName}-rephrase-furigana`, outputDirectory);
-      if (synced) {
-        console.log(`  Database synced! Users can now read the updated content.`);
-      } else {
-        console.log(`  Warning: Database sync failed. File saved locally.`);
-      }
-
-      processedCount++;
-
-      const elapsed = (Date.now() - startTime) / 1000;
-      const avgTime = elapsed / processedCount;
-      const remaining = chunks.length - progress.chunks.completed;
-      const eta = remaining * Math.max(avgTime, progress.settings.delaySeconds);
-
-      console.log(`  Done! (${progress.chunks.completed}/${chunks.length})`);
-      console.log(`  ETA for remaining: ${formatDuration(eta)}`);
-    } else {
-      // Fallback: include original text without rephrasing so no content is skipped
-      chunkProgress.status = 'completed';
-      chunkProgress.completedAt = new Date().toISOString();
-      chunkProgress.error = 'Used original text (rephrase failed)';
-      progress.chunks.completed++;
-
-      console.log(`  Failed after ${result.attempts} attempts, using original text as fallback...`);
-
-      // Convert original text to the expected format (each line as < original >> original)
-      const cleanChunk = stripRubyTags(chunk);
-      const lines = cleanChunk.split('\n').filter(l => l.trim().length > 0);
-      const fallbackResponse = lines.map(line => `< ${line}\n>> ${line}`).join('\n\n');
-
-      const separator = fs.existsSync(outputPath) ? '\n\n' : '';
-      fs.appendFileSync(outputPath, separator + fallbackResponse, 'utf-8');
-
-      console.log(`  Adding furigana to fallback...`);
-      const finalText = addFuriganaToChunk(fallbackResponse, sourceDir);
-      const furiganaSeparator = fs.existsSync(outputPathFurigana) ? '\n\n' : '';
-      fs.appendFileSync(outputPathFurigana, furiganaSeparator + finalText, 'utf-8');
-
-      const outputDirectory = `${options.outputDir}/${bookName}`;
-      const synced = await syncToDatabase(options.apiUrl, `${bookName}-rephrase-furigana`, outputDirectory);
-      if (synced) {
-        console.log(`  Database synced with fallback content.`);
-      }
-
-      processedCount++;
-    }
+    console.log(`  Done! (${progress.chunks.completed}/${chunks.length})`);
+    console.log(`  ETA for remaining: ${formatDuration(eta)}`);
 
     saveProgress(progressPath, progress);
+    if (usesClaudeForBook) continue;
 
     // Rotate to next API key for next chunk
     rotateAIClient();
@@ -893,8 +943,8 @@ Usage:
 Options:
   --output-dir <dir>   Output directory in public/ (default: bookv2-furigana)
   --chunk-size <n>     Target characters per chunk (default: 5000)
-  --delay <n>          Seconds between chunks (default: 600 = 10min)
-  --model <name>       Gemini model (default: gemini-2.5-flash)
+  --delay <n>          Seconds between Gemini chunks (default: 120; Claude runs without delay)
+  --model <name>       Claude model (sonnet, opus) or a gemini-* model (default: sonnet)
   --skip-rephrase      Only extract, don't rephrase
   --skip-images        Don't extract images
   --filter <level>     Kanji filter: all, n3 (default: all)
@@ -914,7 +964,7 @@ Example:
     outputDir: 'bookv2-furigana',
     chunkSize: 5000,
     delaySeconds: 120, // Base delay (divided by number of API keys)
-    model: AI_MODELS.GEMINI_3_FLASH_PREVIEW,
+    model: DEFAULT_REPHRASE_MODEL,
     skipRephrase: false,
     skipExtract: false,
     skipImages: false,
@@ -1035,4 +1085,7 @@ Example:
 `);
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
