@@ -9,7 +9,6 @@ import {
   DARK_COLORS,
   READER_CONFIG,
   STORAGE_KEYS,
-  PAGINATION_CONFIG,
   API_ROUTES,
   type PriorityScore,
 } from '@/lib/constants';
@@ -24,7 +23,16 @@ import { useBookMetadata } from '@/app/hooks/useBookMetadata';
 import { useGuestMode } from '@/app/hooks/useGuestMode';
 import GuestModeBanner from '@/app/components/ui/GuestModeBanner';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
-import { buildPlayableUnits } from '@/lib/content/bookModel';
+import {
+  detectContentType,
+  findBookmarkIndex,
+  legacyPageBookmark,
+  pageOfIndex,
+  pageStartIndex,
+  parseReaderItems,
+  toPlayableUnits,
+  totalPagesFor,
+} from '@/lib/content/bookModel';
 import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
@@ -228,18 +236,21 @@ function ReaderContent({
     return () => controller.abort();
   }, [fullFilePath, router]);
 
-  const playableUnits = useMemo(() => buildPlayableUnits(content), [content]);
+  // The book is parsed once here; ReadingContent renders these same items.
+  const readerItems = useMemo(() => parseReaderItems(content), [content]);
+  const contentType = useMemo(() => detectContentType(content), [content]);
+  const playableUnits = useMemo(() => toPlayableUnits(readerItems), [readerItems]);
+  const unitMainTexts = useMemo(() => playableUnits.map(unit => unit.main), [playableUnits]);
   const totalItems = playableUnits.length;
 
-  const totalPages = Math.ceil(totalItems / PAGINATION_CONFIG.ITEMS_PER_PAGE);
+  const totalPages = totalPagesFor(totalItems);
   const currentPage = Math.min(Math.max(1, pageParam), totalPages || 1);
   const progress = totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
 
-  const currentPageHeaders = useMemo(() => {
-    const start = (currentPage - 1) * PAGINATION_CONFIG.ITEMS_PER_PAGE;
-    const end = start + PAGINATION_CONFIG.ITEMS_PER_PAGE;
-    return playableUnits.slice(start, end).map(unit => stripFurigana(unit.main));
-  }, [playableUnits, currentPage]);
+  const currentPageHeaders = useMemo(
+    () => unitMainTexts.slice(pageStartIndex(currentPage), pageStartIndex(currentPage + 1)).map(stripFurigana),
+    [unitMainTexts, currentPage]
+  );
 
   // Priority scores are per-page; drop them (and any error) on page/book change.
   useEffect(() => {
@@ -280,7 +291,7 @@ function ReaderContent({
       }
       const data = await res.json();
       const scores = (Array.isArray(data.scores) ? data.scores : []) as PriorityScore[];
-      const start = (currentPage - 1) * PAGINATION_CONFIG.ITEMS_PER_PAGE;
+      const start = pageStartIndex(currentPage);
       setPriorityScores(
         Object.fromEntries(scores.map((score, index) => [start + index, score] as const))
       );
@@ -292,33 +303,21 @@ function ReaderContent({
   }, [currentPageHeaders, currentPage, priorityScores, isPrioritizing]);
 
   const bookmarkItemIndex = useMemo(() => {
-    if (!bookmarkText || /^page:\d+$/.test(bookmarkText)) return null;
-
-    const normalizedBookmark = stripFurigana(bookmarkText).replace(/[\r\n]/g, '').trim();
-    if (!normalizedBookmark) return null;
-
-    const itemIndex = playableUnits.findIndex(
-      unit => stripFurigana(unit.main).replace(/[\r\n]/g, '').trim() === normalizedBookmark
-    );
-
-    return itemIndex === -1 ? null : itemIndex;
-  }, [bookmarkText, playableUnits]);
+    if (!bookmarkText || legacyPageBookmark(bookmarkText) !== null) return null;
+    return findBookmarkIndex(unitMainTexts, bookmarkText);
+  }, [bookmarkText, unitMainTexts]);
 
   const bookmarkPage = useMemo(() => {
     if (!bookmarkText) return null;
-
-    const match = bookmarkText.match(/^page:(\d+)$/);
-    if (match) return parseInt(match[1], 10);
-
-    if (bookmarkItemIndex == null) return null;
-    return Math.floor(bookmarkItemIndex / PAGINATION_CONFIG.ITEMS_PER_PAGE) + 1;
+    const legacyPage = legacyPageBookmark(bookmarkText);
+    if (legacyPage !== null) return legacyPage;
+    return bookmarkItemIndex === null ? null : pageOfIndex(bookmarkItemIndex);
   }, [bookmarkText, bookmarkItemIndex]);
 
   const getStartIndex = useCallback(() => {
-    const pageTop = (currentPage - 1) * PAGINATION_CONFIG.ITEMS_PER_PAGE;
+    const pageTop = pageStartIndex(currentPage);
     if (bookmarkItemIndex == null) return pageTop;
-    const bookmarkPageForIndex = Math.floor(bookmarkItemIndex / PAGINATION_CONFIG.ITEMS_PER_PAGE) + 1;
-    return bookmarkPageForIndex === currentPage ? bookmarkItemIndex : pageTop;
+    return pageOfIndex(bookmarkItemIndex) === currentPage ? bookmarkItemIndex : pageTop;
   }, [currentPage, bookmarkItemIndex]);
 
   const { manifest: narration, error: narrationLoadError } = useNarration(
@@ -403,14 +402,14 @@ function ReaderContent({
 
   useEffect(() => {
     if (!audiobookEnabled || audioIndex < 0) return;
-    const targetPage = Math.floor(audioIndex / PAGINATION_CONFIG.ITEMS_PER_PAGE) + 1;
+    const targetPage = pageOfIndex(audioIndex);
     if (targetPage === currentPage) return;
     navigateToPage(targetPage, { replace: true });
   }, [audioIndex, audiobookEnabled, currentPage, navigateToPage]);
 
   useEffect(() => {
     if (!audiobookEnabled || audioIndex < 0) return;
-    const targetPage = Math.floor(audioIndex / PAGINATION_CONFIG.ITEMS_PER_PAGE) + 1;
+    const targetPage = pageOfIndex(audioIndex);
     if (targetPage !== currentPage) return;
     const timer = setTimeout(() => {
       const activeItem = document.querySelector(`[data-global-index="${audioIndex}"]`);
@@ -437,7 +436,7 @@ function ReaderContent({
     if (audioStatus === 'idle' || audioIndex < 0) return;
     const unit = playableUnits[audioIndex];
     if (!unit) return;
-    const page = Math.floor(audioIndex / PAGINATION_CONFIG.ITEMS_PER_PAGE) + 1;
+    const page = pageOfIndex(audioIndex);
     try {
       const res = await fetch(API_ROUTES.WRITE_BOOKMARK, {
         method: 'POST',
@@ -588,11 +587,9 @@ function ReaderContent({
   }, [currentPageHeaders]);
 
   const handleCopyPageRange = useCallback(async (fromPage: number, toPage: number) => {
-    const start = (fromPage - 1) * PAGINATION_CONFIG.ITEMS_PER_PAGE;
-    const end = toPage * PAGINATION_CONFIG.ITEMS_PER_PAGE;
-    const textToCopy = playableUnits
-      .slice(start, end)
-      .map(unit => stripFurigana(unit.main))
+    const textToCopy = unitMainTexts
+      .slice(pageStartIndex(fromPage), pageStartIndex(toPage + 1))
+      .map(stripFurigana)
       .join('\n');
 
     try {
@@ -605,7 +602,7 @@ function ReaderContent({
     } catch (error) {
       console.error('Failed to copy:', error);
     }
-  }, [playableUnits]);
+  }, [unitMainTexts]);
 
   if (isLoading) {
     return (
@@ -745,15 +742,15 @@ function ReaderContent({
         }}
       >
         <ReadingContent
-          content={content}
+          items={readerItems}
+          contentType={contentType}
           fileName={fileNameParam || ''}
           directory={directoryParam || ''}
-          bookmarkText={bookmarkText}
+          bookmarkIndex={bookmarkItemIndex}
           showFurigana={showFurigana}
           displayMode={displayMode}
           aiExplanationEnabled={aiExplanationEnabled}
           currentPage={currentPage}
-          itemsPerPage={PAGINATION_CONFIG.ITEMS_PER_PAGE}
           isDarkMode={isDarkMode}
           onBookmarkSuccess={refetchBookmark}
           onSentenceClick={handleSentenceClick}

@@ -1,24 +1,21 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import { parseReaderItems } from "@/lib/content/bookModel";
-import { stripFurigana } from "@/lib/utils/furiganaParser";
+import { pageStartIndex, type ContentType, type ReaderItem } from "@/lib/content/bookModel";
 import { COLORS, PRIORITY_LEVELS, type PriorityScore } from "@/lib/constants";
 import CollapsibleItem from "@/app/components/reading/CollapsibleItem";
 import ParagraphItem from "@/app/components/reading/ParagraphItem";
 
-type ContentType = "rephrase" | "furigana" | "plain";
-
 interface ReadingContentProps {
-  content: string;
+  items: readonly ReaderItem[];
+  contentType: ContentType;
   fileName: string;
   directory: string;
-  bookmarkText: string;
+  bookmarkIndex: number | null;
   showFurigana: boolean;
   displayMode: "collapsed" | "expanded";
   aiExplanationEnabled: boolean;
   currentPage: number;
-  itemsPerPage: number;
   isDarkMode: boolean;
   onBookmarkSuccess: () => void;
   onSentenceClick?: (sentence: string) => void;
@@ -28,21 +25,6 @@ interface ReadingContentProps {
   playingIndex?: number;
   onStartFromHere?: (unitIndex: number) => void;
   priorityScores?: Record<number, PriorityScore>;
-}
-
-function detectContentType(text: string): ContentType {
-  if (text.includes(">>") && (text.includes("<") || text.includes("\u003c"))) {
-    return "rephrase";
-  }
-  if (/<ruby>/.test(text) || /[^\[\]]+\[[^\[\]]+\]/.test(text)) {
-    return "furigana";
-  }
-  return "plain";
-}
-
-function normalizeForComparison(text: string): string {
-  const stripped = stripFurigana(text);
-  return stripped.replace(/[\r\n]/g, "").trim();
 }
 
 function priorityWrapperStyle(score: PriorityScore): CSSProperties {
@@ -85,15 +67,15 @@ function PriorityBadge({ score }: { score: PriorityScore }) {
 }
 
 export default function ReadingContent({
-  content,
+  items,
+  contentType,
   fileName,
   directory,
-  bookmarkText,
+  bookmarkIndex,
   showFurigana,
   displayMode,
   aiExplanationEnabled,
   currentPage,
-  itemsPerPage,
   isDarkMode,
   onBookmarkSuccess,
   onSentenceClick,
@@ -104,19 +86,15 @@ export default function ReadingContent({
   onStartFromHere,
   priorityScores,
 }: ReadingContentProps) {
-  const contentType = useMemo(() => detectContentType(content), [content]);
-
   const fullFilePath = directory ? `${directory}/${fileName}` : fileName;
+  const pageStart = pageStartIndex(currentPage);
 
-  const parsedItems = useMemo(() => parseReaderItems(content), [content]);
+  const paginatedItems = useMemo(
+    () => items.slice(pageStart, pageStartIndex(currentPage + 1)),
+    [items, pageStart, currentPage]
+  );
 
-  const paginatedItems = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    const end = start + itemsPerPage;
-    return parsedItems.slice(start, end);
-  }, [parsedItems, currentPage, itemsPerPage]);
-
-  if (parsedItems.length === 0) {
+  if (items.length === 0) {
     return (
       <div
         className="p-8 text-center font-gothic text-sm"
@@ -132,12 +110,8 @@ export default function ReadingContent({
       <div className="space-y-1">
         {paginatedItems.map((item, index) => {
           const typedItem = item as { head: string; subItems: string[] };
-          const normalizedHead = normalizeForComparison(typedItem.head);
-          const normalizedBookmark = normalizeForComparison(bookmarkText);
-          const isBookmarked = !!(
-            bookmarkText && normalizedHead === normalizedBookmark
-          );
-          const globalIndex = (currentPage - 1) * itemsPerPage + index;
+          const globalIndex = pageStart + index;
+          const isBookmarked = globalIndex === bookmarkIndex;
           const priorityScore = priorityScores?.[globalIndex];
 
           const itemEl = (
@@ -184,12 +158,8 @@ export default function ReadingContent({
     <div className="space-y-4">
       {paginatedItems.map((item, index) => {
         const typedItem = item as { text: string };
-        const normalizedText = normalizeForComparison(typedItem.text);
-        const normalizedBookmark = normalizeForComparison(bookmarkText);
-        const isBookmarked = !!(
-          bookmarkText && normalizedText === normalizedBookmark
-        );
-        const globalIndex = (currentPage - 1) * itemsPerPage + index;
+        const globalIndex = pageStart + index;
+        const isBookmarked = globalIndex === bookmarkIndex;
         const priorityScore = priorityScores?.[globalIndex];
 
         const itemEl = (
