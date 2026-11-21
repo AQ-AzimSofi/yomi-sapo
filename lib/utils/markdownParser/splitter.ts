@@ -3,7 +3,7 @@
  * 見出しプレフィックスがコンテンツに埋め込まれているエッジケースを処理
  */
 
-import { MARKDOWN_PATTERNS } from '@/lib/constants';
+import { MARKDOWN_PATTERNS } from '../../constants';
 
 /**
  * 見出しプレフィックスの位置を検索します（HTML タグを除外）
