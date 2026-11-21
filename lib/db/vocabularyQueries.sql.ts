@@ -1,18 +1,9 @@
+import type postgres from 'postgres';
 import { sql } from './connection';
-import type { VocabularyRow, QueryResult } from './schema';
+import type { VocabularyRow } from './schema';
 import type { VocabularyEntry } from '@/lib/types';
 import { toVocabularyDto } from './vocabularyDto';
 import { nanoid } from 'nanoid';
-
-function normalizeResult<T>(result: QueryResult<T>): T[] {
-  if (result && 'rows' in result && Array.isArray(result.rows)) {
-    return result.rows;
-  }
-  if (Array.isArray(result)) {
-    return result;
-  }
-  return [];
-}
 
 export interface VocabularyFilter {
   word?: string;
@@ -39,79 +30,34 @@ export interface UpdateVocabularyInput {
   notes?: string;
 }
 
-export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<VocabularyEntry[]> {
+function createdTodayCondition(): postgres.Fragment {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date();
+  endOfDay.setHours(23, 59, 59, 999);
+  return sql`created_at >= ${startOfDay} AND created_at <= ${endOfDay}`;
+}
+
+// postgres.js has no AND-join for fragments, so the conditions are folded into one.
+function whereVocabularyMatches(filter: VocabularyFilter): postgres.Fragment {
+  const conditions = [
+    filter.today ? createdTodayCondition() : null,
+    filter.word ? sql`word ILIKE ${'%' + filter.word + '%'}` : null,
+    filter.fileName ? sql`file_name = ${filter.fileName}` : null,
+    filter.directory ? sql`directory = ${filter.directory}` : null,
+  ].filter((condition) => condition !== null);
+  if (conditions.length === 0) return sql``;
+  return sql`WHERE ${conditions.reduce((clause, condition) => sql`${clause} AND ${condition}`)}`;
+}
+
+export async function getVocabularyEntries(filter: VocabularyFilter = {}): Promise<VocabularyEntry[]> {
   try {
-    let result: QueryResult<VocabularyRow>;
-
-    if (!filter || Object.keys(filter).length === 0) {
-      result = await sql<VocabularyRow>`
-        SELECT * FROM vocabulary_entries ORDER BY created_at DESC
-      `;
-    } else if (filter.today) {
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date();
-      endOfDay.setHours(23, 59, 59, 999);
-
-      if (filter.fileName && filter.directory) {
-        result = await sql<VocabularyRow>`
-          SELECT * FROM vocabulary_entries
-          WHERE created_at >= ${startOfDay} AND created_at <= ${endOfDay}
-            AND file_name = ${filter.fileName} AND directory = ${filter.directory}
-          ORDER BY created_at DESC
-        `;
-      } else if (filter.word) {
-        result = await sql<VocabularyRow>`
-          SELECT * FROM vocabulary_entries
-          WHERE created_at >= ${startOfDay} AND created_at <= ${endOfDay}
-            AND word ILIKE ${'%' + filter.word + '%'}
-          ORDER BY created_at DESC
-        `;
-      } else {
-        result = await sql<VocabularyRow>`
-          SELECT * FROM vocabulary_entries
-          WHERE created_at >= ${startOfDay} AND created_at <= ${endOfDay}
-          ORDER BY created_at DESC
-        `;
-      }
-    } else if (filter.word && filter.fileName && filter.directory) {
-      result = await sql<VocabularyRow>`
-        SELECT * FROM vocabulary_entries
-        WHERE word ILIKE ${'%' + filter.word + '%'}
-          AND file_name = ${filter.fileName} AND directory = ${filter.directory}
-        ORDER BY created_at DESC
-      `;
-    } else if (filter.fileName && filter.directory) {
-      result = await sql<VocabularyRow>`
-        SELECT * FROM vocabulary_entries
-        WHERE file_name = ${filter.fileName} AND directory = ${filter.directory}
-        ORDER BY created_at DESC
-      `;
-    } else if (filter.word) {
-      result = await sql<VocabularyRow>`
-        SELECT * FROM vocabulary_entries
-        WHERE word ILIKE ${'%' + filter.word + '%'}
-        ORDER BY created_at DESC
-      `;
-    } else if (filter.fileName) {
-      result = await sql<VocabularyRow>`
-        SELECT * FROM vocabulary_entries
-        WHERE file_name = ${filter.fileName}
-        ORDER BY created_at DESC
-      `;
-    } else if (filter.directory) {
-      result = await sql<VocabularyRow>`
-        SELECT * FROM vocabulary_entries
-        WHERE directory = ${filter.directory}
-        ORDER BY created_at DESC
-      `;
-    } else {
-      result = await sql<VocabularyRow>`
-        SELECT * FROM vocabulary_entries ORDER BY created_at DESC
-      `;
-    }
-
-    return normalizeResult(result).map(toVocabularyDto);
+    const rows = await sql<VocabularyRow[]>`
+      SELECT * FROM vocabulary_entries
+      ${whereVocabularyMatches(filter)}
+      ORDER BY created_at DESC
+    `;
+    return rows.map(toVocabularyDto);
   } catch (error) {
     console.error('Error fetching vocabulary entries:', error);
     throw error;
@@ -120,10 +66,9 @@ export async function getVocabularyEntries(filter?: VocabularyFilter): Promise<V
 
 export async function getVocabularyEntryById(id: string): Promise<VocabularyEntry | null> {
   try {
-    const result = await sql<VocabularyRow>`
+    const rows = await sql<VocabularyRow[]>`
       SELECT * FROM vocabulary_entries WHERE id = ${id}
     `;
-    const rows = normalizeResult(result);
     return rows.length > 0 ? toVocabularyDto(rows[0]) : null;
   } catch (error) {
     console.error('Error fetching vocabulary entry by id:', error);

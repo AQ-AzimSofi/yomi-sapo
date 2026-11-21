@@ -1,16 +1,6 @@
 import { sql } from './connection';
-import type { Bookmark, TextEntry, QueryResult } from './schema';
+import type { Bookmark, TextEntry } from './schema';
 import { normalizeNewlines } from '@/lib/content/bookModel';
-
-function normalizeResult<T>(result: QueryResult<T>): T[] {
-  if (result && 'rows' in result && Array.isArray(result.rows)) {
-    return result.rows;
-  }
-  if (Array.isArray(result)) {
-    return result;
-  }
-  return [];
-}
 
 export interface SavedBookmark {
   text: string;
@@ -19,13 +9,12 @@ export interface SavedBookmark {
 
 export async function getBookmark(fileName: string, directory: string = 'public'): Promise<SavedBookmark> {
   try {
-    const result = await sql<Pick<Bookmark, 'bookmark_text'> & { bookmark_page: number | null }>`
+    const rows = await sql<(Pick<Bookmark, 'bookmark_text'> & { bookmark_page: number | null })[]>`
       SELECT bookmark_text, bookmark_page
       FROM bookmarks
       WHERE file_name = ${fileName} AND directory = ${directory}
     `;
 
-    const rows = normalizeResult(result);
     if (rows.length === 0) {
       return { text: '', page: null };
     }
@@ -71,22 +60,23 @@ export async function initializeBookmarksForFiles(
   directory: string = 'public'
 ): Promise<void> {
   try {
-    const existing = await sql<Pick<Bookmark, 'file_name'>>`
-      SELECT file_name FROM bookmarks WHERE directory = ${directory}
-    `;
+    await sql.begin(async (tx) => {
+      const existing = await tx<Pick<Bookmark, 'file_name'>[]>`
+        SELECT file_name FROM bookmarks WHERE directory = ${directory}
+      `;
 
-    const rows = normalizeResult(existing);
-    const existingFiles = new Set(rows.map((row) => row.file_name));
+      const existingFiles = new Set(existing.map((row) => row.file_name));
 
-    for (const fileName of fileNames) {
-      if (!existingFiles.has(fileName)) {
-        await sql`
-          INSERT INTO bookmarks (file_name, directory, bookmark_text)
-          VALUES (${fileName}, ${directory}, '')
-          ON CONFLICT (file_name, directory) DO NOTHING
-        `;
+      for (const fileName of fileNames) {
+        if (!existingFiles.has(fileName)) {
+          await tx`
+            INSERT INTO bookmarks (file_name, directory, bookmark_text)
+            VALUES (${fileName}, ${directory}, '')
+            ON CONFLICT (file_name, directory) DO NOTHING
+          `;
+        }
       }
-    }
+    });
   } catch (error) {
     console.error('Error initializing bookmarks:', error);
     throw error;
@@ -99,13 +89,12 @@ export async function initializeBookmarksForFiles(
  * GREATEST (which skips NULLs) also catches rewrites that only bump created_at.
  */
 export async function getTextEntryVersion(fileName: string, directory: string): Promise<string | null> {
-  const result = await sql<{ bytes: number; updated_ms: string }>`
+  const rows = await sql<{ bytes: number; updated_ms: string }[]>`
     SELECT octet_length(content) AS bytes,
            FLOOR(EXTRACT(EPOCH FROM GREATEST(updated_at, created_at)) * 1000)::bigint AS updated_ms
     FROM text_entries
     WHERE file_name = ${fileName} AND directory = ${directory}
   `;
-  const rows = normalizeResult(result);
   return rows.length === 0 ? null : `${rows[0].bytes}-${rows[0].updated_ms}`;
 }
 
@@ -114,13 +103,12 @@ export async function getTextEntry(
   directory: string = 'public'
 ): Promise<string> {
   try {
-    const result = await sql<Pick<TextEntry, 'content'>>`
+    const rows = await sql<Pick<TextEntry, 'content'>[]>`
       SELECT content
       FROM text_entries
       WHERE file_name = ${fileName} AND directory = ${directory}
     `;
 
-    const rows = normalizeResult(result);
     if (rows.length === 0) {
       return '';
     }
@@ -160,13 +148,12 @@ export async function getAllTextEntries(): Promise<{
   filesByDirectory: Record<string, string[]>;
 }> {
   try {
-    const result = await sql<Pick<TextEntry, 'directory' | 'file_name'>>`
+    const rows = await sql<Pick<TextEntry, 'directory' | 'file_name'>[]>`
       SELECT DISTINCT directory, file_name
       FROM text_entries
       ORDER BY directory, file_name
     `;
 
-    const rows = normalizeResult(result);
     const filesByDirectory: Record<string, string[]> = {};
     const directoriesSet = new Set<string>();
 

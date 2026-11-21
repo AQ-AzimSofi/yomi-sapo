@@ -1,5 +1,4 @@
 import { sql } from './connection';
-import type { QueryResult } from './schema';
 import type { NarrationCue } from '@/lib/types';
 
 export interface NarrationRow {
@@ -8,21 +7,16 @@ export interface NarrationRow {
   cues: (NarrationCue | null)[];
 }
 
-function firstRow<T>(result: QueryResult<T>): T | null {
-  const rows: unknown = result && 'rows' in result && Array.isArray(result.rows) ? result.rows : result;
-  return Array.isArray(rows) && rows.length > 0 ? (rows[0] as T) : null;
-}
-
 export async function getNarration(
   fileName: string,
   directory: string
 ): Promise<NarrationRow | null> {
-  const result = await sql<NarrationRow>`
+  const [row] = await sql<NarrationRow[]>`
     SELECT audio_key, unit_count, cues
     FROM narration
     WHERE file_name = ${fileName} AND directory = ${directory}
   `;
-  return firstRow<NarrationRow>(result);
+  return row ?? null;
 }
 
 // The ::text step is load-bearing: casting a JS string straight to jsonb makes

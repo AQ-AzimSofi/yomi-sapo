@@ -81,8 +81,9 @@ ffmpeg -i "book.m4b" -map 0:a:0 -c:a aac -b:a 40k -ac 1 -ar 22050 \
   -movflags +faststart -map_metadata -1 "temp/<book>.m4a"
 aws s3 cp "temp/<book>.m4a" "s3://$BUCKET/<book>.m4a" --region ap-northeast-1
 
-# 4. Pair the cues with the S3 key in the database
-npx tsx scripts/db/sync-narration.ts \
+# 4. Pair the cues with the S3 key in the database (the react-server condition lets
+#    lib/db/connection.ts, which is server-only, load outside Next.js)
+npx tsx --conditions=react-server scripts/db/sync-narration.ts \
   --manifest "temp/<book>.narration.json" \
   --audio-key "<book>.m4a" \
   --directory "bookv2-furigana" \

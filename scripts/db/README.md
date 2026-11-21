@@ -1,5 +1,17 @@
 # Database Scripts
 
+## migrate.ts
+
+Brings the local database to the current schema. It runs `CREATE_TABLES_SQL` and then `MIGRATIONS_SQL` from `lib/db/schema.ts`, the same SQL as `GET /api/init-db`, against `DATABASE_URL` in `.env.local`. Every statement is idempotent, so running it again changes nothing.
+
+```bash
+npm run db:migrate    # npx tsx scripts/db/migrate.ts
+```
+
+It prints the target host and refuses any host other than `localhost` or `127.0.0.1`, so production schema changes stay a deliberate manual step (see the change log below). A new column goes in `MIGRATIONS_SQL` as an `ADD COLUMN IF NOT EXISTS` statement.
+
+---
+
 ## sync.ts
 
 Interactive sync between production (Neon PG17) and local (Docker PG15). It shows the differences per table, then pulls, pushes or does both. `npm run dev` runs the same sync when it starts and stops (`scripts/dev-with-sync.ts`).
