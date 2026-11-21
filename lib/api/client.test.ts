@@ -7,6 +7,7 @@ import {
   explainSentence,
   fetchBookText,
   fetchBookmark,
+  fetchNarration,
   prioritize,
   request,
   saveBookmark,
@@ -434,5 +435,39 @@ describe('fetchBookText', () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'preview_only', message: 'Guests may only open the preview books' } }, 403));
 
     await expect(fetchBookText(BOOK)).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('fetchNarration', () => {
+  const manifest = { audioUrl: 'https://audio.example/book.m4a', unitCount: 1, cues: [{ start: 0, end: 1 }] };
+
+  it("reads the book's manifest with the reader's AbortSignal", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(manifest));
+    const controller = new AbortController();
+
+    expect(await fetchNarration(BOOK, controller.signal)).toEqual(manifest);
+    expect(lastCall().url).toBe(`/api/narration?${bookQuery(BOOK)}`);
+    expect(lastCall().init).toMatchObject({ method: 'GET', signal: controller.signal });
+  });
+
+  it.each([
+    [404, 'not_found'],
+    [401, 'sign_in_required'],
+  ])('answers null for a %i, a text without a recording or a guest', async (status, code) => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code, message: 'No narration' } }, status));
+
+    expect(await fetchNarration(BOOK)).toBeNull();
+  });
+
+  it('answers null when an edge answers ok with an HTML page', async () => {
+    fetchMock.mockResolvedValue(new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } }));
+
+    expect(await fetchNarration(BOOK)).toBeNull();
+  });
+
+  it('throws an ApiError for any other failure', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'not_configured', message: 'Narration storage is not configured' } }, 500));
+
+    await expect(fetchNarration(BOOK)).rejects.toMatchObject({ status: 500 });
   });
 });

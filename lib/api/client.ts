@@ -8,6 +8,7 @@ import { guestKeyHeaders, promptGuestKeyOnFailure, type GuestKeyKind } from '@/l
 import { isRecord } from '@/lib/utils/typeGuards';
 import { readBookTextThroughCache } from '@/lib/bookTextCache';
 import type { BookRef } from '@/lib/books/bookRef';
+import type { NarrationManifest } from '@/lib/types';
 import type {
   ApiErrorResponse,
   BookmarkResponse,
@@ -149,6 +150,27 @@ export async function fetchBookText(book: BookRef, signal?: AbortSignal): Promis
 /** The saved bookmark, or null when the server gives none (guests have no bookmarks). */
 export async function fetchBookmark(book: BookRef, signal?: AbortSignal): Promise<BookmarkResponse | null> {
   return request<BookmarkResponse>(API_ROUTES.READ_BOOKMARK, { query: bookParams(book), signal }).catch(nullOnApiError);
+}
+
+// 404 means this text has no recording and 401 means a guest, who is never served
+// one. Both are the normal case, not a fault to show.
+const NO_RECORDING_STATUSES = [401, 404];
+
+function nullWhenNoRecording(error: unknown): null {
+  if (error instanceof ApiError && NO_RECORDING_STATUSES.includes(error.status)) return null;
+  throw error;
+}
+
+/**
+ * The narration manifest paired with a book, or null when there is none to play.
+ * It is not validated here: the caller checks it against the text it will play.
+ */
+export async function fetchNarration(book: BookRef, signal?: AbortSignal): Promise<NarrationManifest | null> {
+  const response = await send(API_ROUTES.NARRATION, { query: bookParams(book), signal }).catch(nullWhenNoRecording);
+  if (!response) return null;
+  // An edge or proxy can answer with an HTML body and a perfectly ok status.
+  if (!response.headers.get('content-type')?.includes('json')) return null;
+  return response.json();
 }
 
 export async function saveBookmark(bookmark: SaveBookmarkRequest): Promise<WriteResponse> {
