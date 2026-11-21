@@ -1,4 +1,4 @@
-import { parseReaderItems, type ReaderItem } from '@/lib/content/bookModel';
+import { detectContentType, normalizeNewlines, parseReaderItems, type ReaderItem } from '@/lib/content/bookModel';
 import { PAGINATION_CONFIG } from '@/lib/constants';
 
 function serializeItem(item: ReaderItem): string {
@@ -25,5 +25,12 @@ export function truncateToPreviewPages(
   // Clamp defensively: a mis-edited (zero/negative/non-integer) cap must never
   // widen the preview via slice(0, negative) or a fractional boundary.
   const maxUnits = Math.max(0, Math.floor(maxPages)) * itemsPerPage;
-  return parseReaderItems(content).slice(0, maxUnits).map(serializeItem).join('\n\n');
+  const preview = parseReaderItems(content).slice(0, maxUnits).map(serializeItem).join('\n\n');
+  // The guest reader detects the format again. A preview that reads as another
+  // format would show different units, so send nothing rather than wrong text.
+  if (preview && detectContentType(preview) !== detectContentType(normalizeNewlines(content))) {
+    console.warn('Guest preview changed content type; sending an empty preview');
+    return '';
+  }
+  return preview;
 }

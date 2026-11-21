@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { truncateToPreviewPages } from './truncatePreview';
 import { parseReaderItems } from '@/lib/content/bookModel';
 import { PAGINATION_CONFIG } from '@/lib/constants';
@@ -100,6 +100,17 @@ describe('truncateToPreviewPages', () => {
 
   it('cuts CRLF plain content by paragraph instead of returning the whole book', () => {
     expect(truncateToPreviewPages(FIVE_UNIT_PLAIN.replace(/\n/g, '\r\n'), 1, ITEMS_PER_PAGE)).toBe('一。\n\n二。');
+  });
+
+  it.each([
+    ['rephrase whose kept item has no sub items', '<一\n\n<二\n>>に', 1],
+    ['plain paragraphs that start with an indented >> and <', '<注意\n\n >>矢印', 2],
+  ])('sends an empty preview instead of %s read back as another format', (_name, content, maxUnits) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(truncateToPreviewPages(content, 1, maxUnits)).toBe('');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('never returns text the parser did not keep, even when the book fits in the preview', () => {
