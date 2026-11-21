@@ -4,12 +4,21 @@ import {
   updateVocabularyEntry,
   deleteVocabularyEntry,
 } from '@/lib/db/vocabularyQueries.sql';
+import { isAuthenticated } from '@/lib/auth/apiSession';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+async function rejectGuest(): Promise<NextResponse | null> {
+  if (await isAuthenticated()) return null;
+  return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+}
+
 export async function GET(request: Request, { params }: RouteParams) {
+  const rejection = await rejectGuest();
+  if (rejection) return rejection;
+
   try {
     const { id } = await params;
     const entry = await getVocabularyEntryById(id);
@@ -35,6 +44,9 @@ export async function GET(request: Request, { params }: RouteParams) {
 }
 
 export async function PUT(request: Request, { params }: RouteParams) {
+  const rejection = await rejectGuest();
+  if (rejection) return rejection;
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -64,6 +76,9 @@ export async function PUT(request: Request, { params }: RouteParams) {
 }
 
 export async function DELETE(request: Request, { params }: RouteParams) {
+  const rejection = await rejectGuest();
+  if (rejection) return rejection;
+
   try {
     const { id } = await params;
     await deleteVocabularyEntry(id);
