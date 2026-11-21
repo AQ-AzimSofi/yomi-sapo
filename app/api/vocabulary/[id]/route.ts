@@ -5,6 +5,7 @@ import {
   deleteVocabularyEntry,
 } from '@/lib/db/vocabularyQueries.sql';
 import { isAuthenticated } from '@/lib/auth/apiSession';
+import type { VocabularyEntryResponse } from '@/lib/types';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -30,7 +31,7 @@ export async function GET(request: Request, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json({
+    return NextResponse.json<VocabularyEntryResponse>({
       success: true,
       entry,
     });
@@ -61,7 +62,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json({
+    return NextResponse.json<VocabularyEntryResponse>({
       success: true,
       message: 'Vocabulary entry updated',
       entry,

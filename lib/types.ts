@@ -139,6 +139,18 @@ export interface VocabularyEntry {
   updatedAt: string;
 }
 
+export interface VocabularyListResponse {
+  success: true;
+  entries: VocabularyEntry[];
+  count: number;
+}
+
+export interface VocabularyEntryResponse {
+  success: true;
+  message?: string;
+  entry: VocabularyEntry;
+}
+
 // TTS（Text-to-Speech）型
 export interface TTSRequest {
   text: string;
