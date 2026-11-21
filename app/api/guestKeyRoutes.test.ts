@@ -60,6 +60,22 @@ describe('a guest without their own key', () => {
   });
 });
 
+describe('a body with a wrong-typed field', () => {
+  it.each([
+    ['explain-sentence context', explainSentence, { sentence: '本を読む。', context: 5 }],
+    ['translate targetLanguage', translate, { text: '本を読む。', targetLanguage: 5 }],
+    ['tts speed', synthesizeSpeech, { text: '本を読む。', speed: 'fast' }],
+    ['tts voiceGender', synthesizeSpeech, { text: '本を読む。', voiceGender: 'ROBOT' }],
+  ] as const)('answers 400 without calling Google for a bad %s', async (_field, handler, body) => {
+    const response = await handler(postRequest(body, OWNER_HEADERS));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe('invalid_body');
+    expect(generateContent).not.toHaveBeenCalled();
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/explain-sentence', () => {
   it("explains with the guest's own Gemini key", async () => {
     generateContent.mockResolvedValue({ text: '説明' });
