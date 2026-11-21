@@ -6,6 +6,7 @@ import { COLORS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { clearBookTextCache } from '@/lib/bookTextCache';
 import { ApiError, login } from '@/lib/api/client';
+import { safeReturnPath } from '@/lib/auth/returnPath';
 
 export default function LoginPage() {
   // An expired session lands here too, not only the sign-out button, so drop
@@ -27,7 +28,9 @@ export default function LoginPage() {
 
     try {
       await login(password);
-      router.push('/');
+      // The middleware sent the visitor here from a locked page and named it in next.
+      const requestedPath = new URLSearchParams(window.location.search).get('next');
+      router.push(safeReturnPath(requestedPath));
       router.refresh();
     } catch (err) {
       // A JSON error body is the server's answer about the password; without one
