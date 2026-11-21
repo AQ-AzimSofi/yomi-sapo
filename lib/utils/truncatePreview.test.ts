@@ -89,5 +89,7 @@ describe('truncateToPreviewPages', () => {
     expect(truncateToPreviewPages(FIVE_UNIT_PLAIN, 1.9, ITEMS_PER_PAGE)).toBe('一。\n\n二。');
   });
 
-  it.todo('cuts CRLF plain content by paragraph instead of returning the whole book (bug)');
+  it('cuts CRLF plain content by paragraph instead of returning the whole book', () => {
+    expect(truncateToPreviewPages(FIVE_UNIT_PLAIN.replace(/\n/g, '\r\n'), 1, ITEMS_PER_PAGE)).toBe('一。\n\n二。');
+  });
 });
