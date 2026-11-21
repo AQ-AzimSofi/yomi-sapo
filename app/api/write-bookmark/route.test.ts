@@ -97,6 +97,15 @@ describe('POST /api/write-bookmark', () => {
     });
   });
 
+  // Matches the key read-bookmark looks up, so the saved bookmark is the one the reader finds.
+  it('moves a slash in a separate fileName into the directory', async () => {
+    await POST(bookmarkRequest({ directory: 'bookv2-furigana', fileName: '感謝脳/感謝脳-rephrase-furigana', content: '一文目' }));
+
+    expect(upsertBookmark).toHaveBeenCalledWith(
+      expect.objectContaining({ fileName: '感謝脳-rephrase-furigana', directory: 'bookv2-furigana/感謝脳' })
+    );
+  });
+
   it('saves a legacy target without a slash in the public folder, as before', async () => {
     await POST(bookmarkRequest({ target: 'text-1', content: '一文目' }));
 
