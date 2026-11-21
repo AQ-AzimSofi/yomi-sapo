@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getVocabularyEntries, createVocabularyEntry } from '@/lib/db/vocabularyQueries.sql';
 import { isAuthenticated } from '@/lib/auth/apiSession';
+import type { VocabularyEntryResponse, VocabularyListResponse } from '@/lib/types';
 
 export async function GET(request: Request) {
   try {
     if (!(await isAuthenticated())) {
-      return NextResponse.json({ success: true, entries: [], count: 0 });
+      return NextResponse.json<VocabularyListResponse>({ success: true, entries: [], count: 0 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
       today,
     });
 
-    return NextResponse.json({
+    return NextResponse.json<VocabularyListResponse>({
       success: true,
       entries,
       count: entries.length,
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
       notes,
     });
 
-    return NextResponse.json({
+    return NextResponse.json<VocabularyEntryResponse>({
       success: true,
       message: 'Vocabulary entry created',
       entry,

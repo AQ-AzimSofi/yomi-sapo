@@ -40,15 +40,15 @@ export interface TextEntry {
   created_at?: Date;
 }
 
-export interface VocabularyEntry {
+export interface VocabularyRow {
   id: string;
   word: string;
-  reading?: string;
+  reading: string | null;
   sentence: string;
   file_name: string;
   directory: string;
-  paragraph_text?: string;
-  notes?: string;
+  paragraph_text: string | null;
+  notes: string | null;
   created_at: Date;
   updated_at: Date;
 }

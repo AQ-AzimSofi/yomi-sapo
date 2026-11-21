@@ -125,7 +125,7 @@ export interface ExplanationCache {
   [key: string]: CachedExplanation;
 }
 
-// 単語帳機能の型
+// 単語帳APIが返すエントリ。日時はJSONを通るのでISO 8601の文字列
 export interface VocabularyEntry {
   id: string;
   word: string;
@@ -135,8 +135,20 @@ export interface VocabularyEntry {
   directory: string;
   paragraphText: string | null;
   notes: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VocabularyListResponse {
+  success: true;
+  entries: VocabularyEntry[];
+  count: number;
+}
+
+export interface VocabularyEntryResponse {
+  success: true;
+  message?: string;
+  entry: VocabularyEntry;
 }
 
 // TTS（Text-to-Speech）型
