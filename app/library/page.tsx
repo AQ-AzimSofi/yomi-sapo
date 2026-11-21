@@ -7,6 +7,7 @@ import GuestModeBanner from '@/app/components/ui/GuestModeBanner';
 import AppHeader, { NAV_ITEM_CLASS } from '@/app/components/ui/AppHeader';
 import LibraryGrid from './components/LibraryGrid';
 import DbSyncModal from './components/DbSyncModal';
+import { IS_DB_SYNC_AVAILABLE } from './dbSyncAvailability';
 
 export default function LibraryPage() {
   const [showSync, setShowSync] = useState(false);
@@ -26,9 +27,11 @@ export default function LibraryPage() {
           currentPage="library"
           isGuest={isGuest}
           extraActions={
-            <button onClick={() => setShowSync(true)} className={NAV_ITEM_CLASS}>
-              同期
-            </button>
+            IS_DB_SYNC_AVAILABLE && (
+              <button onClick={() => setShowSync(true)} className={NAV_ITEM_CLASS}>
+                同期
+              </button>
+            )
           }
         />
 
@@ -38,7 +41,7 @@ export default function LibraryPage() {
         </main>
       </div>
 
-      {showSync && <DbSyncModal onClose={() => setShowSync(false)} />}
+      {IS_DB_SYNC_AVAILABLE && showSync && <DbSyncModal onClose={() => setShowSync(false)} />}
     </div>
   );
 }

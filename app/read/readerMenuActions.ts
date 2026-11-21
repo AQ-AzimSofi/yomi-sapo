@@ -61,7 +61,6 @@ export function readerMenuActions(state: ReaderMenuState, handlers: ReaderMenuHa
       label: prioritizeLabel(state),
       onSelect: handlers.prioritize,
       active: state.hasPriority,
-      beta: true,
     },
     {
       id: 'rephrase',

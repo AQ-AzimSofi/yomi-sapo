@@ -37,7 +37,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  return NextResponse.redirect(new URL('/login', request.url));
+  // The login page returns here after sign-in (see lib/auth/returnPath).
+  const returnPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  return NextResponse.redirect(new URL(`/login?${new URLSearchParams({ next: returnPath })}`, request.url));
 }
 
 // Protect all routes except public ones

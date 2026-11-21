@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { COLORS, STORAGE_KEYS, THEME } from '@/lib/constants';
+import { STORAGE_KEYS, THEME } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import type { Point, Size } from '@/lib/utils/draggablePosition';
 import { useDraggablePosition } from '@/app/hooks/useDraggablePosition';
@@ -14,7 +14,6 @@ export interface FabAction {
   onSelect: () => void;
   active?: boolean;
   keepMenuOpen?: boolean;
-  beta?: boolean;
 }
 
 interface ReaderFABProps {
@@ -123,14 +122,6 @@ export default function ReaderFAB({ actions }: ReaderFABProps) {
                       <FabIcon name={action.icon} />
                     </span>
                     <span className="text-[13px] font-medium whitespace-nowrap">{action.label}</span>
-                    {action.beta && (
-                      <span
-                        className="text-[9px] font-bold px-1.5 py-0.5"
-                        style={{ backgroundColor: COLORS.START_CURSOR, color: COLORS.SURFACE, letterSpacing: '0.5px' }}
-                      >
-                        BETA
-                      </span>
-                    )}
                   </button>
                 ))}
               </div>

@@ -4,13 +4,16 @@ import { getRedirectUrl, unstable_doesMiddlewareMatch } from 'next/experimental/
 import { SignJWT } from 'jose';
 import { config, middleware } from './middleware';
 import { PUBLIC_BOOKS } from '@/lib/publicBooks';
+import { safeReturnPath } from '@/lib/auth/returnPath';
 
 const ORIGIN = 'http://localhost:3333';
 const SESSION_SECRET = 'test-session-secret-0123456789abcdef';
 const OTHER_SECRET = 'other-session-secret-0123456789abcdef';
 
 const PASS_THROUGH = { isPassThrough: true, redirectUrl: null };
-const REDIRECT_TO_LOGIN = { isPassThrough: false, redirectUrl: `${ORIGIN}/login` };
+function redirectToLogin(path: string) {
+  return { isPassThrough: false, redirectUrl: `${ORIGIN}/login?${new URLSearchParams({ next: path })}` };
+}
 
 function isMatched(path: string): boolean {
   return unstable_doesMiddlewareMatch({ config, url: `${ORIGIN}${path}` });
@@ -67,7 +70,7 @@ describe('middleware', () => {
   });
 
   it.each(['/loginx', '/login-admin', '/login/extra'])('redirects a guest opening %s, which only starts with /login', async (path) => {
-    expect(await runMiddleware(path)).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware(path)).toEqual(redirectToLogin(path));
   });
 
   it('lets a guest open the home page', async () => {
@@ -87,21 +90,37 @@ describe('middleware', () => {
   it('redirects a guest opening the reader for a book not on the allowlist', async () => {
     const path = readerPath('bookv2-furigana/ひみつの本', 'ひみつの本-rephrase-furigana');
 
-    expect(await runMiddleware(path)).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware(path)).toEqual(redirectToLogin(path));
+  });
+
+  it('sends a guest to the login page with the locked reader path and query in next', async () => {
+    const path = readerPath('bookv2-furigana/ひみつの本', 'ひみつの本-rephrase-furigana');
+
+    const { redirectUrl } = await runMiddleware(path);
+
+    expect(new URL(redirectUrl ?? '').searchParams.get('next')).toBe(path);
+  });
+
+  it('hands the login page a next path that the sign-in returns to unchanged', async () => {
+    const path = `${readerPath('bookv2-furigana/ひみつの本', 'ひみつの本-rephrase-furigana')}&page=3`;
+
+    const { redirectUrl } = await runMiddleware(path);
+
+    expect(safeReturnPath(new URL(redirectUrl ?? '').searchParams.get('next'))).toBe(path);
   });
 
   it('redirects a guest opening the reader without a book', async () => {
-    expect(await runMiddleware('/read')).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware('/read')).toEqual(redirectToLogin('/read'));
   });
 
   it('redirects a guest opening the reader with an allowlisted directory but another file', async () => {
     const path = readerPath(PUBLIC_BOOKS[0].directory, 'ひみつの本-rephrase-furigana');
 
-    expect(await runMiddleware(path)).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware(path)).toEqual(redirectToLogin(path));
   });
 
   it('redirects a guest opening the vocabulary page', async () => {
-    expect(await runMiddleware('/vocabulary')).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware('/vocabulary')).toEqual(redirectToLogin('/vocabulary'));
   });
 
   it('lets a valid session open the vocabulary page', async () => {
@@ -118,20 +137,20 @@ describe('middleware', () => {
   });
 
   it('treats a malformed session token as a guest', async () => {
-    expect(await runMiddleware('/vocabulary', 'not-a-jwt')).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware('/vocabulary', 'not-a-jwt')).toEqual(redirectToLogin('/vocabulary'));
   });
 
   it('treats a token signed with another secret as a guest', async () => {
     const token = await signSessionToken(OTHER_SECRET);
 
-    expect(await runMiddleware('/vocabulary', token)).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware('/vocabulary', token)).toEqual(redirectToLogin('/vocabulary'));
   });
 
   it('treats an expired session token as a guest', async () => {
     const expiredAtSecs = Math.floor(Date.now() / 1000) - 60;
     const token = await signSessionToken(SESSION_SECRET, expiredAtSecs);
 
-    expect(await runMiddleware('/vocabulary', token)).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware('/vocabulary', token)).toEqual(redirectToLogin('/vocabulary'));
   });
 
   it('still lets a guest with an invalid token open the library', async () => {
@@ -142,6 +161,6 @@ describe('middleware', () => {
     const token = await signSessionToken(SESSION_SECRET);
     vi.stubEnv('SESSION_SECRET', undefined);
 
-    expect(await runMiddleware('/vocabulary', token)).toEqual(REDIRECT_TO_LOGIN);
+    expect(await runMiddleware('/vocabulary', token)).toEqual(redirectToLogin('/vocabulary'));
   });
 });
