@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isAuthenticated } from '@/lib/auth/apiSession';
+import { ownerSessionHeaders, TEST_SESSION_SECRET } from '@/lib/auth/testSession';
 import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
 import { PUBLIC_BOOKS } from '@/lib/publicBooks';
 import { PAGINATION_CONFIG } from '@/lib/constants';
 import { GET } from './route';
 
-vi.mock('@/lib/auth/apiSession', () => ({ isAuthenticated: vi.fn() }));
 vi.mock('@/lib/db/queries', () => ({ getTextEntry: vi.fn(), getTextEntryVersion: vi.fn() }));
 
 const OWNER_BOOK = { directory: 'bookv2-furigana/ほん', fileName: 'ほん-rephrase-furigana' };
@@ -13,9 +12,14 @@ const BOOK_TEXT = '< 一文目\n>> やさしい一文目';
 const OWNER_PATH = `${OWNER_BOOK.directory}/${OWNER_BOOK.fileName}`;
 const PUBLIC_BOOK = PUBLIC_BOOKS[0];
 const PUBLIC_PATH = `${PUBLIC_BOOK.directory}/${PUBLIC_BOOK.fileName}`;
+const OWNER_HEADERS = await ownerSessionHeaders();
+
+function guestReadRequest(fileName: string, headers: Record<string, string> = {}): Request {
+  return new Request(`http://localhost/api/read-public-txt?fileName=${encodeURIComponent(fileName)}`, { headers });
+}
 
 function readRequest(fileName: string, headers: Record<string, string> = {}): Request {
-  return new Request(`http://localhost/api/read-public-txt?fileName=${encodeURIComponent(fileName)}`, { headers });
+  return guestReadRequest(fileName, { ...OWNER_HEADERS, ...headers });
 }
 
 function versionFor(location: { file: string; directory: string }): string | null {
@@ -23,12 +27,13 @@ function versionFor(location: { file: string; directory: string }): string | nul
 }
 
 beforeEach(() => {
-  vi.mocked(isAuthenticated).mockResolvedValue(true);
+  vi.stubEnv('SESSION_SECRET', TEST_SESSION_SECRET);
   vi.mocked(getTextEntryVersion).mockImplementation(async (file, directory) => versionFor({ file, directory }));
   vi.mocked(getTextEntry).mockResolvedValue(BOOK_TEXT);
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
 
@@ -77,19 +82,17 @@ describe('GET /api/read-public-txt', () => {
 
   it('gives a guest preview its own ETag, separate from the full book', async () => {
     const book = PUBLIC_BOOKS[0];
-    vi.mocked(isAuthenticated).mockResolvedValue(false);
     vi.mocked(getTextEntryVersion).mockResolvedValue('5000-1700000000000');
 
-    const response = await GET(readRequest(`${book.directory}/${book.fileName}`));
+    const response = await GET(guestReadRequest(`${book.directory}/${book.fileName}`));
 
     expect(response.status).toBe(200);
     expect(response.headers.get('etag')).toBe(`"5000-1700000000000-preview${book.maxPreviewPages}x${PAGINATION_CONFIG.ITEMS_PER_PAGE}-v1\"`);
   });
 
   it('refuses a guest reading a book outside the allowlist without touching the database', async () => {
-    vi.mocked(isAuthenticated).mockResolvedValue(false);
 
-    const response = await GET(readRequest(`${OWNER_BOOK.directory}/${OWNER_BOOK.fileName}`));
+    const response = await GET(guestReadRequest(`${OWNER_BOOK.directory}/${OWNER_BOOK.fileName}`));
 
     expect(response.status).toBe(403);
     expect(getTextEntryVersion).not.toHaveBeenCalled();
@@ -149,11 +152,10 @@ describe('GET /api/read-public-txt', () => {
   });
 
   it('cuts the text a guest receives to the preview', async () => {
-    vi.mocked(isAuthenticated).mockResolvedValue(false);
     vi.mocked(getTextEntryVersion).mockResolvedValue('5000-1700000000000');
     vi.mocked(getTextEntry).mockResolvedValue(Array.from({ length: 400 }, (_, paragraph_i) => `段落${paragraph_i}。`).join('\n\n'));
 
-    const { text } = await (await GET(readRequest(PUBLIC_PATH))).json();
+    const { text } = await (await GET(guestReadRequest(PUBLIC_PATH))).json();
 
     expect(text).toContain('段落0。');
     expect(text).not.toContain('段落399。');

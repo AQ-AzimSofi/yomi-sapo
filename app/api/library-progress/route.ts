@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isAuthenticated } from '@/lib/auth/apiSession';
+import { withAuth } from '@/lib/auth/guards';
 import { findPublicBook } from '@/lib/publicBooks';
 import { getLibraryRows, type LibraryRow } from '@/lib/db/libraryProgressQueries.sql';
 
@@ -35,19 +35,14 @@ function toBookProgress(row: LibraryRow, isSignedIn: boolean): BookProgress {
   };
 }
 
-export async function GET() {
-  try {
-    const isSignedIn = await isAuthenticated();
-    // Guests only see allowlisted books, and never the owner's reading position.
-    const rows = await getLibraryRows(
-      (row) => isSignedIn || findPublicBook(row.directory, row.file_name) !== null
-    );
-    const progressData: ProgressResponse = Object.fromEntries(
-      rows.map((row) => [`${row.directory}/${row.file_name}`, toBookProgress(row, isSignedIn)])
-    );
-    return NextResponse.json(progressData);
-  } catch (error) {
-    console.error('Error fetching library progress:', error);
-    return NextResponse.json({ error: 'Failed to fetch library progress' }, { status: 500 });
-  }
-}
+export const GET = withAuth('viewer', async (request, viewer) => {
+  const isSignedIn = viewer === 'owner';
+  // Guests only see allowlisted books, and never the owner's reading position.
+  const rows = await getLibraryRows(
+    (row) => isSignedIn || findPublicBook(row.directory, row.file_name) !== null
+  );
+  const progressData: ProgressResponse = Object.fromEntries(
+    rows.map((row) => [`${row.directory}/${row.file_name}`, toBookProgress(row, isSignedIn)])
+  );
+  return NextResponse.json(progressData);
+});
