@@ -30,6 +30,8 @@ import type {
   RubyRegistryResponse,
   SaveBookmarkRequest,
   SaveRubyEntryRequest,
+  SaveVocabularyRequest,
+  SaveVocabularyResponse,
   SessionResponse,
   TextFileListResponse,
   TranslateRequest,
@@ -259,6 +261,11 @@ export async function synthesizeSpeech(speech: TTSRequest): Promise<TTSResponse>
 
 export async function fetchVocabulary(): Promise<VocabularyListResponse> {
   return request<VocabularyListResponse>(API_ROUTES.VOCABULARY);
+}
+
+/** Saves a word to the 単語帳; the same word from the same sentence comes back as the stored entry. */
+export async function saveVocabularyEntry(entry: SaveVocabularyRequest): Promise<SaveVocabularyResponse> {
+  return request<SaveVocabularyResponse>(API_ROUTES.VOCABULARY, { method: 'POST', body: entry });
 }
 
 export async function deleteVocabularyEntry(id: string): Promise<DeleteVocabularyResponse> {
