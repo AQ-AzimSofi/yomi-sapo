@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_ROUTES, GUEST_KEY_HEADERS, STORAGE_KEYS } from '@/lib/constants';
 import { GUEST_KEY_REQUIRED_EVENT } from '@/lib/guestKeys';
 import { bookQuery } from '@/lib/books/bookRef';
+import { bookAssetPath, bookAssetUrl } from '@/lib/utils/bookAssetPath';
 import {
   ApiError,
   explainSentence,
+  fetchBookMetadata,
   fetchBookText,
   fetchBookmark,
   fetchNarration,
@@ -469,5 +471,20 @@ describe('fetchNarration', () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'not_configured', message: 'Narration storage is not configured' } }, 500));
 
     await expect(fetchNarration(BOOK)).rejects.toMatchObject({ status: 500 });
+  });
+});
+
+describe('fetchBookMetadata', () => {
+  it("reads the metadata JSON from the book's asset path", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ title: '本', images: [] }));
+
+    expect(await fetchBookMetadata(BOOK)).toEqual({ title: '本', images: [] });
+    expect(lastCall().url).toBe(bookAssetUrl(bookAssetPath(BOOK.directory, BOOK.fileName, '.json')));
+  });
+
+  it('answers null for a book without metadata', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'not_found', message: 'No such book asset' } }, 404));
+
+    expect(await fetchBookMetadata(BOOK)).toBeNull();
   });
 });

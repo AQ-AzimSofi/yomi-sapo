@@ -6,9 +6,10 @@
 import { API_ROUTES } from '@/lib/constants';
 import { guestKeyHeaders, promptGuestKeyOnFailure, type GuestKeyKind } from '@/lib/guestKeys';
 import { isRecord } from '@/lib/utils/typeGuards';
+import { bookAssetPath } from '@/lib/utils/bookAssetPath';
 import { readBookTextThroughCache } from '@/lib/bookTextCache';
 import type { BookRef } from '@/lib/books/bookRef';
-import type { NarrationManifest } from '@/lib/types';
+import type { BookMetadata, NarrationManifest } from '@/lib/types';
 import type {
   ApiErrorResponse,
   BookmarkResponse,
@@ -150,6 +151,13 @@ export async function fetchBookText(book: BookRef, signal?: AbortSignal): Promis
 /** The saved bookmark, or null when the server gives none (guests have no bookmarks). */
 export async function fetchBookmark(book: BookRef, signal?: AbortSignal): Promise<BookmarkResponse | null> {
   return request<BookmarkResponse>(API_ROUTES.READ_BOOKMARK, { query: bookParams(book), signal }).catch(nullOnApiError);
+}
+
+/** The metadata the EPUB converter wrote for a book, or null when it has none (not every book does). */
+export async function fetchBookMetadata(book: BookRef): Promise<BookMetadata | null> {
+  return request<BookMetadata>(API_ROUTES.BOOK_ASSET, {
+    query: { path: bookAssetPath(book.directory, book.fileName, '.json') },
+  }).catch(nullOnApiError);
 }
 
 // 404 means this text has no recording and 401 means a guest, who is never served
