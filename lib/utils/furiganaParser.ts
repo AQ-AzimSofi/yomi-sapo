@@ -5,11 +5,18 @@
  * 2. <ruby>漢字<rt>ふりがな</rt></ruby> - HTML ruby形式
  */
 
-import { FURIGANA_PATTERNS } from '../constants';
 import { escapeHtml } from './html';
 
 // Some books mark footnotes with <sup>; only the bare tag is let through.
 const ESCAPED_FOOTNOTE_TAG = /&lt;(\/?)sup&gt;/g;
+
+const RUBY_ELEMENT_PATTERN = /<ruby>(.*?)<\/ruby>/g;
+// One ruby element may hold several base/reading pairs: 幼<rt>おさな</rt>馴<rt>な</rt>.
+const RUBY_PAIR_PATTERN = /(?:<rb>)?([^<]+)(?:<\/rb>)?<rt>([^<]*)<\/rt>/g;
+// The base is the kanji run right before the bracket and the reading is kana,
+// so notes such as [IMAGE:...] are never read as furigana.
+const BRACKET_FURIGANA_PATTERN = /([㐀-䶿一-鿿々〆ヶ]+)\[([ぁ-ゖァ-ヺー]+)\]/g;
+const TAG_PATTERN = /<[^>]*>/g;
 
 function escapeBookText(text: string): string {
   return escapeHtml(text).replace(ESCAPED_FOOTNOTE_TAG, '<$1sup>');
@@ -21,84 +28,57 @@ export interface FuriganaSegment {
   ruby?: string;
 }
 
+interface SplitByMatchesOptions {
+  text: string;
+  pattern: RegExp;
+  parseGap: (gap: string) => FuriganaSegment[];
+  parseMatch: (match: RegExpMatchArray) => FuriganaSegment[];
+}
+
+function splitByMatches({ text, pattern, parseGap, parseMatch }: SplitByMatchesOptions): FuriganaSegment[] {
+  const matches = [...text.matchAll(pattern)];
+  const matchEnds = matches.map((match) => (match.index ?? 0) + match[0].length);
+  const segmentsThroughLastMatch = matches.flatMap((match, matchIndex) => [
+    ...parseGap(text.slice(matchIndex === 0 ? 0 : matchEnds[matchIndex - 1], match.index)),
+    ...parseMatch(match),
+  ]);
+  return [...segmentsThroughLastMatch, ...parseGap(text.slice(matchEnds.at(-1) ?? 0))];
+}
+
+function textSegments(text: string): FuriganaSegment[] {
+  return text ? [{ type: 'text', text }] : [];
+}
+
+function parseRubyElement(match: RegExpMatchArray): FuriganaSegment[] {
+  const pairs = [...match[1].matchAll(RUBY_PAIR_PATTERN)];
+  if (pairs.length === 0) return textSegments(match[1].replace(TAG_PATTERN, ''));
+  return pairs.map(([, base, reading]): FuriganaSegment => ({ type: 'ruby', text: base, ruby: reading }));
+}
+
+function parseBracketFurigana(text: string): FuriganaSegment[] {
+  if (!text.includes('[')) return textSegments(text);
+  return splitByMatches({
+    text,
+    pattern: BRACKET_FURIGANA_PATTERN,
+    parseGap: textSegments,
+    parseMatch: ([, base, reading]) => [{ type: 'ruby', text: base, ruby: reading }],
+  });
+}
+
 /**
  * テキストを振り仮名セグメントに解析
  * @param text 解析するテキスト
  * @returns セグメントの配列
  */
 export function parseFurigana(text: string): FuriganaSegment[] {
-  const segments: FuriganaSegment[] = [];
-  let lastIndex = 0;
-
-  // まずHTMLのrubyタグを検出
-  const rubyMatches: Array<{ index: number; length: number; text: string; ruby: string }> = [];
-  let match: RegExpExecArray | null;
-
-  const rubyPattern = new RegExp(FURIGANA_PATTERNS.RUBY_PATTERN);
-  while ((match = rubyPattern.exec(text)) !== null) {
-    rubyMatches.push({
-      index: match.index,
-      length: match[0].length,
-      text: match[1],
-      ruby: match[2],
-    });
-  }
-
-  // 次にブラケット形式を検出（rubyタグと重複しない部分のみ）
-  const bracketMatches: Array<{ index: number; length: number; text: string; ruby: string }> = [];
-  const bracketPattern = new RegExp(FURIGANA_PATTERNS.BRACKET_PATTERN);
-
-  while ((match = bracketPattern.exec(text)) !== null) {
-    const matchIndex = match.index;
-    const matchLength = match[0].length;
-
-    // このマッチがrubyタグの内部でないか確認
-    const isInsideRuby = rubyMatches.some(
-      rm => matchIndex >= rm.index && matchIndex < rm.index + rm.length
-    );
-
-    if (!isInsideRuby) {
-      bracketMatches.push({
-        index: matchIndex,
-        length: matchLength,
-        text: match[1],
-        ruby: match[2],
-      });
-    }
-  }
-
-  // すべてのマッチを位置順にソート
-  const allMatches = [...rubyMatches, ...bracketMatches].sort((a, b) => a.index - b.index);
-
-  // セグメントを構築
-  allMatches.forEach(m => {
-    // マッチ前のプレーンテキスト
-    if (m.index > lastIndex) {
-      const plainText = text.substring(lastIndex, m.index);
-      if (plainText) {
-        segments.push({ type: 'text', text: plainText });
-      }
-    }
-
-    // 振り仮名セグメント
-    segments.push({ type: 'ruby', text: m.text, ruby: m.ruby });
-    lastIndex = m.index + m.length;
+  // Bracket readings are only looked for between ruby elements, never across them.
+  const segments = splitByMatches({
+    text,
+    pattern: RUBY_ELEMENT_PATTERN,
+    parseGap: parseBracketFurigana,
+    parseMatch: parseRubyElement,
   });
-
-  // 最後のプレーンテキスト
-  if (lastIndex < text.length) {
-    const plainText = text.substring(lastIndex);
-    if (plainText) {
-      segments.push({ type: 'text', text: plainText });
-    }
-  }
-
-  // セグメントが空の場合、全体をテキストとして返す
-  if (segments.length === 0) {
-    segments.push({ type: 'text', text });
-  }
-
-  return segments;
+  return segments.length > 0 ? segments : [{ type: 'text', text }];
 }
 
 /**

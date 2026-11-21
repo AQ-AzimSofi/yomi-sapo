@@ -69,12 +69,65 @@ describe('parseFurigana', () => {
     expect(parseFurigana('漢字[]')).toEqual([{ type: 'text', text: '漢字[]' }]);
   });
 
-  it.todo('uses only the kanji right before the bracket as the base text, not the whole preceding run (bug)');
-  it.todo('reads a bracket reading that comes after a ruby tag on the same line (bug)');
-  it.todo('never returns overlapping segments when text precedes a ruby tag and a bracket reading follows it (bug)');
-  it.todo('keeps every base character and reading of a multi-part ruby tag (bug)');
-  it.todo('does not read an [IMAGE:...] marker that follows text as a reading (bug)');
-  it.todo('scans a long line without brackets in linear time (bug)');
+  it('uses only the kanji right before the bracket as the base text', () => {
+    expect(parseFurigana('これは漢字[かんじ]です')).toEqual([
+      { type: 'text', text: 'これは' },
+      { type: 'ruby', text: '漢字', ruby: 'かんじ' },
+      { type: 'text', text: 'です' },
+    ]);
+  });
+
+  it('reads a bracket reading that comes after a ruby tag on the same line', () => {
+    expect(parseFurigana('<ruby>山<rt>やま</rt></ruby>と川[かわ]')).toEqual([
+      { type: 'ruby', text: '山', ruby: 'やま' },
+      { type: 'text', text: 'と' },
+      { type: 'ruby', text: '川', ruby: 'かわ' },
+    ]);
+  });
+
+  it('keeps text before a ruby tag once when a bracket reading follows the tag', () => {
+    expect(parseFurigana('前<ruby>山<rt>やま</rt></ruby>川[かわ]')).toEqual([
+      { type: 'text', text: '前' },
+      { type: 'ruby', text: '山', ruby: 'やま' },
+      { type: 'ruby', text: '川', ruby: 'かわ' },
+    ]);
+  });
+
+  it('splits a ruby tag with several base/reading pairs into one segment per pair', () => {
+    expect(parseFurigana('<ruby>幼<rt>おさな</rt>馴<rt>な</rt>染<rt>じみ</rt></ruby>')).toEqual([
+      { type: 'ruby', text: '幼', ruby: 'おさな' },
+      { type: 'ruby', text: '馴', ruby: 'な' },
+      { type: 'ruby', text: '染', ruby: 'じみ' },
+    ]);
+  });
+
+  it('splits a ruby tag with several rb/rt pairs', () => {
+    expect(parseFurigana('<ruby><rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt></ruby>')).toEqual([
+      { type: 'ruby', text: '漢', ruby: 'かん' },
+      { type: 'ruby', text: '字', ruby: 'じ' },
+    ]);
+  });
+
+  it('does not read an [IMAGE:...] marker that follows text as a reading', () => {
+    expect(parseFurigana('前の図[IMAGE:pic.png]')).toEqual([{ type: 'text', text: '前の図[IMAGE:pic.png]' }]);
+  });
+
+  it('keeps a bracket around a ruby tag as plain text around the ruby', () => {
+    expect(parseFurigana(' [<ruby>画像<rt>がぞう</rt></ruby>]')).toEqual([
+      { type: 'text', text: ' [' },
+      { type: 'ruby', text: '画像', ruby: 'がぞう' },
+      { type: 'text', text: ']' },
+    ]);
+  });
+
+  it('scans a long line without brackets in linear time', () => {
+    const longLine = 'あ'.repeat(200_000);
+    const startedMs = performance.now();
+
+    parseFurigana(longLine);
+
+    expect(performance.now() - startedMs).toBeLessThan(100);
+  });
 });
 
 describe('segmentsToHTML', () => {
@@ -121,6 +174,12 @@ describe('segmentsToHTML', () => {
     );
   });
 
+  it('renders a parsed multi-pair ruby tag as one ruby per pair with no escaped markup', () => {
+    expect(segmentsToHTML(parseFurigana('<ruby>緋<rt>ひ</rt>色<rt>いろ</rt></ruby>の空'), true)).toBe(
+      '<ruby>緋<rt>ひ</rt></ruby><ruby>色<rt>いろ</rt></ruby>の空'
+    );
+  });
+
   it('keeps the superscript tags that books use for footnote marks', () => {
     expect(segmentsToHTML([{ type: 'text', text: '原理である<sup>*19</sup>」' }], true)).toBe(
       '原理である<sup>*19</sup>」'
@@ -157,7 +216,15 @@ describe('stripFurigana', () => {
     expect(stripFurigana('[IMAGE:pic.png]')).toBe('[IMAGE:pic.png]');
   });
 
-  it.todo('removes every reading from a line where a bracket reading comes after a ruby tag (bug)');
-  it.todo('keeps text before a ruby tag once, without the tag markup, when a bracket reading follows the tag (bug)');
-  it.todo('keeps every base character of a multi-part ruby tag (bug)');
+  it('removes every reading from a line where a bracket reading comes after a ruby tag', () => {
+    expect(stripFurigana('<ruby>山<rt>やま</rt></ruby>と川[かわ]')).toBe('山と川');
+  });
+
+  it('keeps text before a ruby tag once, without the tag markup, when a bracket reading follows the tag', () => {
+    expect(stripFurigana('前<ruby>山<rt>やま</rt></ruby>と川[かわ]')).toBe('前山と川');
+  });
+
+  it('keeps every base character of a multi-part ruby tag', () => {
+    expect(stripFurigana('<ruby><rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt></ruby>')).toBe('漢字');
+  });
 });

@@ -46,14 +46,6 @@ export const MARKDOWN_PATTERNS = {
   HEADING_HASH_FULLWIDTH: '＃＃',
 } as const;
 
-// 振り仮名解析パターン
-export const FURIGANA_PATTERNS = {
-  // 漢字[ふりがな]形式
-  BRACKET_PATTERN: /(.+?)\[(.+?)\]/g,
-  // HTML rubyタグ形式（<rb>タグあり/なし両対応）
-  RUBY_PATTERN: /<ruby>(?:<rb>)?(.+?)(?:<\/rb>)?<rt>(.+?)<\/rt><\/ruby>/g,
-} as const;
-
 // 辞書解析パターン
 export const DICTIONARY_PATTERNS = {
   WORD_PATTERN: /(.+?)\[(.+?)・(.+?)\]/,
