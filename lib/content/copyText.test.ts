@@ -32,6 +32,16 @@ describe('copyTextForPages', () => {
     expect(copyTextForPages(['[IMAGE:00002.gif]<ruby>集中<rt>しゅうちゅう</rt></ruby>する。'], 1, 1)).toBe('集中する。');
   });
 
+  it('removes every marker on a line and keeps the text between them', () => {
+    expect(copyTextForPages(['Cerasus×yedoensis[IMAGE:00006.jpeg]Somei-yoshino[IMAGE:00007.jpeg]'], 1, 1)).toBe(
+      'Cerasus×yedoensisSomei-yoshino'
+    );
+  });
+
+  it('leaves out a line of back-to-back markers', () => {
+    expect(copyTextForPages(['一。', '[IMAGE:00001.jpeg][IMAGE:00002.jpeg]'], 1, 1)).toBe('一。');
+  });
+
   it('leaves out a marker line padded with spaces', () => {
     expect(copyTextForPages(['一。', ' [IMAGE:cover.jpg] ', '二。'], 1, 1)).toBe('一。\n二。');
   });
