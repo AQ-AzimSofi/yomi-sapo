@@ -8,6 +8,8 @@
 
 import { NextResponse } from 'next/server';
 import { GetObjectCommand, NoSuchKey, S3Client } from '@aws-sdk/client-s3';
+import { withAuth } from '@/lib/auth/guards';
+import { apiError } from '@/lib/api/respond';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,18 +17,18 @@ export const dynamic = 'force-dynamic';
 // Only 200s are cached: OpenNext forces no-store on 404/500 responses.
 const COVER_CACHE_CONTROL = 'public, max-age=86400, s-maxage=86400';
 
-export async function GET(request: Request) {
+export const GET = withAuth('public', async (request) => {
   const { searchParams } = new URL(request.url);
   const fileName = searchParams.get('fileName');
   const directory = searchParams.get('directory');
   if (!fileName || !directory) {
-    return NextResponse.json({ error: 'fileName and directory are required' }, { status: 400 });
+    return apiError(400, 'invalid_request', 'fileName and directory are required');
   }
 
   const bucket = process.env.BOOK_COVERS_BUCKET;
   if (!bucket) {
     console.error('BOOK_COVERS_BUCKET is not configured');
-    return NextResponse.json({ error: 'Cover storage is not configured' }, { status: 500 });
+    return apiError(500, 'not_configured', 'Cover storage is not configured');
   }
 
   try {
@@ -44,10 +46,7 @@ export async function GET(request: Request) {
       headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': COVER_CACHE_CONTROL },
     });
   } catch (error) {
-    if (error instanceof NoSuchKey) {
-      return NextResponse.json({ error: 'No cover for this book' }, { status: 404 });
-    }
-    console.error('Failed to load cover:', error);
-    return NextResponse.json({ error: 'Failed to load cover' }, { status: 500 });
+    if (!(error instanceof NoSuchKey)) throw error;
+    return apiError(404, 'not_found', 'No cover for this book');
   }
-}
+});

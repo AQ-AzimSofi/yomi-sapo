@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
+import { withAuth } from '@/lib/auth/guards';
 
-export async function GET() {
+export const GET = withAuth('public', async () => {
   return NextResponse.json({ status: 'healthy', timestamp: Date.now() });
-}
+});

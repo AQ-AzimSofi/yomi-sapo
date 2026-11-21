@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { verifyPassword } from '@/lib/auth/password';
-import { createSession, verifySession } from '@/lib/auth/session';
+import { createSession, SESSION_COOKIE } from '@/lib/auth/session';
+import { withAuth } from '@/lib/auth/guards';
+import { apiError, errorBody, parseJsonBody, type ApiErrorCode } from '@/lib/api/respond';
+import { isRecord } from '@/lib/utils/typeGuards';
 
 /**
  * Consolidated authentication API route
@@ -12,7 +14,7 @@ import { createSession, verifySession } from '@/lib/auth/session';
  * GET /api/auth?action=session - Check authentication status
  */
 
-export async function POST(request: Request) {
+export const POST = withAuth('public', async (request) => {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
 
@@ -22,45 +24,40 @@ export async function POST(request: Request) {
     return handleLogout();
   }
 
-  return NextResponse.json(
-    { message: 'Invalid action. Use action=login or action=logout' },
-    { status: 400 }
-  );
-}
+  return apiError(400, 'invalid_request', 'Invalid action. Use action=login or action=logout');
+});
 
-export async function GET(request: Request) {
+export const GET = withAuth('viewer', async (request, viewer) => {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
 
   if (action === 'session') {
-    return handleSession();
+    return NextResponse.json({ authenticated: viewer === 'owner' });
   }
 
-  return NextResponse.json(
-    { message: 'Invalid action. Use action=session' },
-    { status: 400 }
-  );
+  return apiError(400, 'invalid_request', 'Invalid action. Use action=session');
+});
+
+// The login page shows the top-level message of any failed login.
+function loginError(status: number, code: ApiErrorCode, message: string): NextResponse {
+  return NextResponse.json({ ...errorBody(code, message), message }, { status });
 }
 
 // Login handler (uses bcrypt - Node.js runtime required)
 async function handleLogin(request: Request) {
+  const body = await parseJsonBody(request, isRecord, 'Password is required');
+  if (body instanceof Response) return body;
+  const { password } = body;
+
+  if (typeof password !== 'string' || !password) {
+    return loginError(400, 'invalid_body', 'Password is required');
+  }
+
   try {
-    const { password } = await request.json();
-
-    if (!password) {
-      return NextResponse.json(
-        { message: 'Password is required' },
-        { status: 400 }
-      );
-    }
-
     const isValid = await verifyPassword(password);
 
     if (!isValid) {
-      return NextResponse.json(
-        { message: 'Invalid password' },
-        { status: 401 }
-      );
+      return loginError(401, 'invalid_password', 'Invalid password');
     }
 
     // Create session
@@ -75,7 +72,7 @@ async function handleLogin(request: Request) {
     // COOKIE_SECURE=false allows HTTP in production (e.g., before SSL setup)
     const isSecure = process.env.COOKIE_SECURE !== 'false' && process.env.NODE_ENV === 'production';
 
-    response.cookies.set('session', sessionToken, {
+    response.cookies.set(SESSION_COOKIE, sessionToken, {
       httpOnly: true,
       secure: isSecure,
       sameSite: 'lax',
@@ -85,10 +82,7 @@ async function handleLogin(request: Request) {
     return response;
   } catch (error) {
     console.error('Login error:', error);
-    return NextResponse.json(
-      { message: 'Login failed' },
-      { status: 500 }
-    );
+    return loginError(500, 'internal_error', 'Login failed');
   }
 }
 
@@ -100,20 +94,7 @@ async function handleLogout() {
   });
 
   // Delete session cookie
-  response.cookies.delete('session');
+  response.cookies.delete(SESSION_COOKIE);
 
   return response;
-}
-
-// Session verification handler (Edge Runtime compatible)
-async function handleSession() {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get('session');
-
-  if (!sessionCookie) {
-    return NextResponse.json({ authenticated: false });
-  }
-
-  const isValid = await verifySession(sessionCookie.value);
-  return NextResponse.json({ authenticated: isValid });
 }
