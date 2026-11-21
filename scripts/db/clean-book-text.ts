@@ -21,8 +21,7 @@ import pg from 'pg';
 import dotenv from 'dotenv';
 import { cleanBookText } from './bookTextCleanup';
 import { parseCleanupFlags } from './cleanupFlags';
-
-dotenv.config({ path: '.env.local' });
+import { isEntryPoint } from '../shared/entryPoint';
 
 interface TextEntryRow {
   id: number;
@@ -131,7 +130,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (isEntryPoint(import.meta.url)) {
+  dotenv.config({ path: '.env.local' });
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

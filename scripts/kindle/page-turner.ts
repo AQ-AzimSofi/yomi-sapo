@@ -16,6 +16,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { isEntryPoint } from '../shared/entryPoint';
 
 const NEXT_KEY_BY_DIRECTION = { rtl: 'ArrowLeft', ltr: 'ArrowRight' } as const;
 type Direction = keyof typeof NEXT_KEY_BY_DIRECTION;
@@ -297,7 +298,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+if (isEntryPoint(import.meta.url)) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}
