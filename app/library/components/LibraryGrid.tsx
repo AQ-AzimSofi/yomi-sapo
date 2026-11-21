@@ -48,13 +48,6 @@ function loadFailure(error: unknown, message: string): Error {
   return new Error('Unknown error');
 }
 
-function formatDirectoryTag(directory: string): string {
-  const topLevel = directory.split('/')[0];
-  return topLevel
-    .replace(/-/g, ' ')
-    .replace(/^\w/, c => c.toUpperCase());
-}
-
 export default function LibraryGrid() {
   const [fileData, setFileData] = useState<TextFileListResponse | null>(null);
   const [bookProgress, setBookProgress] = useState<LibraryProgressResponse>({});
@@ -216,7 +209,6 @@ export default function LibraryGrid() {
               directory={book.directory}
               progress={book.progress}
               totalCharacters={book.totalCharacters}
-              directoryTag={formatDirectoryTag(book.directory)}
               bookmarkPage={book.bookmarkPage}
               isPreview={isGuest}
             />

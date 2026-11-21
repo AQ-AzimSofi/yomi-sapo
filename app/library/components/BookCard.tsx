@@ -11,7 +11,6 @@ interface BookCardProps {
   directory: string;
   progress: number;
   totalCharacters?: number;
-  directoryTag: string;
   bookmarkPage?: number | null;
   isPreview?: boolean;
 }
@@ -21,7 +20,6 @@ export default function BookCard({
   directory,
   progress,
   totalCharacters,
-  directoryTag,
   bookmarkPage,
   isPreview,
 }: BookCardProps) {
@@ -30,9 +28,6 @@ export default function BookCard({
   const pageParam = bookmarkPage && bookmarkPage > 1 ? `&page=${bookmarkPage}` : '';
   const progressPercent = Math.round(Math.min(100, Math.max(0, progress)));
   const characterCount = totalCharacters ?? 0;
-  const shelfNote = characterCount > 0
-    ? `${directoryTag} ・ ${characterCount.toLocaleString()}字`
-    : directoryTag;
 
   return (
     <Link href={`/read?${bookParams}${pageParam}`} className="group block">
@@ -69,9 +64,11 @@ export default function BookCard({
         <span>{progressPercent === 100 ? '読了' : `${progressPercent}%`}</span>
       </div>
 
-      <p className="mt-1 text-xs truncate" style={{ color: COLORS.SECONDARY }}>
-        {shelfNote}
-      </p>
+      {characterCount > 0 && (
+        <p className="mt-1 text-xs truncate" style={{ color: COLORS.SECONDARY }}>
+          {characterCount.toLocaleString()}字
+        </p>
+      )}
     </Link>
   );
 }
