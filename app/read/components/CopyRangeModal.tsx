@@ -130,7 +130,7 @@ export default function CopyRangeModal({
           <button
             onClick={() => isValid && onCopy(fromPage, toPage)}
             disabled={!isValid}
-            className="flex-1 min-h-11 px-3 text-sm font-bold disabled:opacity-30 interactive-btn"
+            className="flex-1 min-h-11 px-3 text-sm font-bold whitespace-nowrap disabled:opacity-30 interactive-btn"
             style={{
               backgroundColor: copyFeedback ? COLORS.SUCCESS : THEME.PRIMARY,
               color: copyFeedback ? COLORS.SURFACE : THEME.ON_PRIMARY,
