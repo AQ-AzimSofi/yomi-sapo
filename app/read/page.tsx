@@ -637,7 +637,6 @@ function ReaderContent({
     >
       {isGuest && (
         <GuestModeBanner
-          isDarkMode={isDarkMode}
           message="Preview only. Sign in to read the full book and use your saved bookmarks."
         />
       )}
@@ -873,7 +872,7 @@ function ReaderContent({
       )}
 
       {/* Always mounted: a failed session check reports a guest as signed in, and the key prompt must still reach them. */}
-      <GuestApiKeyModal isDarkMode={isDarkMode} />
+      <GuestApiKeyModal />
     </div>
   );
 }
