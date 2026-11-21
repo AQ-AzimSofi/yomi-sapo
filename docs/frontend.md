@@ -62,7 +62,7 @@ The frontend follows a **minimal, reading-focused** design philosophy:
 The entry point for browsing and selecting books.
 
 **Features**:
-- Grid layout of all books organized by directory
+- One grid of all books with sort options (最近読んだ, 追加順, 進捗, タイトル) and a directory tag per card
 - Progress bar per book showing reading completion
 - Shared \`AppHeader\` with 本棚, 単語帳, 同期 and ログアウト
 
@@ -192,7 +192,7 @@ interface CollapsibleItemProps {
 
 Paragraph display for furigana-format content.
 
-**Props**:
+**Props** (main ones):
 \`\`\`typescript
 interface ParagraphItemProps {
   id?: string;
@@ -202,8 +202,6 @@ interface ParagraphItemProps {
   showFurigana: boolean;
   onBookmarkSuccess: () => void;
   onSentenceClick?: (sentence: string) => void;
-  fontSize: number;
-  lineHeight: number;
   imageMap?: Record<string, string>;
 }
 \`\`\`

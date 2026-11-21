@@ -27,10 +27,10 @@ A word diary that keeps saved words with their sentence context and a link back 
    - Search across word, reading, sentence, and notes
    - Click any word for detailed view
    - Delete functionality
-   - Navigate back to source with word highlighting
+   - Open the book each word came from
 
 2. **Word Highlighting**:
-   - When navigating from vocabulary page to source
+   - When the book opened from the vocabulary page shows the word on its first page
    - Paragraph containing the word gets highlighted (orange glow)
    - Highlight fades after 3 seconds
 

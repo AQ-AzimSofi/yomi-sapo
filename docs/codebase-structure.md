@@ -56,7 +56,9 @@ components/
 │   ├── BookmarkUnfilled.tsx
 │   ├── ChevronDown.tsx
 │   ├── ChevronUp.tsx
-│   └── SpeakerIcon.tsx
+│   ├── SpeakerIcon.tsx
+│   ├── StartHereIcon.tsx
+│   └── TranslateIcon.tsx
 ├── reading/            # Reader components
 │   ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
 │   ├── ExplanationSidebar.tsx  # AI explanations panel
@@ -177,6 +179,10 @@ utils/
 ├── buildPlayableUnits.ts   # Split book text into reader units
 ├── truncatePreview.ts      # Guest preview cut
 ├── ttsTextCleaner.ts       # Clean text for TTS
+├── ttsCache.ts             # Cache synthesized TTS audio
+├── colorTint.ts            # toTint(): tint a theme color
+├── bookAssetPath.ts        # Paths and URLs of book images and metadata
+├── bookTitle.ts            # Display title from a file name
 └── markdownParser/         # Rephrase-format parser
     ├── index.ts
     ├── validator.ts
