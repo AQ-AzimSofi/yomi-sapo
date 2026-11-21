@@ -107,6 +107,21 @@ describe('GET /api/read-public-txt', () => {
     expect(response.headers.get('etag')).toBe('"1200-1700000000000-full"');
   });
 
+  it('answers 204 without reading the text when the reader already stores this version', async () => {
+    const response = await GET(readRequest(OWNER_PATH, { 'x-book-version': 'W/"1200-1700000000000-full"' }));
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('etag')).toBe('"1200-1700000000000-full"');
+    expect(getTextEntry).not.toHaveBeenCalled();
+  });
+
+  it('sends the text when the stored version is out of date', async () => {
+    const response = await GET(readRequest(OWNER_PATH, { 'x-book-version': '"900-1600000000000-full"' }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ text: BOOK_TEXT });
+  });
+
   it('answers 304 when its ETag is one of several in the header', async () => {
     const response = await GET(readRequest(OWNER_PATH, { 'if-none-match': '"old", "1200-1700000000000-full"' }));
 

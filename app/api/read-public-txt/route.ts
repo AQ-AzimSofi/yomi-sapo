@@ -1,7 +1,8 @@
 /**
  * Serves a book's text from the database to the reader.
- * The response carries an ETag of the stored version, so reopening an
- * unchanged book costs a 304 instead of re-sending the whole text.
+ * The response carries an ETag of the stored version. The reader keeps a copy
+ * and sends that ETag in x-book-version (CloudFront drops If-None-Match), so
+ * reopening an unchanged book costs a 204 instead of re-sending the whole text.
  */
 
 import { NextResponse } from 'next/server';
@@ -9,7 +10,7 @@ import { getTextEntry, getTextEntryVersion } from '@/lib/db/queries';
 import { isAuthenticated } from '@/lib/auth/apiSession';
 import { findPublicBookByPath } from '@/lib/publicBooks';
 import { truncateToPreviewPages } from '@/lib/utils/truncatePreview';
-import { ifNoneMatchIncludes } from '@/lib/utils/etag';
+import { BOOK_VERSION_HEADER, ifNoneMatchIncludes } from '@/lib/utils/etag';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,6 +70,9 @@ export async function GET(request: Request): Promise<NextResponse> {
 
     const variant = publicBook ? `preview${publicBook.maxPreviewPages}` : 'full';
     const etag = `"${location.version}-${variant}"`;
+    if (ifNoneMatchIncludes(request.headers.get(BOOK_VERSION_HEADER), etag)) {
+      return new NextResponse(null, { status: 204, headers: cacheHeaders(etag) });
+    }
     if (ifNoneMatchIncludes(request.headers.get('if-none-match'), etag)) {
       return new NextResponse(null, { status: 304, headers: cacheHeaders(etag) });
     }
