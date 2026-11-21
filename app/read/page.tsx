@@ -913,7 +913,8 @@ function ReaderContent({
         />
       )}
 
-      {isGuest && <GuestApiKeyModal isDarkMode={isDarkMode} />}
+      {/* Always mounted: a failed session check reports a guest as signed in, and the key prompt must still reach them. */}
+      <GuestApiKeyModal isDarkMode={isDarkMode} />
     </div>
   );
 }
