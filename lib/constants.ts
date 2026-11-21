@@ -117,7 +117,6 @@ export const PAGE_ROUTES = {
   LIBRARY: '/library',
   TEXT_INPUT: '/text-input',
   TEXT_INPUT_AI: '/text-input-ai',
-  OCR: '/ocr',
   VISUAL_NOVEL: '/visual-novel',
   BOOK_READER: '/book-reader',
   VOCABULARY: '/vocabulary',
