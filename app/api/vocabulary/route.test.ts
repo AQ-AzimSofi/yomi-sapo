@@ -1,14 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isAuthenticated } from '@/lib/auth/apiSession';
-import { createVocabularyEntry, getVocabularyEntries } from '@/lib/db/vocabularyQueries.sql';
+import { sql } from '@/lib/db/connection';
+import { createVocabularyEntry } from '@/lib/db/vocabularyQueries.sql';
 import type { VocabularyEntry } from '@/lib/types';
 import { GET, POST } from './route';
 
 vi.mock('@/lib/auth/apiSession', () => ({ isAuthenticated: vi.fn() }));
-vi.mock('@/lib/db/vocabularyQueries.sql', () => ({
-  getVocabularyEntries: vi.fn(),
+vi.mock('@/lib/db/connection', () => ({ sql: vi.fn() }));
+// GET runs the real query module on the mocked driver, so a snake_case row that reaches the response unmapped fails the list test.
+vi.mock('@/lib/db/vocabularyQueries.sql', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/db/vocabularyQueries.sql')>()),
   createVocabularyEntry: vi.fn(),
 }));
+
+const ROW = {
+  id: 'entry-1',
+  word: '言葉',
+  reading: 'ことば',
+  sentence: '言葉を選ぶ。',
+  file_name: 'ほん-rephrase-furigana',
+  directory: 'bookv2-furigana/ほん',
+  paragraph_text: '言葉を選ぶ。それから話す。',
+  notes: null,
+  created_at: new Date('2026-01-02T03:04:05.006Z'),
+  updated_at: new Date('2026-01-02T03:04:05.006Z'),
+};
 
 const ENTRY: VocabularyEntry = {
   id: 'entry-1',
@@ -40,8 +56,8 @@ afterEach(() => {
 });
 
 describe('GET /api/vocabulary', () => {
-  it('lists the entries in the camelCase shape with their count', async () => {
-    vi.mocked(getVocabularyEntries).mockResolvedValue([ENTRY]);
+  it('lists the stored snake_case rows as camelCase entries with their count', async () => {
+    vi.mocked(sql).mockResolvedValue([ROW]);
 
     const response = await GET(new Request('http://localhost/api/vocabulary'));
 
@@ -55,7 +71,7 @@ describe('GET /api/vocabulary', () => {
     const response = await GET(new Request('http://localhost/api/vocabulary'));
 
     expect(await response.json()).toStrictEqual({ success: true, entries: [], count: 0 });
-    expect(getVocabularyEntries).not.toHaveBeenCalled();
+    expect(sql).not.toHaveBeenCalled();
   });
 });
 
