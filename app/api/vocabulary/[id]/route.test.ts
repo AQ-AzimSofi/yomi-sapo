@@ -53,18 +53,21 @@ describe('GET /api/vocabulary/[id]', () => {
 });
 
 describe('PUT /api/vocabulary/[id]', () => {
-  it('returns the updated entry in the camelCase shape', async () => {
+  const UPDATE_BODY = { notes: 'メモ', word: '言葉', reading: 'ことば' };
+
+  it('forwards notes, word and reading to the update and returns the updated entry', async () => {
     vi.mocked(updateVocabularyEntry).mockResolvedValue(ENTRY);
 
     const response = await PUT(
       new Request('http://localhost/api/vocabulary/entry-1', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ notes: 'メモ' }),
+        body: JSON.stringify(UPDATE_BODY),
       }),
       ENTRY_PARAMS
     );
 
+    expect(updateVocabularyEntry).toHaveBeenCalledWith('entry-1', UPDATE_BODY);
     expect(await response.json()).toStrictEqual({
       success: true,
       message: 'Vocabulary entry updated',
