@@ -24,6 +24,7 @@ import {
   toPlayableUnits,
   totalPagesFor,
 } from '@/lib/content/bookModel';
+import { copyTextForPages } from '@/lib/content/copyText';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
@@ -459,23 +460,20 @@ function ReaderContent({
   }, [bookmarkPage, currentPage, handlePageChange]);
 
   const handleCopyPageText = useCallback(async () => {
-    if (currentPageHeaders.length === 0) return;
+    const textToCopy = copyTextForPages(unitMainTexts, currentPage, currentPage);
+    if (!textToCopy) return;
 
     try {
-      const textToCopy = currentPageHeaders.join('\n');
       await navigator.clipboard.writeText(textToCopy);
       setCopyFeedback(true);
       setTimeout(() => setCopyFeedback(false), 2000);
     } catch (error) {
       console.error('Failed to copy:', error);
     }
-  }, [currentPageHeaders]);
+  }, [unitMainTexts, currentPage]);
 
   const handleCopyPageRange = useCallback(async (fromPage: number, toPage: number) => {
-    const textToCopy = unitMainTexts
-      .slice(pageStartIndex(fromPage), pageStartIndex(toPage + 1))
-      .map(stripFurigana)
-      .join('\n');
+    const textToCopy = copyTextForPages(unitMainTexts, fromPage, toPage);
 
     try {
       await navigator.clipboard.writeText(textToCopy);
