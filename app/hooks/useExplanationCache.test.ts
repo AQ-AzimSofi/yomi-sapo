@@ -85,6 +85,21 @@ describe('readStoredExplanationState', () => {
     expect(state.cache).toEqual({ explanation_book_123: legacyEntry });
   });
 
+  // Keys saved before modes existed had no mode part, so lookups never reach those
+  // entries; being the oldest, they are the first to go once the cache is full.
+  it('counts entries under the pre-mode key toward the cap and evicts them first', () => {
+    const legacyEntry = { sentence: '一文目', explanation: '説明', contextSize: 50, timestamp: 0 };
+    const saved = Object.fromEntries([
+      ['explanation_book_123', legacyEntry],
+      ...Array.from({ length: EXPLANATION_CONFIG.MAX_CACHED_EXPLANATIONS }, (_, index) => [`key${index}`, { ...SAVED_ENTRY, timestamp: index + 1 }]),
+    ]);
+
+    const { cache } = readStoredExplanationState(storageWith({ [STORAGE_KEYS.EXPLANATION_CACHE]: JSON.stringify(saved) }));
+
+    expect(Object.keys(cache)).toHaveLength(EXPLANATION_CONFIG.MAX_CACHED_EXPLANATIONS);
+    expect(cache.explanation_book_123).toBeUndefined();
+  });
+
   it('keeps only the newest entries of an oversized saved cache', () => {
     const saved = Object.fromEntries(
       Array.from({ length: EXPLANATION_CONFIG.MAX_CACHED_EXPLANATIONS + 2 }, (_, index) => [`key${index}`, { ...SAVED_ENTRY, timestamp: index }])
@@ -148,12 +163,6 @@ describe('findCachedExplanation', () => {
 
     expect(findCachedExplanation(cache, { ...QUERY, mode: otherMode })).toBeNull();
     expect(findCachedExplanation(cache, { ...QUERY, fileName: 'other' })).toBeNull();
-  });
-
-  it('finds an entry saved without a mode under the current key', () => {
-    const entryWithoutMode = { sentence: '一文目', explanation: '説明', contextSize: 50, timestamp: 1 };
-
-    expect(findCachedExplanation(cacheHolding(entryWithoutMode), QUERY)).toEqual(entryWithoutMode);
   });
 });
 
