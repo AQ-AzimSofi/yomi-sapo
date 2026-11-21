@@ -15,7 +15,7 @@ describe('detectContentType', () => {
   });
 
   it('prefers rephrase when rephrase text also carries ruby', () => {
-    expect(detectContentType('<ruby>漢字<rt>かんじ</rt></ruby>\n>>やさしい文')).toBe('rephrase');
+    expect(detectContentType('< <ruby>漢字<rt>かんじ</rt></ruby>を読む\n>> やさしい文')).toBe('rephrase');
   });
 
   it('treats text without any markers as plain', () => {
@@ -35,6 +35,7 @@ describe('detectContentType', () => {
   });
 
   it.todo('detects rephrase text whose headings use the full-width ＜ prefix (bug)');
+  it.todo('does not treat text whose only "<" is ruby markup as rephrase (bug)');
   it.todo('scans long text without [ in linear time (bug)');
 });
 
