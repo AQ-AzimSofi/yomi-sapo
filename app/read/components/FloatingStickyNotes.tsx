@@ -6,14 +6,11 @@ import type { Point, Size } from '@/lib/utils/draggablePosition';
 import { useDraggablePosition } from '@/app/hooks/useDraggablePosition';
 import { toTint } from '@/lib/utils/colorTint';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
+import { useStarredWords } from '@/app/hooks/useStarredWords';
 
 interface FloatingStickyNotesProps {
   directory: string;
   bookName: string;
-}
-
-function getStarredStorageKey(directory: string, bookName: string): string {
-  return `${STORAGE_KEYS.STARRED_WORDS}_${directory}_${bookName}`;
 }
 
 const COLLAPSED_SIZE = 44;
@@ -44,7 +41,7 @@ export default function FloatingStickyNotes({
 }: FloatingStickyNotesProps) {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [mounted, setMounted] = useState(false);
-  const [starredWords, setStarredWords] = useState<Set<string>>(new Set());
+  const { starredWords } = useStarredWords(directory, bookName);
   const { position, isDragging, dragHandlers, isClickFromDrag } = useDraggablePosition({
     storageKey: STORAGE_KEYS.STICKY_NOTES_POSITION,
     size: isCollapsed ? COLLAPSED_BOX : EXPANDED_BOX,
@@ -70,33 +67,6 @@ export default function FloatingStickyNotes({
       } catch {}
     }
   }, [isCollapsed, mounted]);
-
-  const loadStarredWords = useCallback(() => {
-    if (!directory || !bookName) return;
-    const key = getStarredStorageKey(directory, bookName);
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      try {
-        setStarredWords(new Set(JSON.parse(stored)));
-      } catch {
-        setStarredWords(new Set());
-      }
-    } else {
-      setStarredWords(new Set());
-    }
-  }, [directory, bookName]);
-
-  useEffect(() => {
-    loadStarredWords();
-  }, [loadStarredWords]);
-
-  useEffect(() => {
-    const handleStarredChange = () => {
-      loadStarredWords();
-    };
-    window.addEventListener('starredWordsChanged', handleStarredChange);
-    return () => window.removeEventListener('starredWordsChanged', handleStarredChange);
-  }, [loadStarredWords]);
 
   const starredEntries = useMemo(() => {
     if (starredWords.size === 0) return [];
