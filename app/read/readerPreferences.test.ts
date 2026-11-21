@@ -52,8 +52,12 @@ describe('READER_PREFERENCES.fontSize', () => {
     expect(preferenceValue(fontSize, 'abc')).toBe(READER_CONFIG.DEFAULT_FONT_SIZE);
   });
 
-  it('falls back to the default size for a size the slider cannot reach', () => {
-    expect(preferenceValue(fontSize, '99')).toBe(READER_CONFIG.DEFAULT_FONT_SIZE);
+  it.each(Array.from({ length: 13 }, (_, step) => 12 + step))('reads back the size %s, which the slider can store', (size) => {
+    expect(preferenceValue(fontSize, fontSize.serialize(size))).toBe(size);
+  });
+
+  it.each(['11', '25', '99'])('falls back to the default size for %s, which the slider cannot reach', (stored) => {
+    expect(preferenceValue(fontSize, stored)).toBe(READER_CONFIG.DEFAULT_FONT_SIZE);
   });
 
   it('stores a size the way the slider always stored it', () => {
@@ -66,6 +70,17 @@ describe('READER_PREFERENCES.lineHeight', () => {
 
   it('reads a line height the settings slider stored', () => {
     expect(preferenceValue(lineHeight, '1.5')).toBe(1.5);
+  });
+
+  it.each(Array.from({ length: 14 }, (_, step) => (12 + step) / 10))(
+    'reads back the line height %s, which the slider can store',
+    (height) => {
+      expect(preferenceValue(lineHeight, lineHeight.serialize(height))).toBe(height);
+    }
+  );
+
+  it.each(['1.1', '2.6'])('falls back to the default line height for %s, which the slider cannot reach', (stored) => {
+    expect(preferenceValue(lineHeight, stored)).toBe(READER_CONFIG.DEFAULT_LINE_HEIGHT);
   });
 
   it('falls back to the default line height for NaN', () => {
