@@ -33,6 +33,12 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

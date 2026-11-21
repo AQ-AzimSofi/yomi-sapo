@@ -1,0 +1,135 @@
+import { describe, it, expect } from 'vitest';
+import { parseFurigana, segmentsToHTML, stripFurigana, type FuriganaSegment } from './furiganaParser';
+
+describe('parseFurigana', () => {
+  it('returns plain text with no markup as one text segment', () => {
+    expect(parseFurigana('ひらがなだけ')).toEqual([{ type: 'text', text: 'ひらがなだけ' }]);
+  });
+
+  it('returns an empty string as one empty text segment', () => {
+    expect(parseFurigana('')).toEqual([{ type: 'text', text: '' }]);
+  });
+
+  it('reads a ruby tag as a ruby segment', () => {
+    expect(parseFurigana('<ruby>漢字<rt>かんじ</rt></ruby>')).toEqual([
+      { type: 'ruby', text: '漢字', ruby: 'かんじ' },
+    ]);
+  });
+
+  it('reads a ruby tag whose base text is wrapped in rb', () => {
+    expect(parseFurigana('<ruby><rb>漢字</rb><rt>かんじ</rt></ruby>')).toEqual([
+      { type: 'ruby', text: '漢字', ruby: 'かんじ' },
+    ]);
+  });
+
+  it('reads several ruby tags in one line with the text between them', () => {
+    expect(parseFurigana('<ruby>今日<rt>きょう</rt></ruby>は<ruby>雨<rt>あめ</rt></ruby>です')).toEqual([
+      { type: 'ruby', text: '今日', ruby: 'きょう' },
+      { type: 'text', text: 'は' },
+      { type: 'ruby', text: '雨', ruby: 'あめ' },
+      { type: 'text', text: 'です' },
+    ]);
+  });
+
+  it('reads a line that is only a bracket reading', () => {
+    expect(parseFurigana('漢字[かんじ]')).toEqual([{ type: 'ruby', text: '漢字', ruby: 'かんじ' }]);
+  });
+
+  it('reads back-to-back bracket readings as separate ruby segments', () => {
+    expect(parseFurigana('漢[かん]字[じ]')).toEqual([
+      { type: 'ruby', text: '漢', ruby: 'かん' },
+      { type: 'ruby', text: '字', ruby: 'じ' },
+    ]);
+  });
+
+  it.each(['\n', '\r\n'])('keeps the %j line break before a bracket reading on the next line', (lineBreak) => {
+    expect(parseFurigana(`一行目${lineBreak}漢字[かんじ]`)).toEqual([
+      { type: 'text', text: `一行目${lineBreak}` },
+      { type: 'ruby', text: '漢字', ruby: 'かんじ' },
+    ]);
+  });
+
+  it('reads a bracket reading followed by a ruby tag', () => {
+    expect(parseFurigana('川[かわ]と<ruby>山<rt>やま</rt></ruby>')).toEqual([
+      { type: 'ruby', text: '川', ruby: 'かわ' },
+      { type: 'text', text: 'と' },
+      { type: 'ruby', text: '山', ruby: 'やま' },
+    ]);
+  });
+
+  it('leaves a line that is only an [IMAGE:...] marker as plain text', () => {
+    expect(parseFurigana('[IMAGE:pic.png]')).toEqual([{ type: 'text', text: '[IMAGE:pic.png]' }]);
+  });
+
+  it('leaves a bracket with no base text before it as plain text', () => {
+    expect(parseFurigana('[かんじ]')).toEqual([{ type: 'text', text: '[かんじ]' }]);
+  });
+
+  it('leaves a bracket with an empty reading as plain text', () => {
+    expect(parseFurigana('漢字[]')).toEqual([{ type: 'text', text: '漢字[]' }]);
+  });
+
+  it.todo('uses only the kanji right before the bracket as the base text, not the whole preceding run (bug)');
+  it.todo('reads a bracket reading that comes after a ruby tag on the same line (bug)');
+  it.todo('never returns overlapping segments when text precedes a ruby tag and a bracket reading follows it (bug)');
+  it.todo('keeps every base character and reading of a multi-part ruby tag (bug)');
+  it.todo('does not read an [IMAGE:...] marker that follows text as a reading (bug)');
+  it.todo('scans a long line without brackets in linear time (bug)');
+});
+
+describe('segmentsToHTML', () => {
+  const sentence: FuriganaSegment[] = [
+    { type: 'ruby', text: '今日', ruby: 'きょう' },
+    { type: 'text', text: 'は晴れ' },
+  ];
+
+  it('wraps ruby segments in ruby tags when furigana is shown', () => {
+    expect(segmentsToHTML(sentence, true)).toBe('<ruby>今日<rt>きょう</rt></ruby>は晴れ');
+  });
+
+  it('outputs only the base text of ruby segments when furigana is hidden', () => {
+    expect(segmentsToHTML(sentence, false)).toBe('今日は晴れ');
+  });
+
+  it('outputs only the base text of a ruby segment that has no reading', () => {
+    expect(segmentsToHTML([{ type: 'ruby', text: '漢字' }], true)).toBe('漢字');
+  });
+
+  it('outputs only the base text of a ruby segment with an empty reading', () => {
+    expect(segmentsToHTML([{ type: 'ruby', text: '漢字', ruby: '' }], true)).toBe('漢字');
+  });
+
+  it('returns an empty string for no segments', () => {
+    expect(segmentsToHTML([], true)).toBe('');
+  });
+
+  it.todo('escapes HTML special characters in base text and readings (bug)');
+});
+
+describe('stripFurigana', () => {
+  it('returns plain text unchanged', () => {
+    expect(stripFurigana('ひらがなだけ')).toBe('ひらがなだけ');
+  });
+
+  it('keeps only the base text of ruby tags with and without rb', () => {
+    expect(stripFurigana('<ruby>今日<rt>きょう</rt></ruby>は<ruby><rb>雨</rb><rt>あめ</rt></ruby>です')).toBe(
+      '今日は雨です'
+    );
+  });
+
+  it('removes a bracket reading in the middle of a sentence', () => {
+    expect(stripFurigana('これは漢字[かんじ]です')).toBe('これは漢字です');
+  });
+
+  it('removes a bracket reading and a ruby tag from mixed content across lines', () => {
+    expect(stripFurigana('一行目\n川[かわ]と<ruby>山<rt>やま</rt></ruby>')).toBe('一行目\n川と山');
+  });
+
+  it('keeps a line that is only an [IMAGE:...] marker', () => {
+    expect(stripFurigana('[IMAGE:pic.png]')).toBe('[IMAGE:pic.png]');
+  });
+
+  it.todo('removes every reading from a line where a bracket reading comes after a ruby tag (bug)');
+  it.todo('keeps text before a ruby tag once, without the tag markup, when a bracket reading follows the tag (bug)');
+  it.todo('keeps every base character of a multi-part ruby tag (bug)');
+});
