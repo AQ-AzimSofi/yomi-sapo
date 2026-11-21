@@ -37,8 +37,7 @@ yomi-sapo/
 | `/api/read-bookmark` | GET | Get bookmark position |
 | `/api/write-bookmark` | POST | Update bookmark |
 | `/api/list-text-files` | GET | List available text files |
-| `/api/text-entries` | GET, DELETE, PUT | Database text entries |
-| `/api/text-entries/reset` | POST | Reset text entries |
+| `/api/text-entries` | PUT | Copy a local book file into text_entries (dev server only) |
 | `/api/explain-sentence` | POST | Sentence explanations |
 | `/api/tts` | POST | Text-to-speech |
 | `/api/ruby-registry` | GET, POST | Furigana registry |
@@ -53,8 +52,6 @@ components/
 ├── icons/              # Icon components
 │   ├── BookmarkFilled.tsx
 │   ├── BookmarkUnfilled.tsx
-│   ├── ChevronDown.tsx
-│   ├── ChevronUp.tsx
 │   ├── SpeakerIcon.tsx
 │   ├── StartHereIcon.tsx
 │   └── TranslateIcon.tsx
@@ -160,7 +157,7 @@ services/
 
 **fileService functions:**
 - `readTextFile(fileName)`
-- `readRubyRegistry`, `writeRubyRegistry`, `upsertRubyEntry`, `deleteRubyEntry`
+- `readRubyRegistry`, `writeRubyRegistry`, `upsertRubyEntry`, `deleteRubyEntry`, `ignoreSuggestion`
 
 ### Utilities (`/lib/utils`)
 

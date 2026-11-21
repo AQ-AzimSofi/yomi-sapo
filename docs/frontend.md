@@ -359,9 +359,7 @@ rt {
 
 **Via CSS Variables**:
 \`\`\`typescript
-import { CSS_VARS } from '@/lib/constants';
-
-style={{ backgroundColor: CSS_VARS.BASE }}  // Uses var(--color-base)
+style={{ backgroundColor: 'var(--color-base)' }}
 \`\`\`
 
 **Via Direct Values**:
