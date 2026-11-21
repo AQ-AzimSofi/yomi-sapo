@@ -1,5 +1,6 @@
 import { sql } from './connection';
 import type { Bookmark, TextEntry, QueryResult } from './schema';
+import { normalizeNewlines } from '@/lib/content/bookModel';
 
 function normalizeResult<T>(result: QueryResult<T>): T[] {
   if (result && 'rows' in result && Array.isArray(result.rows)) {
@@ -11,23 +12,25 @@ function normalizeResult<T>(result: QueryResult<T>): T[] {
   return [];
 }
 
-export async function getBookmark(
-  fileName: string,
-  directory: string = 'public'
-): Promise<string> {
+export interface SavedBookmark {
+  text: string;
+  page: number | null;
+}
+
+export async function getBookmark(fileName: string, directory: string = 'public'): Promise<SavedBookmark> {
   try {
-    const result = await sql<Pick<Bookmark, 'bookmark_text'>>`
-      SELECT bookmark_text
+    const result = await sql<Pick<Bookmark, 'bookmark_text'> & { bookmark_page: number | null }>`
+      SELECT bookmark_text, bookmark_page
       FROM bookmarks
       WHERE file_name = ${fileName} AND directory = ${directory}
     `;
 
     const rows = normalizeResult(result);
     if (rows.length === 0) {
-      return '';
+      return { text: '', page: null };
     }
 
-    return rows[0].bookmark_text;
+    return { text: rows[0].bookmark_text, page: rows[0].bookmark_page };
   } catch (error) {
     console.error('Error fetching bookmark:', error);
     throw error;
@@ -129,11 +132,14 @@ export async function getTextEntry(
   }
 }
 
+// Every write path stores LF text, so the reader, the library and narration
+// split a book into the same units.
 export async function upsertTextEntry(
   fileName: string,
-  content: string,
+  rawContent: string,
   directory: string = 'public'
 ): Promise<void> {
+  const content = normalizeNewlines(rawContent);
   try {
     await sql`
       INSERT INTO text_entries (file_name, directory, content, created_at, updated_at)

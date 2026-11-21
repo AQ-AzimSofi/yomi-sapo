@@ -43,6 +43,8 @@ export interface TextResponse {
 
 export interface BookmarkResponse {
   text: string;
+  // The reader page the bookmark was saved on; it tells repeated text apart.
+  page?: number | null;
 }
 
 export interface TextFileListResponse {

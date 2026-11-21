@@ -1,7 +1,9 @@
 #!/usr/bin/env npx tsx
 /**
- * Removes markup junk that EPUB extraction and the rephrase model left in book
- * text. The reader now escapes HTML, so this junk would otherwise show as text.
+ * Normalizes stored book text: Windows line endings become LF (so every reader,
+ * the library and narration split books into the same units), and markup junk
+ * that EPUB extraction and the rephrase model left behind is removed (the reader
+ * escapes HTML, so the junk would otherwise show as text).
  * Bookmarks store the text of the paragraph they point at, so they get the same
  * cleaning; otherwise a bookmark on a cleaned paragraph would stop matching.
  *
@@ -10,14 +12,14 @@
  * it, so bumping it could push a stale local copy over a newer production one.
  *
  * Usage:
- *   npx tsx scripts/db/clean-stray-markup.ts            # local, dry run
- *   npx tsx scripts/db/clean-stray-markup.ts --apply    # local, write
- *   npx tsx scripts/db/clean-stray-markup.ts --prod --apply
+ *   npx tsx scripts/db/clean-book-text.ts            # local, dry run
+ *   npx tsx scripts/db/clean-book-text.ts --apply    # local, write
+ *   npx tsx scripts/db/clean-book-text.ts --prod --apply
  */
 
 import pg from 'pg';
 import dotenv from 'dotenv';
-import { cleanStrayMarkup } from './strayMarkup';
+import { cleanBookText } from './bookTextCleanup';
 import { parseCleanupFlags } from './cleanupFlags';
 
 dotenv.config({ path: '.env.local' });
@@ -96,13 +98,13 @@ async function main(): Promise<void> {
       'SELECT id, bookmark_text FROM bookmarks WHERE bookmark_text IS NOT NULL ORDER BY id'
     );
     const bookChanges = books
-      .map((row) => ({ row, ...cleanStrayMarkup(row.content) }))
+      .map((row) => ({ row, ...cleanBookText(row.content) }))
       .filter(({ row, cleaned }) => cleaned !== row.content);
     const bookmarkChanges = bookmarks
-      .map((row) => ({ id: row.id, original: row.bookmark_text, cleaned: cleanStrayMarkup(row.bookmark_text).cleaned }))
+      .map((row) => ({ id: row.id, original: row.bookmark_text, cleaned: cleanBookText(row.bookmark_text).cleaned }))
       .filter(({ original, cleaned }) => cleaned !== original);
 
-    console.log(`${isProd ? 'production' : 'local'} (${host}): ${bookChanges.length} of ${books.length} books have stray markup`);
+    console.log(`${isProd ? 'production' : 'local'} (${host}): ${bookChanges.length} of ${books.length} books need cleaning`);
     bookChanges.forEach(({ row, removedByRule }) => {
       console.log(`  ${row.directory}/${row.file_name}: ${describeRemovals(removedByRule)}`);
     });

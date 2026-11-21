@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from '@/lib/db/connection';
-import { getTextEntryVersion, upsertBookmark } from './queries';
+import { getBookmark, getTextEntryVersion, upsertBookmark, upsertTextEntry } from './queries';
 
 vi.mock('@/lib/db/connection', () => ({ sql: vi.fn() }));
 
@@ -47,5 +47,30 @@ describe('getTextEntryVersion', () => {
 
     expect(first).toBe('10-100');
     expect(second).toBe('10-200');
+  });
+});
+
+describe('upsertTextEntry', () => {
+  it('stores Windows (CRLF) text with LF line endings', async () => {
+    vi.mocked(sql).mockResolvedValue([] as never);
+
+    await upsertTextEntry('ほん', '< 本文\r\n>> やさしい文\r\n', 'd');
+
+    expect(queryValues()).toContain('< 本文\n>> やさしい文\n');
+    expect(queryValues().some((value) => typeof value === 'string' && value.includes('\r'))).toBe(false);
+  });
+});
+
+describe('getBookmark', () => {
+  it('returns the text and the page it was saved on', async () => {
+    vi.mocked(sql).mockResolvedValue([{ bookmark_text: '一文目', bookmark_page: 4 }] as never);
+
+    expect(await getBookmark('ほん', 'd')).toEqual({ text: '一文目', page: 4 });
+  });
+
+  it('returns an empty bookmark for a book without one', async () => {
+    vi.mocked(sql).mockResolvedValue([] as never);
+
+    expect(await getBookmark('ほん', 'd')).toEqual({ text: '', page: null });
   });
 });

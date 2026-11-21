@@ -1,17 +1,9 @@
-import { parseMarkdown } from '@/lib/utils/markdownParser';
-import { PAGINATION_CONFIG, READER_CONFIG } from '@/lib/constants';
-import type { ParsedItem } from '@/lib/types';
+import { detectContentType, normalizeNewlines, parseReaderItems, type ReaderItem } from '@/lib/content/bookModel';
+import { PAGINATION_CONFIG } from '@/lib/constants';
 
-function isRephraseContent(content: string): boolean {
-  return content.includes('>>') && content.includes('<');
-}
-
-function serializeRephraseItems(items: ParsedItem[]): string {
-  return items
-    .map((item) =>
-      [`<${item.head}`, ...item.subItems.map((sub) => `>>${sub}`)].join('\n')
-    )
-    .join('\n\n');
+function serializeItem(item: ReaderItem): string {
+  if (!('head' in item)) return item.text;
+  return [`<${item.head}`, ...item.subItems.map((sub) => `>>${sub}`)].join('\n');
 }
 
 /**
@@ -19,10 +11,11 @@ function serializeRephraseItems(items: ParsedItem[]): string {
  *
  * A "page" is a client-side slice of PAGINATION_CONFIG.ITEMS_PER_PAGE reader
  * units, so the cap is expressed in units. The reader re-derives units from the
- * text via buildPlayableUnits, so the returned text must parse back to the same
- * unit boundaries: rephrase content is parsed and re-serialized in canonical
- * `<head` / `>>sub` form, plain/furigana content is truncated by paragraph.
- * The rest of the book is never included in the output.
+ * text with the same book model, so the returned text must parse back to the same
+ * unit boundaries: rephrase items are re-serialized in canonical `<head` / `>>sub`
+ * form and paragraphs are joined by blank lines.
+ * The output is always rebuilt from the parsed items, even when the book is
+ * shorter than the cap, so text the parser did not keep never reaches a guest.
  */
 export function truncateToPreviewPages(
   content: string,
@@ -32,18 +25,15 @@ export function truncateToPreviewPages(
   // Clamp defensively: a mis-edited (zero/negative/non-integer) cap must never
   // widen the preview via slice(0, negative) or a fractional boundary.
   const maxUnits = Math.max(0, Math.floor(maxPages)) * itemsPerPage;
-
-  if (isRephraseContent(content)) {
-    const items = parseMarkdown(content);
-    if (items.length <= maxUnits) return content;
-    return serializeRephraseItems(items.slice(0, maxUnits));
+  const preview = parseReaderItems(content).slice(0, maxUnits).map(serializeItem).join('\n\n');
+  // The guest reader detects the format again. Furigana and plain split the same
+  // way, but a preview that switches between rephrase and paragraphs would show
+  // different units, so send nothing rather than wrong text.
+  const isRephrasePreview = detectContentType(preview) === 'rephrase';
+  const isRephraseBook = detectContentType(normalizeNewlines(content)) === 'rephrase';
+  if (preview && isRephrasePreview !== isRephraseBook) {
+    console.warn('Guest preview changed between rephrase and paragraphs; sending an empty preview');
+    return '';
   }
-
-  const paragraphs = content
-    .split(READER_CONFIG.PARAGRAPH_SPLIT_PATTERN)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph.length > 0);
-
-  if (paragraphs.length <= maxUnits) return content;
-  return paragraphs.slice(0, maxUnits).join('\n\n');
+  return preview;
 }

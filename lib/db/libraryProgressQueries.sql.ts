@@ -1,8 +1,12 @@
 import { sql } from './connection';
 import type { QueryResult } from './schema';
-import { stripFurigana } from '@/lib/utils/furiganaParser';
-import { parseReaderItems, type ReaderItem } from '@/lib/utils/buildPlayableUnits';
-import { PAGINATION_CONFIG } from '@/lib/constants';
+import {
+  itemMainText,
+  locateBookmark,
+  parseReaderItems,
+  totalPagesFor,
+  type ReaderItem,
+} from '@/lib/content/bookModel';
 
 /**
  * Per-book data for the library cards, without reading the books' text.
@@ -29,7 +33,7 @@ export interface LibraryRow {
   bookmark_updated_at: string | null;
 }
 
-interface ContentRow {
+export interface ContentRow {
   id: number;
   content: string;
   character_count: number;
@@ -44,18 +48,8 @@ function normalizeResult<T>(result: QueryResult<T>): T[] {
   return Array.isArray(rows) ? (rows as T[]) : [];
 }
 
-function normalizeItemText(text: string): string {
-  return stripFurigana(text).replace(/[\r\n]/g, '').trim();
-}
-
-function bookmarkPageOf(bookmarkText: string, items: ReaderItem[]): number {
-  const normalizedBookmark = normalizeItemText(bookmarkText);
-  if (!normalizedBookmark) return BOOKMARK_NOT_FOUND;
-  const itemIndex = items.findIndex(
-    (item) => normalizeItemText('head' in item ? item.head : item.text) === normalizedBookmark
-  );
-  if (itemIndex === -1) return BOOKMARK_NOT_FOUND;
-  return Math.floor(itemIndex / PAGINATION_CONFIG.ITEMS_PER_PAGE) + 1;
+function bookmarkPageOf(bookmarkText: string, items: ReaderItem[], savedPage: number | null): number {
+  return locateBookmark(items.map(itemMainText), bookmarkText, savedPage).page ?? BOOKMARK_NOT_FOUND;
 }
 
 function hasStaleTextCounts(row: LibraryRow): boolean {
@@ -69,15 +63,15 @@ function needsBookmarkPage(row: LibraryRow): boolean {
   return row.bookmark_page === null || hasStaleTextCounts(row);
 }
 
-function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
+export function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
   const items = parseReaderItems(content.content);
   return {
     ...row,
-    total_pages: Math.ceil(items.length / PAGINATION_CONFIG.ITEMS_PER_PAGE),
+    total_pages: totalPagesFor(items.length),
     total_characters: content.character_count,
     content_bytes: content.byte_count,
     current_bytes: content.byte_count,
-    bookmark_page: needsBookmarkPage(row) ? bookmarkPageOf(row.bookmark_text ?? '', items) : row.bookmark_page,
+    bookmark_page: needsBookmarkPage(row) ? bookmarkPageOf(row.bookmark_text ?? '', items, row.bookmark_page) : row.bookmark_page,
   };
 }
 
