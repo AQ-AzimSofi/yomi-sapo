@@ -723,6 +723,15 @@ function addFuriganaToChunk(chunkText: string, outputDir: string): string {
 // Batch Rephrase Processing
 // ============================================================================
 
+// Chunks are appended, so a fresh start on top of an earlier run's output would repeat its passages.
+function setAsideEarlierOutput(outputPaths: string[]): void {
+  outputPaths.filter((outputPath) => fs.existsSync(outputPath)).forEach((outputPath) => {
+    const asidePath = `${outputPath}.bak`;
+    fs.renameSync(outputPath, asidePath);
+    console.log(`Starting fresh: moved the earlier output to ${path.basename(asidePath)}`);
+  });
+}
+
 async function saveChunkOutput(target: ChunkOutputTarget, output: ChunkOutput): Promise<void> {
   const rawSeparator = fs.existsSync(target.rawPath) ? '\n\n' : '';
   fs.appendFileSync(target.rawPath, rawSeparator + output.rawText, 'utf-8');
@@ -764,6 +773,7 @@ async function batchRephrase(
   console.log(`Total characters: ${strippedLength.toLocaleString()} (excluding furigana)`);
 
   let progress = options.reset ? null : loadProgress(progressPath);
+  const isFreshStart = !progress;
   let chunks: string[];
 
   if (progress) {
@@ -775,6 +785,7 @@ async function batchRephrase(
     }
 
     console.log(`\nResuming from progress: ${progress.chunks.completed}/${progress.chunks.total} chunks done`);
+    console.log(`Model: ${progress.settings.model} (the model this book started with; --reset starts over with --model)`);
     const result = chunkText(sourceText, progress.settings.chunkSize);
     chunks = result.chunks;
   } else {
@@ -819,6 +830,8 @@ async function batchRephrase(
     });
     return true;
   }
+
+  if (isFreshStart) setAsideEarlierOutput([outputPath, outputPathFurigana]);
 
   // Setup graceful shutdown
   let shouldStop = false;
