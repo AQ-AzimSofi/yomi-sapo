@@ -1,4 +1,5 @@
 import { BOOK_VERSION_HEADER } from '@/lib/utils/etag';
+import type { BookTextResponse } from '@/lib/api/contracts';
 
 // Bump the version when the stored URLs or bodies change. v1 was keyed by the
 // combined fileName=directory/file URL the reader no longer requests.
@@ -28,26 +29,27 @@ async function openCache(): Promise<Cache | null> {
 }
 
 async function readText(response: Response): Promise<string> {
-  const body: { text?: string } = await response.json();
+  const body: Partial<BookTextResponse> = await response.json();
   return body.text ?? '';
 }
 
-/** Fetches a book's text, reusing the stored copy when the server says it is current. */
-export async function fetchBookText(url: string, signal?: AbortSignal): Promise<string> {
+/** Downloads the book with these headers; answers a 2xx response or throws. */
+export type BookTextDownload = (versionHeaders: Record<string, string>) => Promise<Response>;
+
+/**
+ * A book's text, reusing the copy stored under `url` when the server says it is
+ * current. `download` sends the stored version so the server can answer 204.
+ */
+export async function readBookTextThroughCache(url: string, download: BookTextDownload): Promise<string> {
   const cache = await openCache();
   const cached = cache ? await cache.match(url) : undefined;
   const storedVersion = cached?.headers.get('etag');
-  const response = await fetch(url, {
-    signal,
-    cache: 'no-store',
-    headers: storedVersion ? { [BOOK_VERSION_HEADER]: storedVersion } : {},
-  });
+  const response = await download(storedVersion ? { [BOOK_VERSION_HEADER]: storedVersion } : {});
 
   if (response.status === 204) {
     if (!cached) throw new Error('The server reported an unchanged book that is not stored');
     return readText(cached);
   }
-  if (!response.ok) throw new Error('Failed to load content');
   if (cache && response.headers.get('etag')) {
     await storeBestEffort(cache, url, response.clone());
   }

@@ -5,6 +5,7 @@ import { bookQuery } from '@/lib/books/bookRef';
 import {
   ApiError,
   explainSentence,
+  fetchBookText,
   fetchBookmark,
   prioritize,
   request,
@@ -394,5 +395,44 @@ describe('synthesizeSpeech', () => {
 
     await expect(synthesizeSpeech({ text: '本' })).rejects.toMatchObject({ promptedGuestKey: true });
     expect(promptedKinds).toEqual(['tts']);
+  });
+});
+
+describe('fetchBookText', () => {
+  const bookTextUrl = `/api/read-public-txt?${bookQuery(BOOK)}`;
+
+  function storedCopy(etag: string) {
+    const stored = new Response(JSON.stringify({ text: '保存した本文' }), { headers: { etag } });
+    return {
+      keys: async () => [],
+      delete: async () => true,
+      open: async () => ({
+        match: async (url: string) => (url === bookTextUrl ? stored.clone() : undefined),
+        put: async () => {},
+      }),
+    };
+  }
+
+  it("downloads the book uncached by the browser, with the reader's AbortSignal", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ text: '本文' }));
+    const controller = new AbortController();
+
+    expect(await fetchBookText(BOOK, controller.signal)).toBe('本文');
+    expect(lastCall().url).toBe(bookTextUrl);
+    expect(lastCall().init).toMatchObject({ method: 'GET', cache: 'no-store', headers: {}, signal: controller.signal });
+  });
+
+  it('sends the version of the copy stored under the same URL and reuses it on 204', async () => {
+    vi.stubGlobal('caches', storedCopy('"7-full-v1"'));
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    expect(await fetchBookText(BOOK)).toBe('保存した本文');
+    expect(lastCall().init.headers).toEqual({ 'x-book-version': '"7-full-v1"' });
+  });
+
+  it('throws an ApiError when the server refuses the book', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'preview_only', message: 'Guests may only open the preview books' } }, 403));
+
+    await expect(fetchBookText(BOOK)).rejects.toMatchObject({ status: 403 });
   });
 });

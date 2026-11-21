@@ -6,6 +6,7 @@
 import { API_ROUTES } from '@/lib/constants';
 import { guestKeyHeaders, promptGuestKeyOnFailure, type GuestKeyKind } from '@/lib/guestKeys';
 import { isRecord } from '@/lib/utils/typeGuards';
+import { readBookTextThroughCache } from '@/lib/bookTextCache';
 import type { BookRef } from '@/lib/books/bookRef';
 import type {
   ApiErrorResponse,
@@ -135,6 +136,14 @@ function bookParams(book: BookRef): Record<string, string> {
 function nullOnApiError(error: unknown): null {
   if (error instanceof ApiError) return null;
   throw error;
+}
+
+/** A book's text. The reader's stored copy is reused when the server says it is still current. */
+export async function fetchBookText(book: BookRef, signal?: AbortSignal): Promise<string> {
+  const query = bookParams(book);
+  return readBookTextThroughCache(apiUrl(API_ROUTES.READ_TEXT, { query }), (versionHeaders) =>
+    send(API_ROUTES.READ_TEXT, { query, headers: versionHeaders, signal, cache: 'no-store' })
+  );
 }
 
 /** The saved bookmark, or null when the server gives none (guests have no bookmarks). */
