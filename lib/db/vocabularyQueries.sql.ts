@@ -181,6 +181,3 @@ export async function deleteVocabularyEntry(id: string): Promise<void> {
   }
 }
 
-export async function getTodayVocabularyEntries(): Promise<VocabularyEntry[]> {
-  return getVocabularyEntries({ today: true });
-}

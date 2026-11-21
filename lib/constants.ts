@@ -2,15 +2,9 @@
  * アプリケーション全体で使用される定数と設定値
  */
 
-
 // デフォルト値（サブディレクトリ対応）
 // Note: No default file is set. App auto-redirects to first available file.
 export const DEFAULT_FILE_NAME = null;
-export const DEFAULT_DROPDOWN_STATE = false;
-
-// テキスト処理
-export const ENGLISH_REGEX = /[a-zA-Z]/;
-
 // AIモデルの設定
 export const AI_MODELS = {
   GEMINI_FLASH: 'gemini-2.0-flash-exp',
@@ -34,12 +28,6 @@ export const MARKDOWN_PATTERNS = {
   BOLD_PATTERN: /\*\*(.*?)\*\*/g,
   HEADING_HASH: '##',
   HEADING_HASH_FULLWIDTH: '＃＃',
-} as const;
-
-// 辞書解析パターン
-export const DICTIONARY_PATTERNS = {
-  WORD_PATTERN: /(.+?)\[(.+?)・(.+?)\]/,
-  SEPARATOR: '・',
 } as const;
 
 // APIルート
@@ -194,8 +182,6 @@ export const STORAGE_KEYS = {
   // TTS設定
   TTS_SPEED: 'tts_speed',
   TTS_VOICE_GENDER: 'tts_voice_gender',
-  TTS_ENABLED: 'tts_enabled',
-  TTS_LAST_POSITION: 'tts_last_position', // {fileName}_{directory}
   // オーディオブック設定
   AUDIOBOOK_ENABLED: 'audiobook_enabled',
   AUDIOBOOK_CONTENT_MODE: 'audiobook_content_mode',
@@ -239,16 +225,6 @@ export const COLORS = {
   SUCCESS: '#1F6F5C',
 } as const;
 
-// CSS変数（インラインスタイルで使用）
-export const CSS_VARS = {
-  BASE: 'var(--color-base)',
-  NEUTRAL: 'var(--color-neutral)',
-  PRIMARY: 'var(--color-primary)',
-  PRIMARY_DARK: 'var(--color-primary-dark)',
-  SECONDARY: 'var(--color-secondary)',
-  SECONDARY_DARK: 'var(--color-secondary-dark)',
-} as const;
-
 // Dark mode color palette
 export const DARK_COLORS = {
   BASE: '#15171C',
@@ -271,13 +247,4 @@ export const READER_THEME = {
   PROGRESS_FILL: '#2F4BA0',
   TRANSITION_FAST: '150ms',
   TRANSITION_NORMAL: '300ms',
-} as const;
-
-// Library page settings
-export const LIBRARY_CONFIG = {
-  GRID_COLUMNS: {
-    MOBILE: 2,
-    TABLET: 3,
-    DESKTOP: 4,
-  },
 } as const;

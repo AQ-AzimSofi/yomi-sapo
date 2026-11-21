@@ -478,9 +478,6 @@ function ReaderContent({
     const newValue = !showFurigana;
     setShowFurigana(newValue);
     localStorage.setItem(STORAGE_KEYS.FURIGANA_ENABLED, newValue.toString());
-    window.dispatchEvent(
-      new CustomEvent('furiganaChanged', { detail: { enabled: newValue } })
-    );
   };
 
   const handleFontSizeChange = (size: number) => {

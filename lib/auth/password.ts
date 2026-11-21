@@ -15,6 +15,3 @@ export async function verifyPassword(password: string): Promise<boolean> {
 }
 
 // Utility to generate hash (for setup only)
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
-}
