@@ -3,6 +3,7 @@ import { EXPLANATION_CONFIG, PAGINATION_CONFIG } from '@/lib/constants';
 import { buildExplanationContext, NO_SURROUNDINGS, sentenceSurroundings } from './explanationContext';
 import type { ReaderItem } from './bookModel';
 import { sentenceOccurrence, splitIntoSentences } from './sentences';
+import { splitUnitParts } from './unitParts';
 
 const MAX = EXPLANATION_CONFIG.MAX_CONTEXT_SIZE;
 
@@ -30,6 +31,19 @@ describe('sentenceSurroundings', () => {
       'はい。漢字を読む！ はい。「え？',
       'はい。漢字を読む！ はい。「え？」　はい。',
     ]);
+  });
+
+  // The items cut a unit around its illustrations with splitUnitParts, so a sentence
+  // repeated after an illustration must be found at its own place, not the earlier copy.
+  it('finds each sentence the reader shows around an illustration where it stands', () => {
+    const unitText = 'はい。そうか。[IMAGE:a.jpg]はい。分かった。';
+    const sentences = splitUnitParts(unitText).flatMap((part) => (part.kind === 'text' ? part.sentences : []));
+
+    const textsBefore = sentences.map(
+      ({ text, occurrence }) => sentenceSurroundings(paragraphs(unitText), { unitIndex: 0, sentence: text, occurrence }).before
+    );
+
+    expect(textsBefore).toEqual(['', 'はい。', 'はい。そうか。', 'はい。そうか。はい。']);
   });
 
   it('takes the rest of the paragraph and the neighbouring paragraphs on each side', () => {

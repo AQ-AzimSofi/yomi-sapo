@@ -34,6 +34,14 @@ describe('splitUnitParts', () => {
       },
     ]);
   });
+
+  it('counts a repeated sentence across the illustrations of its unit', () => {
+    const sentences = splitUnitParts('はい。そうか。[IMAGE:a.jpg]はい。分かった。[IMAGE:b.jpg]はい。').flatMap((part) =>
+      part.kind === 'text' ? part.sentences.map((sentence) => `${sentence.text}${sentence.occurrence}`) : []
+    );
+
+    expect(sentences).toEqual(['はい。0', 'そうか。0', 'はい。1', '分かった。0', 'はい。2']);
+  });
 });
 
 describe('hasIllustration', () => {
