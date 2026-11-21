@@ -9,13 +9,13 @@ import BookImage from "@/app/components/reading/BookImage";
 import IconButton from "@/app/components/reading/IconButton";
 import ParagraphText from "@/app/components/reading/ParagraphText";
 import TTSButton from "@/app/components/reading/TTSButton";
+import { useItemActions } from "@/app/hooks/useItemActions";
 import { useSearchParams } from "next/navigation";
 import { COLORS, THEME } from "@/lib/constants";
 import { hasIllustration, splitUnitParts } from "@/lib/content/unitParts";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import type { BookRef } from "@/lib/books/bookRef";
-import { saveBookmark, translate } from "@/lib/api/client";
 
 interface CollapsibleItemProps {
   id?: string;
@@ -60,11 +60,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   const highlightWord = searchParams.get("highlight");
 
   const [isOpen, setIsOpen] = useState(initialDropdownState);
-  const [loading, setLoading] = useState(false);
   const [shouldHighlight, setShouldHighlight] = useState(false);
-  const [showTranslation, setShowTranslation] = useState(false);
-  const [translatedText, setTranslatedText] = useState<string | null>(null);
-  const [translating, setTranslating] = useState(false);
   const [unavailableImagePaths, setUnavailableImagePaths] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
@@ -85,56 +81,15 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     setIsOpen(initialDropdownState);
   }, [initialDropdownState]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setLoading(true);
-      await saveBookmark({ ...book, content: head, page: currentPage });
-      onSubmitSuccess();
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleTranslateClick = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-
-    if (showTranslation) {
-      setShowTranslation(false);
-      return;
-    }
-
-    if (translatedText) {
-      setShowTranslation(true);
-      return;
-    }
-
-    try {
-      setTranslating(true);
-      const { translatedText } = await translate(head);
-      setTranslatedText(translatedText);
-      setShowTranslation(true);
-    } catch (error) {
-      console.error("Translation error:", error);
-    } finally {
-      setTranslating(false);
-    }
-  };
-
-  const handleTripleClickSelect = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.detail >= 3) {
-      e.stopPropagation();
-      const selection = window.getSelection();
-      if (selection) {
-        const range = document.createRange();
-        range.selectNodeContents(e.currentTarget);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    }
-  };
+  const {
+    isSavingBookmark,
+    bookmarkItem,
+    isTranslationShown,
+    translatedText,
+    isTranslating,
+    toggleTranslation,
+    selectOnTripleClick,
+  } = useItemActions({ text: head, book, currentPage, onBookmarkSaved: onSubmitSuccess });
 
   const headParts = splitUnitParts(head);
   const hasImage = hasIllustration(headParts);
@@ -153,7 +108,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     setUnavailableImagePaths((previous) => new Set(previous).add(imagePath));
 
   const renderHeadWithImages = () => {
-    if (showTranslation && translatedText) {
+    if (isTranslationShown && translatedText) {
       return (
         <span style={{ color: THEME.SECONDARY_DARK }}>
           {translatedText}
@@ -254,7 +209,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
       >
         <div
           className="head-text font-bold text-lg whitespace-pre-wrap"
-          onClickCapture={handleTripleClickSelect}
+          onClickCapture={selectOnTripleClick}
           style={{
             color: THEME.INK,
             ...(!aiExplanationEnabled
@@ -308,20 +263,20 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
             )}
             <TTSButton text={head} onLongPress={onStartContinuousPlay} />
             <IconButton
-              disabled={translating}
-              onClick={handleTranslateClick}
-              style={{ opacity: translating ? 0.5 : 1 }}
+              disabled={isTranslating}
+              onClick={toggleTranslation}
+              style={{ opacity: isTranslating ? 0.5 : 1 }}
               aria-label="Translate"
             >
-              <TranslateIcon isActive={showTranslation} />
+              <TranslateIcon isActive={isTranslationShown} />
             </IconButton>
             <form
-              onSubmit={handleSubmit}
+              onSubmit={bookmarkItem}
               onClick={(e) => e.stopPropagation()}
               className="inline-flex"
             >
               <IconButton
-                disabled={loading}
+                disabled={isSavingBookmark}
                 type="submit"
                 aria-label="Bookmark"
               >
@@ -339,7 +294,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
               <div
                 key={index}
                 className="sub-item-text"
-                onClick={handleTripleClickSelect}
+                onClick={selectOnTripleClick}
                 style={{ color: THEME.SECONDARY_DARK }}
               >
                 {index === 4 ? "" : <ParagraphText text={subItem} showFurigana={showFurigana} />}

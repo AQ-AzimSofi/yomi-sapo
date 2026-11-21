@@ -8,12 +8,12 @@ import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
 import IconButton from "@/app/components/reading/IconButton";
 import ParagraphText from "@/app/components/reading/ParagraphText";
+import { useItemActions } from "@/app/hooks/useItemActions";
 import { COLORS, THEME } from "@/lib/constants";
 import { hasIllustration, splitUnitParts } from "@/lib/content/unitParts";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import { toBookKey, type BookRef } from "@/lib/books/bookRef";
-import { saveBookmark, translate } from "@/lib/api/client";
 
 interface ParagraphItemProps {
   id?: string;
@@ -48,49 +48,17 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
   isPlaying,
   onStartFromHere,
 }) => {
-  const [loading, setLoading] = useState(false);
-  const [showTranslation, setShowTranslation] = useState(false);
-  const [translatedText, setTranslatedText] = useState<string | null>(null);
-  const [translating, setTranslating] = useState(false);
   const [unavailableImagePaths, setUnavailableImagePaths] = useState<ReadonlySet<string>>(() => new Set());
 
-  const handleBookmarkClick = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setLoading(true);
-      await saveBookmark({ ...book, content: text, page: currentPage });
-      onBookmarkSuccess();
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleTranslateClick = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-
-    if (showTranslation) {
-      setShowTranslation(false);
-      return;
-    }
-
-    if (translatedText) {
-      setShowTranslation(true);
-      return;
-    }
-
-    try {
-      setTranslating(true);
-      const { translatedText } = await translate(text);
-      setTranslatedText(translatedText);
-      setShowTranslation(true);
-    } catch (error) {
-      console.error("Translation error:", error);
-    } finally {
-      setTranslating(false);
-    }
-  };
+  const {
+    isSavingBookmark,
+    bookmarkItem,
+    isTranslationShown,
+    translatedText,
+    isTranslating,
+    toggleTranslation,
+    selectOnTripleClick,
+  } = useItemActions({ text, book, currentPage, onBookmarkSaved: onBookmarkSuccess });
 
   const paragraphParts = splitUnitParts(text);
   const hasImage = hasIllustration(paragraphParts);
@@ -107,21 +75,8 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
   const markImageUnavailable = (imagePath: string) =>
     setUnavailableImagePaths((previous) => new Set(previous).add(imagePath));
 
-  const handleTripleClickSelect = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.detail >= 3) {
-      e.stopPropagation();
-      const selection = window.getSelection();
-      if (selection) {
-        const range = document.createRange();
-        range.selectNodeContents(e.currentTarget);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    }
-  };
-
   const renderContentWithImages = () => {
-    if (showTranslation && translatedText) {
+    if (isTranslationShown && translatedText) {
       return (
         <div
           className="head-text font-bold text-lg whitespace-pre-wrap"
@@ -136,7 +91,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
       return (
         <div
           className="head-text font-bold text-lg whitespace-pre-wrap"
-          onClickCapture={handleTripleClickSelect}
+          onClickCapture={selectOnTripleClick}
         >
           {paragraphParts.map(
             (part, index) =>
@@ -162,7 +117,7 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
               <div
                 key={index}
                 className="head-text font-bold text-lg whitespace-pre-wrap"
-                onClickCapture={handleTripleClickSelect}
+                onClickCapture={selectOnTripleClick}
               >
                 <ParagraphText
                   text={part.text}
@@ -236,19 +191,19 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
           </IconButton>
         )}
         <IconButton
-          disabled={translating}
-          onClick={handleTranslateClick}
-          style={{ opacity: translating ? 0.5 : 1 }}
+          disabled={isTranslating}
+          onClick={toggleTranslation}
+          style={{ opacity: isTranslating ? 0.5 : 1 }}
           aria-label="Translate"
         >
-          <TranslateIcon isActive={showTranslation} />
+          <TranslateIcon isActive={isTranslationShown} />
         </IconButton>
         <form
-          onSubmit={handleBookmarkClick}
+          onSubmit={bookmarkItem}
           onClick={(e) => e.stopPropagation()}
         >
           <IconButton
-            disabled={loading}
+            disabled={isSavingBookmark}
             type="submit"
             aria-label="Bookmark"
           >
