@@ -5,6 +5,7 @@ import { marked } from 'marked';
 import { API_ROUTES, COLORS, EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG } from '@/lib/constants';
 import { useExplanationCache } from '@/app/hooks/useExplanationCache';
 import { parseFurigana, segmentsToHTML, stripFurigana } from '@/lib/utils/furiganaParser';
+import { neutralizeHtmlTags } from '@/lib/utils/html';
 import { toTint } from '@/lib/utils/colorTint';
 import { guestKeyHeaders, promptGuestKeyOnFailure, GUEST_KEY_UPDATED_EVENT } from '@/lib/guestKeys';
 import type { ExplanationRequest, ExplanationResponse } from '@/lib/types';
@@ -196,7 +197,7 @@ export default function ExplanationSidebar({
 
   const renderMarkdown = (text: string): string => {
     const textWithoutFurigana = stripFurigana(text);
-    return marked(textWithoutFurigana, { async: false });
+    return marked(neutralizeHtmlTags(textWithoutFurigana), { async: false });
   };
 
   const contextPercent =

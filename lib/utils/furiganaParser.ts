@@ -6,6 +6,14 @@
  */
 
 import { FURIGANA_PATTERNS } from '../constants';
+import { escapeHtml } from './html';
+
+// Some books mark footnotes with <sup>; only the bare tag is let through.
+const ESCAPED_FOOTNOTE_TAG = /&lt;(\/?)sup&gt;/g;
+
+function escapeBookText(text: string): string {
+  return escapeHtml(text).replace(ESCAPED_FOOTNOTE_TAG, '<$1sup>');
+}
 
 export interface FuriganaSegment {
   type: 'text' | 'ruby';
@@ -103,9 +111,9 @@ export function segmentsToHTML(segments: FuriganaSegment[], showFurigana: boolea
   return segments
     .map(segment => {
       if (segment.type === 'ruby' && showFurigana && segment.ruby) {
-        return `<ruby>${segment.text}<rt>${segment.ruby}</rt></ruby>`;
+        return `<ruby>${escapeBookText(segment.text)}<rt>${escapeHtml(segment.ruby)}</rt></ruby>`;
       }
-      return segment.text;
+      return escapeBookText(segment.text);
     })
     .join('');
 }

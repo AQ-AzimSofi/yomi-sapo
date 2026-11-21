@@ -103,7 +103,35 @@ describe('segmentsToHTML', () => {
     expect(segmentsToHTML([], true)).toBe('');
   });
 
-  it.todo('escapes HTML special characters in base text and readings (bug)');
+  it('escapes markup in plain text so it shows as text', () => {
+    expect(segmentsToHTML([{ type: 'text', text: '型は<string>&"引用"\'' }], true)).toBe(
+      '型は&lt;string&gt;&amp;&quot;引用&quot;&#39;'
+    );
+  });
+
+  it('escapes markup in the base text and reading of a ruby segment', () => {
+    expect(segmentsToHTML([{ type: 'ruby', text: '<i>字', ruby: '<b>じ' }], true)).toBe(
+      '<ruby>&lt;i&gt;字<rt>&lt;b&gt;じ</rt></ruby>'
+    );
+  });
+
+  it('escapes an event-handler tag instead of rendering it', () => {
+    expect(segmentsToHTML([{ type: 'text', text: '<img src=x onerror=alert(1)>' }], true)).toBe(
+      '&lt;img src=x onerror=alert(1)&gt;'
+    );
+  });
+
+  it('keeps the superscript tags that books use for footnote marks', () => {
+    expect(segmentsToHTML([{ type: 'text', text: '原理である<sup>*19</sup>」' }], true)).toBe(
+      '原理である<sup>*19</sup>」'
+    );
+  });
+
+  it('escapes a superscript tag that carries attributes', () => {
+    expect(segmentsToHTML([{ type: 'text', text: '<sup onclick="x">1</sup>' }], true)).toBe(
+      '&lt;sup onclick=&quot;x&quot;&gt;1</sup>'
+    );
+  });
 });
 
 describe('stripFurigana', () => {
