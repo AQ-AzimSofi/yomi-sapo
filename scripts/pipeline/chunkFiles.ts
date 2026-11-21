@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { WriteFile } from '../shared/atomicFile';
 import { getProgressPath } from './progress';
 
-export type ChunkFileKind = 'rephrase' | 'furigana';
+/** rephrase: the model's reply. reader: the text furigana is added to. furigana: what the reader shows. */
+export type ChunkFileKind = 'rephrase' | 'reader' | 'furigana';
 
 // The outputs used to grow by appending each chunk after this separator; rebuilt outputs keep the same bytes.
 export const CHUNK_SEPARATOR = '\n\n';
@@ -36,7 +37,7 @@ function joinChunkFiles(chunksDir: string, doneChunkIndexes: readonly number[], 
     .join(CHUNK_SEPARATOR);
 }
 
-function readFileOrEmpty(filePath: string): string {
+export function readFileOrEmpty(filePath: string): string {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '';
 }
 
