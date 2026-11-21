@@ -3,6 +3,7 @@
 import { useMemo, type CSSProperties } from "react";
 import { pageStartIndex, type ContentType, type ReaderItem } from "@/lib/content/bookModel";
 import { PRIORITY_LEVELS, THEME, type PriorityScore } from "@/lib/constants";
+import { toTint } from "@/lib/utils/colorTint";
 import CollapsibleItem from "@/app/components/reading/CollapsibleItem";
 import ParagraphItem from "@/app/components/reading/ParagraphItem";
 import type { BookRef } from "@/lib/books/bookRef";
@@ -30,10 +31,9 @@ function priorityWrapperStyle(score: PriorityScore): CSSProperties {
   const level = PRIORITY_LEVELS[score];
   return {
     position: "relative",
-    borderLeft: `${level.border}px solid ${level.color}`,
+    borderLeft: `${level.ruleWidthPx}px solid ${toTint(THEME.PRIMARY, level.ruleTintPercent)}`,
     paddingLeft: 26,
     opacity: level.opacity,
-    borderRadius: 4,
     transition: "opacity 200ms ease",
   };
 }
@@ -42,18 +42,19 @@ function PriorityBadge({ score }: { score: PriorityScore }) {
   const level = PRIORITY_LEVELS[score];
   return (
     <span
-      title={`Importance ${score}/5 - ${level.label}`}
+      className="font-gothic"
+      title={`重要度 ${score}/5・${level.label}`}
       style={{
         position: "absolute",
         left: 4,
         top: 4,
-        width: 18,
-        height: 18,
-        borderRadius: "50%",
-        backgroundColor: level.color,
-        color: "#FFFFFF",
+        width: 16,
+        height: 16,
+        border: `1px solid ${THEME.NEUTRAL}`,
+        color: THEME.SECONDARY,
         fontSize: 10,
         fontWeight: 700,
+        fontVariantNumeric: "tabular-nums",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

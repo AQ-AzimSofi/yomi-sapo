@@ -66,24 +66,25 @@ export const GUEST_KEY_HEADERS = {
   TRANSLATE: 'x-guest-translate-key',
 } as const;
 
-// "Prioritize" beta: presentation metadata for each importance score (1 = least
-// important, 5 = most). `color`/`border` accent the unit, `opacity` dims it, and
-// `label` names the level; how the reader applies them lives in ReadingContent.
+// Importance analysis: how the reader marks each score (1 = least important, 5 = most).
+// A left rule in the accent color grows heavier and darker with the score, `opacity`
+// fades the less important units, and `label` names the level; how the reader applies
+// them lives in ReadingContent.
 export type PriorityScore = 1 | 2 | 3 | 4 | 5;
 
 export interface PriorityLevel {
-  color: string;
+  ruleWidthPx: number;
+  ruleTintPercent: number;
   opacity: number;
-  border: number;
   label: string;
 }
 
 export const PRIORITY_LEVELS: Record<PriorityScore, PriorityLevel> = {
-  5: { color: '#FF3B30', opacity: 1, border: 4, label: 'Critical' },
-  4: { color: '#FF9500', opacity: 1, border: 3, label: 'High' },
-  3: { color: '#FFCC00', opacity: 0.9, border: 3, label: 'Moderate' },
-  2: { color: '#AEAEB2', opacity: 0.6, border: 2, label: 'Low' },
-  1: { color: '#C7C7CC', opacity: 0.45, border: 2, label: 'Filler' },
+  5: { ruleWidthPx: 3, ruleTintPercent: 100, opacity: 1, label: '最重要' },
+  4: { ruleWidthPx: 2, ruleTintPercent: 100, opacity: 1, label: '重要' },
+  3: { ruleWidthPx: 2, ruleTintPercent: 55, opacity: 0.9, label: '標準' },
+  2: { ruleWidthPx: 1, ruleTintPercent: 55, opacity: 0.6, label: '低め' },
+  1: { ruleWidthPx: 1, ruleTintPercent: 35, opacity: 0.45, label: '読み飛ばし可' },
 };
 
 // ページルート
