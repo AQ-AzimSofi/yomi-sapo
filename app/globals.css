@@ -87,7 +87,7 @@ body {
 }
 
 ::selection {
-  background-color: rgba(47, 75, 160, 0.2);
+  background-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
   color: inherit;
 }
 
