@@ -1,7 +1,7 @@
 import { AI_MODELS, VN_RETRY_CONFIG } from '../../lib/constants';
-import { alignRephrase, parseRephrasePairs, type AlignReport } from '../utils/rephrase-output';
 import { rephraseWithClaude, splitParagraphs } from '../utils/claude-rephrase';
 import { stripRubyTags } from './chunking';
+import { findFormatProblem, sanitizeRephraseResponse, type SanitizedRephrase } from './rephraseFormat';
 import {
   describeError,
   describeUnusableKey,
@@ -41,24 +41,20 @@ const ai_instructions = `
 それでは、以下の文章でお願いします：
 `;
 
-function validateResponse(response: string): boolean {
-  const items = parseRephrasePairs(response);
-  if (items.length === 0) return false;
-  return items.every(item =>
-    item.head && item.head.length > 0 && item.subItems.length >= 1
-  );
-}
-
-function logAlignReport(report: AlignReport): void {
+function logRephraseCheck(sanitized: SanitizedRephrase): void {
+  const { alignment } = sanitized;
   const summary = [
-    `${report.strayLines.length} stray line(s) dropped`,
-    `${report.restoredHeadCount} original(s) restored`,
-    `${report.insertedPassages.length} skipped passage(s) put back`,
-    `${report.unmatchedHeads.length} unmatched`,
+    `${sanitized.metaLines.length} meta and ${sanitized.contentLines.length} other stray line(s) dropped`,
+    `${alignment.restoredHeadCount} original(s) restored`,
+    `${alignment.insertedPassages.length} skipped passage(s) put back`,
+    `${alignment.unmatchedHeads.length} unmatched`,
   ].join(', ');
   console.log(`  Output check: ${summary}`);
-  report.insertedPassages.forEach((passage) => console.log(`    + ${passage.slice(0, 60)}`));
-  report.unmatchedHeads.forEach((head) => console.log(`    ? ${head.slice(0, 60)}`));
+  sanitized.contentLines.forEach((line) => console.log(`    - ${line.slice(0, 60)}`));
+  alignment.insertedPassages.forEach((passage) => console.log(`    + ${passage.slice(0, 60)}`));
+  alignment.unmatchedHeads.forEach((head) => console.log(`    ? ${head.slice(0, 60)}`));
+  sanitized.missingImageMarkers.forEach((marker) => console.log(`    ! image marker lost: ${marker}`));
+  sanitized.readerMismatches.forEach((mismatch) => console.log(`    ! the reader reads this differently: ${mismatch}`));
 }
 
 export function sleep(ms: number): Promise<void> {
@@ -121,8 +117,9 @@ async function requestWithModel(request: ModelRequest, current: ModelAttempt): P
     (error: unknown) => ({ text: undefined, error }),
   );
   if (outcome.text !== undefined) {
-    if (validateResponse(outcome.text)) return { response: outcome.text, requestCount: current.attempt };
-    console.log('    Invalid format, retrying with correction prompt...');
+    const formatProblem = findFormatProblem(outcome.text);
+    if (!formatProblem) return { response: outcome.text, requestCount: current.attempt };
+    console.log(`    Invalid format (${formatProblem}), retrying with correction prompt...`);
     console.log('    Response preview:', outcome.text.slice(0, 200).replace(/\n/g, '\\n'));
     return requestWithModel(request, { attempt: current.attempt + 1, instruction: CORRECTION_PREFIX + ai_instructions });
   }
@@ -181,9 +178,9 @@ export function createGeminiRephraser(model: string, createPool: () => KeyPool):
 
     if (result.response !== undefined) {
       if (result.usedModel !== model) console.log(`    Success with fallback model: ${result.usedModel}`);
-      const aligned = alignRephrase(cleanChunk, result.response);
-      logAlignReport(aligned.report);
-      return { rawText: result.response, readerText: aligned.text, attempts: result.requestCount };
+      const sanitized = sanitizeRephraseResponse(cleanChunk, result.response);
+      logRephraseCheck(sanitized);
+      return { rawText: result.response, readerText: sanitized.text, attempts: result.requestCount };
     }
 
     // Each line stands in as its own rephrase so no content is skipped
