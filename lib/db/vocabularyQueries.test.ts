@@ -143,6 +143,28 @@ const FILTER_CASES: [string, VocabularyFilter, string, unknown[]][] = [
     `${CREATED_TODAY} AND file_name = ? AND directory = ?`,
     [...TODAY_BOUNDS, ROW.file_name, ROW.directory],
   ],
+  ['word and fileName', { word: ROW.word, fileName: ROW.file_name }, 'word ILIKE ? AND file_name = ?', [WORD_PATTERN, ROW.file_name]],
+  ['word and directory', { word: ROW.word, directory: ROW.directory }, 'word ILIKE ? AND directory = ?', [WORD_PATTERN, ROW.directory]],
+  ['today and fileName', { today: true, fileName: ROW.file_name }, `${CREATED_TODAY} AND file_name = ?`, [...TODAY_BOUNDS, ROW.file_name]],
+  ['today and directory', { today: true, directory: ROW.directory }, `${CREATED_TODAY} AND directory = ?`, [...TODAY_BOUNDS, ROW.directory]],
+  [
+    'today, word and fileName',
+    { today: true, word: ROW.word, fileName: ROW.file_name },
+    `${CREATED_TODAY} AND word ILIKE ? AND file_name = ?`,
+    [...TODAY_BOUNDS, WORD_PATTERN, ROW.file_name],
+  ],
+  [
+    'today, word and directory',
+    { today: true, word: ROW.word, directory: ROW.directory },
+    `${CREATED_TODAY} AND word ILIKE ? AND directory = ?`,
+    [...TODAY_BOUNDS, WORD_PATTERN, ROW.directory],
+  ],
+  [
+    'today, word, fileName and directory',
+    { today: true, word: ROW.word, fileName: ROW.file_name, directory: ROW.directory },
+    `${CREATED_TODAY} AND word ILIKE ? AND file_name = ? AND directory = ?`,
+    [...TODAY_BOUNDS, WORD_PATTERN, ROW.file_name, ROW.directory],
+  ],
 ];
 
 afterEach(() => {
@@ -152,7 +174,7 @@ afterEach(() => {
 
 describe('vocabulary queries', () => {
   it('lists entries in the camelCase shape', async () => {
-    answerQueries([ROW]);
+    recordQueries([ROW]);
 
     expect(await getVocabularyEntries({ fileName: ROW.file_name, directory: ROW.directory })).toStrictEqual([ENTRY]);
   });
