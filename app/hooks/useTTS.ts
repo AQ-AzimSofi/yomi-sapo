@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_ROUTES, STORAGE_KEYS, TTS_CONFIG, type TTSVoiceGender } from '@/lib/constants';
-import type { TTSRequest, TTSResponse } from '@/lib/types';
+import type { TTSRequest, TTSResponse } from '@/lib/api/contracts';
 import { cleanTextForTTS } from '@/lib/utils/ttsTextCleaner';
 import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 

@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { API_ROUTES } from '@/lib/constants';
-import type { RubyRegistry, RubyEntry, RubyRegistryResponse } from '@/lib/types';
+import type { RubyRegistry, RubyEntry } from '@/lib/types';
+import type { RubyRegistryResponse } from '@/lib/api/contracts';
 
 interface UseRubyRegistryOptions {
   directory: string;

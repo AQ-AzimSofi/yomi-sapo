@@ -7,7 +7,7 @@ import {
 import { withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isOptionalString, isRecord } from '@/lib/utils/typeGuards';
-import type { VocabularyEntryResponse } from '@/lib/types';
+import type { VocabularyEntryResponse } from '@/lib/api/contracts';
 
 interface RouteParams {
   params: Promise<{ id: string }>;

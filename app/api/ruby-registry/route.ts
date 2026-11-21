@@ -10,7 +10,8 @@ import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import { isPublicDirectory } from '@/lib/publicBooks';
 import { isSafeBookRef } from '@/lib/books/bookRef';
-import type { RubyRegistryResponse, RubyEntry } from '@/lib/types';
+import type { RubyEntry } from '@/lib/types';
+import type { RubyRegistryResponse } from '@/lib/api/contracts';
 
 export const dynamic = 'force-dynamic';
 

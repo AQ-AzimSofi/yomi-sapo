@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { verifyPassword } from '@/lib/auth/password';
 import { createSession, SESSION_COOKIE } from '@/lib/auth/session';
 import { withAuth } from '@/lib/auth/guards';
-import { apiError, errorBody, parseJsonBody, type ApiErrorCode } from '@/lib/api/respond';
+import { apiError, errorBody, parseJsonBody } from '@/lib/api/respond';
+import type { ApiErrorCode } from '@/lib/api/contracts';
 import { isRecord } from '@/lib/utils/typeGuards';
 
 /**

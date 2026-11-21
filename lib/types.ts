@@ -36,46 +36,6 @@ export interface NarrationManifest {
   cues: (NarrationCue | null)[];
 }
 
-// APIレスポンスタイプ
-export interface TextResponse {
-  text: string;
-}
-
-export interface BookmarkResponse {
-  text: string;
-  // The reader page the bookmark was saved on; it tells repeated text apart.
-  page?: number | null;
-}
-
-export interface TextFileListResponse {
-  directories: string[];
-  filesByDirectory: Record<string, string[]>;
-  files: string[]; // Flat array of all files (directory/filename format) for backward compatibility
-  bookmarkSync?: {
-    cleaned: number;
-    added: number;
-  };
-}
-
-export interface ExplanationResponse {
-  explanation: string;
-  message: string;
-}
-
-export interface WriteResponse {
-  success?: boolean;
-  message: string;
-}
-
-// APIリクエストタイプ
-export interface ExplanationRequest {
-  sentence: string;
-  context: string;
-  fileName: string;
-  contextSize: number;
-  mode: import('./constants').ExplanationMode;
-}
-
 // Book metadata types (from EPUB converter JSON)
 export interface BookImage {
   fileName: string;          // e.g., "illustration-001.jpg"
@@ -133,30 +93,6 @@ export interface VocabularyEntry {
   updatedAt: string;
 }
 
-export interface VocabularyListResponse {
-  success: true;
-  entries: VocabularyEntry[];
-  count: number;
-}
-
-export interface VocabularyEntryResponse {
-  success: true;
-  message?: string;
-  entry: VocabularyEntry;
-}
-
-// TTS（Text-to-Speech）型
-export interface TTSRequest {
-  text: string;
-  speed?: number;
-  voiceGender?: import('./constants').TTSVoiceGender;
-}
-
-export interface TTSResponse {
-  audioContent: string; // base64エンコードされた音声データ
-  message: string;
-}
-
 // Ruby Registry types (for character name lookups)
 export interface RubyEntry {
   kanji: string;
@@ -174,10 +110,4 @@ export interface RubyRegistry {
   bookTitle: string;
   entries: RubyEntry[];
   suggestions: RubySuggestion[];
-}
-
-export interface RubyRegistryResponse {
-  success: boolean;
-  registry?: RubyRegistry;
-  message: string;
 }

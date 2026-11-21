@@ -1,5 +1,5 @@
 import { API_ROUTES, type TTSVoiceGender } from '@/lib/constants';
-import type { TTSRequest, TTSResponse } from '@/lib/types';
+import type { TTSRequest, TTSResponse } from '@/lib/api/contracts';
 import { cleanTextForTTS } from '@/lib/utils/ttsTextCleaner';
 import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 

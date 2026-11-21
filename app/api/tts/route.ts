@@ -3,7 +3,7 @@ import { TTS_CONFIG, GUEST_KEY_HEADERS } from "@/lib/constants";
 import { guestKeyRequired, withAuth } from "@/lib/auth/guards";
 import { apiError, parseJsonBody } from "@/lib/api/respond";
 import { isNonEmptyString, isOptionalNumber, isRecord } from "@/lib/utils/typeGuards";
-import type { TTSRequest, TTSResponse } from "@/lib/types";
+import type { TTSRequest, TTSResponse } from "@/lib/api/contracts";
 import { cleanTextForTTS } from "@/lib/utils/ttsTextCleaner";
 
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";

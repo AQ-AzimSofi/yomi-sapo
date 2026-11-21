@@ -9,7 +9,7 @@ import { withAuth } from '@/lib/auth/guards';
 import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import { bookRefFromParams, isSafeBookRef, parseBookKey, toBookKey, type BookRef } from '@/lib/books/bookRef';
-import type { WriteResponse } from '@/lib/types';
+import type { WriteResponse } from '@/lib/api/contracts';
 
 // Mark as dynamic to prevent static generation during build
 export const dynamic = 'force-dynamic';

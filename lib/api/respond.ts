@@ -1,24 +1,6 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
-
-export type ApiErrorCode =
-  | 'invalid_json'
-  | 'invalid_body'
-  | 'invalid_request'
-  | 'invalid_password'
-  | 'sign_in_required'
-  | 'admin_key_required'
-  | 'guest_key_required'
-  | 'preview_only'
-  | 'not_found'
-  | 'not_configured'
-  | 'upstream_failed'
-  | 'upstream_timeout'
-  | 'internal_error';
-
-export interface ApiErrorBody {
-  error: { code: ApiErrorCode; message: string };
-}
+import type { ApiErrorBody, ApiErrorCode } from './contracts';
 
 /** The standard error body, for the few responses that add fields older clients still read. */
 export function errorBody(code: ApiErrorCode, message: string): ApiErrorBody {

@@ -9,7 +9,7 @@ import { DEFAULT_FILE_NAME } from '@/lib/constants';
 import { bookRefFromParams, isSafeBookRef } from '@/lib/books/bookRef';
 import { withAuth } from '@/lib/auth/guards';
 import { apiError } from '@/lib/api/respond';
-import type { BookmarkResponse } from '@/lib/types';
+import type { BookmarkResponse } from '@/lib/api/contracts';
 
 // Mark as dynamic to prevent static generation during build
 export const dynamic = 'force-dynamic';

@@ -7,7 +7,8 @@ import AppHeader from '@/app/components/ui/AppHeader';
 import { COLORS, API_ROUTES } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
-import type { TextFileListResponse, RubyEntry } from '@/lib/types';
+import type { RubyEntry } from '@/lib/types';
+import type { TextFileListResponse } from '@/lib/api/contracts';
 
 interface BookOption {
   directory: string;

@@ -1,7 +1,8 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import type { GuestKeyKind } from '@/lib/guestKeys';
-import { apiError, errorBody, internalError, type ApiErrorBody } from '@/lib/api/respond';
+import { apiError, errorBody, internalError } from '@/lib/api/respond';
+import type { ApiErrorBody } from '@/lib/api/contracts';
 import { SESSION_COOKIE, verifySession } from './session';
 
 /** Who is calling: the signed-in owner, or anyone without a valid session. */
