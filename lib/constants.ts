@@ -114,6 +114,7 @@ export const PRIORITY_LEVELS: Record<PriorityScore, PriorityLevel> = {
 // ページルート
 export const PAGE_ROUTES = {
   HOME: '/',
+  LIBRARY: '/library',
   TEXT_INPUT: '/text-input',
   TEXT_INPUT_AI: '/text-input-ai',
   OCR: '/ocr',

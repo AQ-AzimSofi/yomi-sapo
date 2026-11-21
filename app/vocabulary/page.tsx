@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import AppHeader from '@/app/components/ui/AppHeader';
 import { COLORS, STORAGE_KEYS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { parseFurigana, segmentsToHTML } from '@/lib/utils/furiganaParser';
@@ -112,8 +113,11 @@ export default function VocabularyPage() {
   );
 
   return (
-    <div className="min-h-screen pt-24 pb-8 px-4" style={{ color: COLORS.INK }}>
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen pb-8" style={{ color: COLORS.INK }}>
+      <div className="max-w-[1120px] mx-auto px-5 sm:px-8">
+        <AppHeader currentPage="vocabulary" />
+      </div>
+      <div className="max-w-7xl mx-auto px-4 pt-10">
         {/* Header */}
         <div className="mb-8">
           <h1 className="font-mincho font-bold text-3xl mb-2">単語帳</h1>
