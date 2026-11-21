@@ -2,42 +2,23 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { COLORS, DARK_COLORS } from '@/lib/constants';
+import { THEME } from '@/lib/constants';
+import { toTint } from '@/lib/utils/colorTint';
 import { formatBookTitle } from '@/lib/utils/bookTitle';
 
 interface ReaderHeaderProps {
   currentPage: number;
   totalPages: number;
   bookmarkPage: number | null;
-  isDarkMode: boolean;
   directoryParam: string | null;
   fileNameParam: string | null;
   onPageChange: (page: number) => void;
 }
 
-const LIGHT_HEADER_THEME = {
-  surface: 'rgba(255,255,255,0.92)',
-  border: COLORS.NEUTRAL,
-  text: COLORS.INK,
-  textMuted: COLORS.SECONDARY,
-  inputBg: COLORS.NEUTRAL_SOFT,
-  accent: COLORS.PRIMARY,
-};
-
-const DARK_HEADER_THEME = {
-  surface: 'rgba(21,23,28,0.92)',
-  border: DARK_COLORS.NEUTRAL,
-  text: DARK_COLORS.TEXT,
-  textMuted: DARK_COLORS.TEXT_MUTED,
-  inputBg: DARK_COLORS.SURFACE,
-  accent: DARK_COLORS.PRIMARY,
-};
-
 export default function ReaderHeader({
   currentPage,
   totalPages,
   bookmarkPage,
-  isDarkMode,
   fileNameParam,
   onPageChange,
 }: ReaderHeaderProps) {
@@ -61,15 +42,14 @@ export default function ReaderHeader({
     }
   };
 
-  const theme = isDarkMode ? DARK_HEADER_THEME : LIGHT_HEADER_THEME;
   const bookTitle = fileNameParam ? formatBookTitle(fileNameParam) : '';
 
   return (
     <header
       className="sticky top-0 z-40 backdrop-blur-xl border-b transition-colors duration-300 font-gothic"
       style={{
-        backgroundColor: theme.surface,
-        borderColor: theme.border,
+        backgroundColor: toTint(THEME.READER_BG, 92),
+        borderColor: THEME.NEUTRAL,
         height: '48px',
       }}
     >
@@ -78,7 +58,7 @@ export default function ReaderHeader({
           <button
             onClick={() => router.push('/library')}
             className="flex items-center gap-1.5 interactive-nav-btn flex-shrink-0 px-2 py-1"
-            style={{ color: theme.text }}
+            style={{ color: THEME.INK }}
             aria-label="本棚に戻る"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -90,7 +70,7 @@ export default function ReaderHeader({
           <div className="flex items-center gap-4 min-w-0">
             <span
               className="hidden md:block font-mincho font-bold text-[17px] tracking-[0.06em] truncate"
-              style={{ color: theme.text }}
+              style={{ color: THEME.INK }}
             >
               {bookTitle}
             </span>
@@ -100,7 +80,7 @@ export default function ReaderHeader({
                 onClick={() => onPageChange(currentPage - 1)}
                 disabled={currentPage <= 1}
                 className="p-1.5 disabled:opacity-30 interactive-nav-btn"
-                style={{ color: theme.textMuted }}
+                style={{ color: THEME.SECONDARY }}
                 aria-label="前のページ"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -126,11 +106,11 @@ export default function ReaderHeader({
                   onKeyDown={handlePageInputKeyDown}
                   className="w-10 text-center text-sm font-medium py-1 border-none focus:outline-none bg-transparent"
                   style={{
-                    color: theme.text,
-                    ...(isPageInputFocused ? { backgroundColor: theme.inputBg, boxShadow: `0 0 0 2px ${theme.accent}` } : {}),
+                    color: THEME.INK,
+                    ...(isPageInputFocused ? { backgroundColor: THEME.NEUTRAL_SOFT, boxShadow: `0 0 0 2px ${THEME.PRIMARY}` } : {}),
                   }}
                 />
-                <span className="text-sm whitespace-nowrap" style={{ color: theme.textMuted }}>
+                <span className="text-sm whitespace-nowrap" style={{ color: THEME.SECONDARY }}>
                   / {totalPages}
                 </span>
               </div>
@@ -139,7 +119,7 @@ export default function ReaderHeader({
                 onClick={() => onPageChange(currentPage + 1)}
                 disabled={currentPage >= totalPages}
                 className="p-1.5 disabled:opacity-30 interactive-nav-btn"
-                style={{ color: theme.textMuted }}
+                style={{ color: THEME.SECONDARY }}
                 aria-label="次のページ"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -154,7 +134,7 @@ export default function ReaderHeader({
               <button
                 onClick={() => onPageChange(bookmarkPage)}
                 className="text-sm font-bold interactive-link"
-                style={{ color: theme.accent }}
+                style={{ color: THEME.PRIMARY }}
                 title={`栞のページへ (p.${bookmarkPage})`}
               >
                 栞 p.{bookmarkPage}

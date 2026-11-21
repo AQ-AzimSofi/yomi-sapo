@@ -1,16 +1,14 @@
 'use client';
 
-import { COLORS, DARK_COLORS } from '@/lib/constants';
+import { THEME } from '@/lib/constants';
 
 interface ProgressBarProps {
   progress: number;
-  isDarkMode?: boolean;
   visible?: boolean;
 }
 
 export default function ProgressBar({
   progress,
-  isDarkMode = false,
   visible = true,
 }: ProgressBarProps) {
   if (!visible) return null;
@@ -23,7 +21,7 @@ export default function ProgressBar({
           className="h-full transition-all duration-300"
           style={{
             width: `${Math.min(100, Math.max(0, progress))}%`,
-            backgroundColor: isDarkMode ? DARK_COLORS.PRIMARY : COLORS.PRIMARY,
+            backgroundColor: THEME.PRIMARY,
             transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
           }}
         />
