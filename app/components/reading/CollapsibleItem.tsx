@@ -10,13 +10,12 @@ import TTSButton from "@/app/components/reading/TTSButton";
 import { useSearchParams } from "next/navigation";
 import { COLORS, THEME } from "@/lib/constants";
 import { sentenceOccurrence, splitIntoSentences } from "@/lib/content/sentences";
+import { hasIllustration, splitUnitParts } from "@/lib/content/unitParts";
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import type { BookRef } from "@/lib/books/bookRef";
 import { saveBookmark, translate } from "@/lib/api/client";
-
-const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
 
 interface CollapsibleItemProps {
   id?: string;
@@ -193,7 +192,8 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     );
   };
 
-  const hasImage = IMAGE_PATTERN.test(head);
+  const headParts = splitUnitParts(head);
+  const hasImage = hasIllustration(headParts);
 
   const resolveImage = (originalName: string) => {
     const actualFileName =
@@ -206,36 +206,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
 
   const markImageUnavailable = (imagePath: string) =>
     setUnavailableImagePaths((previous) => new Set(previous).add(imagePath));
-
-  const parseContentWithImages = (content: string) => {
-    const parts: Array<{ type: "text" | "image"; content: string }> = [];
-    let lastIndex = 0;
-    const regex = /\[IMAGE:([^\]]+)\]/g;
-    let match;
-
-    while ((match = regex.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        const textBefore = content.substring(lastIndex, match.index);
-        if (textBefore.trim()) {
-          parts.push({ type: "text", content: textBefore });
-        }
-      }
-
-      const imageName = match[1];
-      parts.push({ type: "image", content: imageName });
-
-      lastIndex = regex.lastIndex;
-    }
-
-    if (lastIndex < content.length) {
-      const textAfter = content.substring(lastIndex);
-      if (textAfter.trim()) {
-        parts.push({ type: "text", content: textAfter });
-      }
-    }
-
-    return parts;
-  };
 
   const renderHeadWithImages = () => {
     if (showTranslation && translatedText) {
@@ -250,19 +220,17 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
       return renderTextWithFurigana(head, true);
     }
 
-    const parts = parseContentWithImages(head);
-
     return (
       <div className="head-content">
-        {parts.map((part, index) => {
-          if (part.type === "text") {
+        {headParts.map((part, index) => {
+          if (part.kind === "text") {
             return (
               <div key={index} className="whitespace-pre-wrap">
-                {renderTextWithFurigana(part.content, true)}
+                {renderTextWithFurigana(part.text, true)}
               </div>
             );
           } else {
-            const { actualFileName, imagePath } = resolveImage(part.content);
+            const { actualFileName, imagePath } = resolveImage(part.name);
             return (
               <BookImage
                 key={index}
@@ -318,11 +286,10 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
   };
 
   // A line whose original is only illustrations, none of which exist, would be an empty card.
-  const headParts = hasImage ? parseContentWithImages(head) : [];
   const isOnlyUnavailableImages =
     headParts.length > 0 &&
     headParts.every(
-      (part) => part.type === "image" && unavailableImagePaths.has(resolveImage(part.content).imagePath)
+      (part) => part.kind === "image" && unavailableImagePaths.has(resolveImage(part.name).imagePath)
     );
   if (isOnlyUnavailableImages) {
     return null;

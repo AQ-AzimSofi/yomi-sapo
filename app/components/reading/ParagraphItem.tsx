@@ -8,13 +8,12 @@ import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
 import { COLORS, THEME } from "@/lib/constants";
 import { sentenceOccurrence, splitIntoSentences } from "@/lib/content/sentences";
+import { hasIllustration, splitUnitParts } from "@/lib/content/unitParts";
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import { toBookKey, type BookRef } from "@/lib/books/bookRef";
 import { saveBookmark, translate } from "@/lib/api/client";
-
-const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
 
 interface ParagraphItemProps {
   id?: string;
@@ -93,7 +92,8 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
     }
   };
 
-  const hasImage = IMAGE_PATTERN.test(text);
+  const paragraphParts = splitUnitParts(text);
+  const hasImage = hasIllustration(paragraphParts);
 
   const resolveImage = (originalName: string) => {
     const actualFileName =
@@ -106,36 +106,6 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
 
   const markImageUnavailable = (imagePath: string) =>
     setUnavailableImagePaths((previous) => new Set(previous).add(imagePath));
-
-  const parseContentWithImages = (content: string) => {
-    const parts: Array<{ type: "text" | "image"; content: string }> = [];
-    let lastIndex = 0;
-    const regex = /\[IMAGE:([^\]]+)\]/g;
-    let match;
-
-    while ((match = regex.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        const textBefore = content.substring(lastIndex, match.index);
-        if (textBefore.trim()) {
-          parts.push({ type: "text", content: textBefore });
-        }
-      }
-
-      const imageName = match[1];
-      parts.push({ type: "image", content: imageName });
-
-      lastIndex = regex.lastIndex;
-    }
-
-    if (lastIndex < content.length) {
-      const textAfter = content.substring(lastIndex);
-      if (textAfter.trim()) {
-        parts.push({ type: "text", content: textAfter });
-      }
-    }
-
-    return parts;
-  };
 
   const handleTripleClickSelect = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.detail >= 3) {
@@ -217,23 +187,21 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
       );
     }
 
-    const parts = parseContentWithImages(text);
-
     return (
       <div className="paragraph-content">
-        {parts.map((part, index) => {
-          if (part.type === "text") {
+        {paragraphParts.map((part, index) => {
+          if (part.kind === "text") {
             return (
               <div
                 key={index}
                 className="head-text font-bold text-lg whitespace-pre-wrap"
                 onClickCapture={handleTripleClickSelect}
               >
-                {renderTextWithFurigana(part.content, true)}
+                {renderTextWithFurigana(part.text, true)}
               </div>
             );
           } else {
-            const { actualFileName, imagePath } = resolveImage(part.content);
+            const { actualFileName, imagePath } = resolveImage(part.name);
             return (
               <BookImage
                 key={index}
@@ -263,11 +231,10 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
   };
 
   // A paragraph made only of illustrations, none of which exist, would be an empty card.
-  const paragraphParts = hasImage ? parseContentWithImages(text) : [];
   const isOnlyUnavailableImages =
     paragraphParts.length > 0 &&
     paragraphParts.every(
-      (part) => part.type === "image" && unavailableImagePaths.has(resolveImage(part.content).imagePath)
+      (part) => part.kind === "image" && unavailableImagePaths.has(resolveImage(part.name).imagePath)
     );
   if (isOnlyUnavailableImages) {
     return null;
