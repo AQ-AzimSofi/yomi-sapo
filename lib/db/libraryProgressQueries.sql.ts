@@ -1,9 +1,8 @@
 import { sql } from './connection';
 import type { QueryResult } from './schema';
 import {
-  findBookmarkIndex,
+  bookmarkPageFor,
   itemMainText,
-  pageOfIndex,
   parseReaderItems,
   totalPagesFor,
   type ReaderItem,
@@ -49,9 +48,8 @@ function normalizeResult<T>(result: QueryResult<T>): T[] {
   return Array.isArray(rows) ? (rows as T[]) : [];
 }
 
-function bookmarkPageOf(bookmarkText: string, items: ReaderItem[]): number {
-  const itemIndex = findBookmarkIndex(items.map(itemMainText), bookmarkText);
-  return itemIndex === null ? BOOKMARK_NOT_FOUND : pageOfIndex(itemIndex);
+function bookmarkPageOf(bookmarkText: string, items: ReaderItem[], savedPage: number | null): number {
+  return bookmarkPageFor(items.map(itemMainText), bookmarkText, savedPage) ?? BOOKMARK_NOT_FOUND;
 }
 
 function hasStaleTextCounts(row: LibraryRow): boolean {
@@ -73,7 +71,7 @@ function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
     total_characters: content.character_count,
     content_bytes: content.byte_count,
     current_bytes: content.byte_count,
-    bookmark_page: needsBookmarkPage(row) ? bookmarkPageOf(row.bookmark_text ?? '', items) : row.bookmark_page,
+    bookmark_page: needsBookmarkPage(row) ? bookmarkPageOf(row.bookmark_text ?? '', items, row.bookmark_page) : row.bookmark_page,
   };
 }
 

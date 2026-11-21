@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from '@/lib/db/connection';
-import { getTextEntryVersion, upsertBookmark } from './queries';
+import { getBookmark, getTextEntryVersion, upsertBookmark } from './queries';
 
 vi.mock('@/lib/db/connection', () => ({ sql: vi.fn() }));
 
@@ -47,5 +47,19 @@ describe('getTextEntryVersion', () => {
 
     expect(first).toBe('10-100');
     expect(second).toBe('10-200');
+  });
+});
+
+describe('getBookmark', () => {
+  it('returns the text and the page it was saved on', async () => {
+    vi.mocked(sql).mockResolvedValue([{ bookmark_text: '一文目', bookmark_page: 4 }] as never);
+
+    expect(await getBookmark('ほん', 'd')).toEqual({ text: '一文目', page: 4 });
+  });
+
+  it('returns an empty bookmark for a book without one', async () => {
+    vi.mocked(sql).mockResolvedValue([] as never);
+
+    expect(await getBookmark('ほん', 'd')).toEqual({ text: '', page: null });
   });
 });

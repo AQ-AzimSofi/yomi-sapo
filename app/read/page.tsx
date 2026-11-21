@@ -25,6 +25,7 @@ import GuestModeBanner from '@/app/components/ui/GuestModeBanner';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
 import {
   detectContentType,
+  bookmarkPageFor,
   findBookmarkIndex,
   legacyPageBookmark,
   pageOfIndex,
@@ -95,6 +96,7 @@ function ReaderContent({
 
   const [content, setContent] = useState<string>('');
   const [bookmarkText, setBookmarkText] = useState<string>('');
+  const [bookmarkSavedPage, setBookmarkSavedPage] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -204,6 +206,7 @@ function ReaderContent({
       // count, page count, narration lookup - describing the book we just left.
       setContent('');
       setBookmarkText('');
+      setBookmarkSavedPage(null);
 
       try {
         const [contentRes, bookmarkRes] = await Promise.all([
@@ -221,6 +224,7 @@ function ReaderContent({
           const bookmarkData = await bookmarkRes.json();
           if (controller.signal.aborted) return;
           setBookmarkText(bookmarkData.text || '');
+          setBookmarkSavedPage(bookmarkData.page ?? null);
         }
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -304,15 +308,13 @@ function ReaderContent({
 
   const bookmarkItemIndex = useMemo(() => {
     if (!bookmarkText || legacyPageBookmark(bookmarkText) !== null) return null;
-    return findBookmarkIndex(unitMainTexts, bookmarkText);
-  }, [bookmarkText, unitMainTexts]);
+    return findBookmarkIndex(unitMainTexts, bookmarkText, bookmarkSavedPage);
+  }, [bookmarkText, bookmarkSavedPage, unitMainTexts]);
 
-  const bookmarkPage = useMemo(() => {
-    if (!bookmarkText) return null;
-    const legacyPage = legacyPageBookmark(bookmarkText);
-    if (legacyPage !== null) return legacyPage;
-    return bookmarkItemIndex === null ? null : pageOfIndex(bookmarkItemIndex);
-  }, [bookmarkText, bookmarkItemIndex]);
+  const bookmarkPage = useMemo(
+    () => (bookmarkText ? bookmarkPageFor(unitMainTexts, bookmarkText, bookmarkSavedPage) : null),
+    [bookmarkText, bookmarkSavedPage, unitMainTexts]
+  );
 
   const getStartIndex = useCallback(() => {
     const pageTop = pageStartIndex(currentPage);
@@ -426,6 +428,7 @@ function ReaderContent({
       if (res.ok) {
         const data = await res.json();
         setBookmarkText(data.text || '');
+        setBookmarkSavedPage(data.page ?? null);
       }
     } catch (err) {
       console.error('Failed to refetch bookmark:', err);

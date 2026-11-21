@@ -34,8 +34,8 @@ export async function GET(request: Request): Promise<NextResponse<BookmarkRespon
     const directory = parts.length > 1 ? parts.slice(0, -1).join('/') : 'public';
     const file = parts[parts.length - 1];
 
-    const bookmarkContent = await getBookmark(file, directory);
-    return NextResponse.json({ text: bookmarkContent });
+    const bookmark = await getBookmark(file, directory);
+    return NextResponse.json(bookmark);
   } catch (error) {
     console.error('ブックマークの読み込み中にエラーが発生しました:', error);
     return NextResponse.json({ text: '' });
