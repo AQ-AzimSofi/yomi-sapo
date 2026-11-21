@@ -14,7 +14,6 @@ const eslintConfig = [
   {
     ignores: [
       "lib/generated/prisma/**/*",
-      "scripts/migrate-bookmarks.ts",
     ],
   },
 ];

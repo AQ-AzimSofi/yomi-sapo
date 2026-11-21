@@ -20,8 +20,7 @@ yomi-sapo/
 │   └── middleware/         # Request middleware
 ├── scripts/                # Utility scripts (Python/JS/TS)
 ├── public/                 # Static assets & text files
-├── docs/                   # Documentation
-└── prisma/                 # Database schema (legacy)
+└── docs/                   # Documentation
 ```
 
 ---
@@ -138,13 +137,11 @@ db/
 ├── connection.ts           # PostgreSQL connection pool
 ├── schema.ts               # TypeScript interfaces & CREATE TABLE SQL
 ├── queries.ts              # Bookmark & text entry queries
-└── vocabularyQueries.sql.ts # Vocabulary queries (replaced Prisma)
+└── vocabularyQueries.sql.ts # Vocabulary queries
 ```
 
 **Key Interfaces:**
-- `Book`, `BookImage`, `ProcessingHistory`
-- `UserBookmark`, `VocabularyEntry`
-- `Bookmark`, `TextEntry`
+- `Bookmark`, `TextEntry`, `VocabularyEntry`
 
 **Usage:**
 ```typescript
@@ -253,11 +250,10 @@ Tables are created via `/api/init-db`:
 |-------|---------|
 | `bookmarks` | File-based bookmark positions |
 | `text_entries` | Stored text content |
-| `books` | Book metadata from EPUB |
-| `book_images` | Images extracted from EPUB |
-| `processing_history` | EPUB processing records |
-| `user_bookmarks` | User bookmarks linked to books |
+| `narration` | Audiobook narration manifests |
 | `vocabulary_entries` | User vocabulary diary |
+
+The old Prisma tables (`"Book"`, `"BookImage"`, `"ProcessingHistory"`, `"UserBookmark"`) still exist in both databases but nothing reads them, and they are not synced.
 
 ---
 

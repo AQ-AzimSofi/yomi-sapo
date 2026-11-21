@@ -16,77 +16,36 @@ const FILE_DIR_PAIR = ['file_name', 'directory'] as const;
 // assumption ever changes, lift this into a per-table TableConfig field.
 const SURROGATE_PK = 'id';
 
-type ConflictStrategy =
-  | { kind: 'insert-only' }
-  | { kind: 'last-write-wins'; timestampCol: string };
-
 export interface TableConfig {
   name: string;
   conflictKey: ConflictKey;
   orderBy: string;
   identity: IdentityKey;
-  strategy: ConflictStrategy;
+  // Every synced table is last-write-wins on this column.
+  timestampCol: string;
 }
 
 export const TABLES: TableConfig[] = [
-  {
-    name: '"Book"',
-    // Conflict on id (cuid), not fileName: BookImage, UserBookmark, and
-    // ProcessingHistory FK to Book.id. Resolving conflicts on fileName would
-    // keep the target's id while incoming child rows still reference the
-    // source's id, leaving child FK references dangling. In this app's
-    // workflow books are only ingested via the EPUB pipeline on a single
-    // machine, so cuids stay consistent across DBs and id-conflict is safe.
-    conflictKey: { kind: 'column', col: 'id' },
-    orderBy: '"createdAt"',
-    identity: { kind: 'column', col: '"fileName"' },
-    strategy: { kind: 'last-write-wins', timestampCol: '"updatedAt"' },
-  },
-  {
-    name: '"BookImage"',
-    conflictKey: { kind: 'column', col: 'id' },
-    orderBy: '"createdAt"',
-    identity: { kind: 'column', col: '"fileName"' },
-    strategy: { kind: 'insert-only' },
-  },
-  {
-    name: '"ProcessingHistory"',
-    conflictKey: { kind: 'column', col: 'id' },
-    orderBy: '"processedAt"',
-    identity: { kind: 'column', col: 'id' },
-    strategy: { kind: 'insert-only' },
-  },
   {
     name: 'bookmarks',
     conflictKey: { kind: 'composite', cols: FILE_DIR_PAIR },
     orderBy: 'updated_at',
     identity: { kind: 'composite', cols: FILE_DIR_PAIR, sep: '|' },
-    strategy: { kind: 'last-write-wins', timestampCol: 'updated_at' },
-  },
-  {
-    name: '"UserBookmark"',
-    // userId is technically nullable, and a row-wise IN never matches a NULL,
-    // so a legacy NULL row is selected but never fetched and is reported as
-    // failed on every sync. The Prisma schema sets a default of "default", so
-    // any row inserted via the app is safe — but backfill if NULLs appear.
-    conflictKey: { kind: 'composite', cols: ['bookId', 'userId'] },
-    orderBy: '"updatedAt"',
-    identity: { kind: 'column', col: 'id' },
-    strategy: { kind: 'last-write-wins', timestampCol: '"updatedAt"' },
+    timestampCol: 'updated_at',
   },
   {
     name: 'vocabulary_entries',
     conflictKey: { kind: 'column', col: 'id' },
     orderBy: 'created_at',
     identity: { kind: 'column', col: 'word' },
-    strategy: { kind: 'last-write-wins', timestampCol: 'updated_at' },
+    timestampCol: 'updated_at',
   },
   {
     name: 'text_entries',
     conflictKey: { kind: 'composite', cols: FILE_DIR_PAIR },
     orderBy: 'created_at',
     identity: { kind: 'composite', cols: FILE_DIR_PAIR, sep: '|' },
-    strategy: { kind: 'last-write-wins', timestampCol: 'updated_at' },
+    timestampCol: 'updated_at',
   },
 ];
 
@@ -120,14 +79,11 @@ async function getCount(client: Client, table: string): Promise<number | null> {
   }
 }
 
-// Only last-write-wins tables can propagate content edits, so only they need a
-// comparable timestamp; insert-only tables report NULL and are never "newer".
 // Millisecond precision matches what the pg driver round-trips: a local
 // timestamp(6) value with sub-ms digits can never be beaten by an upsert from
 // the driver, so comparing at microseconds would flag it as newer forever.
 function syncTimestampMsExpr(table: TableConfig): string {
-  if (table.strategy.kind === 'insert-only') return 'NULL';
-  return `floor(extract(epoch from ${table.strategy.timestampCol}) * 1000)`;
+  return `floor(extract(epoch from ${table.timestampCol}) * 1000)`;
 }
 
 function identityQuery(table: TableConfig): string {
@@ -227,15 +183,10 @@ function buildBatchUpsertSql(table: TableConfig, columns: string[], batchSize: n
   const conflictCols = conflictColumns(table.conflictKey);
   const conflictExpr = conflictCols.map(quoteIdent).join(', ');
 
-  if (table.strategy.kind === 'insert-only') {
-    return `INSERT INTO ${table.name} (${colList}) VALUES ${valuesClause}
-            ON CONFLICT (${conflictExpr}) DO NOTHING`;
-  }
-
-  const ts = table.strategy.timestampCol;
-  // Preserve the target's surrogate PK on conflict so child FK references
-  // already pointing at it stay valid. The conflict columns are likewise
-  // excluded since updating them would change the row's identity.
+  const ts = table.timestampCol;
+  // Keep the target's surrogate PK on conflict: serial ids are assigned
+  // separately in each database. The conflict columns are likewise excluded
+  // since updating them would change the row's identity.
   const excludedFromUpdate = new Set<string>([...conflictCols, SURROGATE_PK]);
   const updateSet = columns
     .filter(c => !excludedFromUpdate.has(c))
@@ -288,12 +239,7 @@ async function getKeySnapshot(client: Client, table: TableConfig): Promise<KeySn
 // Ship only rows the target lacks or holds an older copy of. Sending every row
 // and letting the upsert's WHERE discard it moved ~17 MB of text_entries each
 // way on every sync, which alone took close to the dev wrapper's timeout.
-function selectKeysToTransfer(
-  source: KeySnapshot,
-  target: KeySnapshot,
-  table: TableConfig
-): unknown[][] {
-  const canOverwrite = table.strategy.kind === 'last-write-wins';
+function selectKeysToTransfer(source: KeySnapshot, target: KeySnapshot): unknown[][] {
   const keys: unknown[][] = [];
   for (const [key, sourceEntry] of source) {
     const targetEntry = target.get(key);
@@ -301,7 +247,6 @@ function selectKeysToTransfer(
       keys.push(sourceEntry.keyValues);
       continue;
     }
-    if (!canOverwrite) continue;
     if (sourceEntry.updatedAtMs === null || targetEntry.updatedAtMs === null) continue;
     if (sourceEntry.updatedAtMs > targetEntry.updatedAtMs) keys.push(sourceEntry.keyValues);
   }
@@ -373,7 +318,7 @@ export async function syncDirection(
     `${context} snapshot`,
     Promise.all([getKeySnapshot(source, table), getKeySnapshot(target, table)])
   );
-  const keys = selectKeysToTransfer(sourceSnapshot, targetSnapshot, table);
+  const keys = selectKeysToTransfer(sourceSnapshot, targetSnapshot);
   if (keys.length === 0) return { table: tableName, rows: 0, skipped: 0, failed: 0, direction };
 
   const sourceRows = await withSyncContext(`${context} fetch`, fetchRowsByKey(source, table, keys));
