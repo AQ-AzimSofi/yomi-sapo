@@ -36,7 +36,7 @@ import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import { describeLoadFailure } from './loadFailure';
-import { readerThemeFrom, type ReaderTheme } from './readerTheme';
+import { applyReaderTheme, readerThemeFrom, type ReaderTheme } from './readerTheme';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -168,16 +168,7 @@ function ReaderContent({
     }
   }, []);
 
-  // On the document element the theme also reaches the page ground and the scrollbars.
-  useEffect(() => {
-    const root = document.documentElement;
-    root.dataset.theme = readerTheme;
-    document.body.style.backgroundColor = THEME.READER_BG;
-    return () => {
-      delete root.dataset.theme;
-      document.body.style.backgroundColor = '';
-    };
-  }, [readerTheme]);
+  useEffect(() => applyReaderTheme(document, readerTheme), [readerTheme]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
