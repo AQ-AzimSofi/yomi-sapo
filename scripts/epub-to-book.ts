@@ -33,14 +33,13 @@ import { isClaudeModel } from './utils/claude-rephrase';
 import { chunkText, stripRubyTags } from './pipeline/chunking';
 import { createProgress, getProgressPath, loadProgress, saveProgress, simpleHash } from './pipeline/progress';
 import {
-  currentClientIndex,
-  getApiKeyCount,
-  rephraseChunkWithClaude,
-  rephraseChunkWithGemini,
-  rotateAIClient,
+  createClaudeRephraser,
+  createGeminiRephraser,
   sleep,
   type ChunkOutput,
+  type ChunkRephraser,
 } from './pipeline/rephraseChunk';
+import { createKeyPool } from './shared/geminiKeyPool';
 
 // Load environment variables
 const envLocalPath = path.join(process.cwd(), '.env.local');
@@ -353,10 +352,21 @@ async function saveChunkOutput(target: ChunkOutputTarget, output: ChunkOutput): 
   console.log(`  Warning: Database sync failed. File saved locally.`);
 }
 
-async function batchRephrase(
-  bookName: string,
-  sourceDir: string,
-  options: CLIOptions
+interface BookLocation {
+  bookName: string;
+  sourceDir: string;
+}
+
+export type CreateRephraser = (model: string) => ChunkRephraser;
+
+export function createRephraser(model: string): ChunkRephraser {
+  return isClaudeModel(model) ? createClaudeRephraser(model) : createGeminiRephraser(model, () => createKeyPool());
+}
+
+export async function batchRephrase(
+  { bookName, sourceDir }: BookLocation,
+  options: CLIOptions,
+  createChunkRephraser: CreateRephraser
 ): Promise<boolean> {
   console.log('\n=== Step 4: Batch Rephrasing ===\n');
 
@@ -378,6 +388,8 @@ async function batchRephrase(
   let progress = options.reset ? null : loadProgress(progressPath);
   const isFreshStart = !progress;
   let chunks: string[];
+  // A resumed run keeps the model it started with, whatever --model says now
+  const rephraser = createChunkRephraser(progress ? progress.settings.model : options.model);
 
   if (progress) {
     const currentHash = simpleHash(sourceText);
@@ -403,7 +415,7 @@ async function batchRephrase(
     if (usesClaude) {
       console.log(`Rephraser: claude -p (no delay between chunks)`);
     } else {
-      const keyCount = getApiKeyCount();
+      const keyCount = rephraser.keyCount;
       const effectiveDelay = Math.ceil(delaySeconds / keyCount);
       console.log(`API Keys: ${keyCount} (rotating for faster processing)`);
       console.log(`Delay: ${effectiveDelay}s (${formatDuration(effectiveDelay)}) between chunks (base: ${delaySeconds}s / ${keyCount} keys)`);
@@ -452,9 +464,7 @@ async function batchRephrase(
     fileName: `${bookName}-rephrase-furigana`,
     directory: `${options.outputDir}/${bookName}`,
   };
-  // A resumed run keeps the model it started with, whatever --model says now
   const usesClaudeForBook = isClaudeModel(progress.settings.model);
-  const rephraseChunk = usesClaudeForBook ? rephraseChunkWithClaude : rephraseChunkWithGemini;
   const startTime = Date.now();
   let processedCount = 0;
 
@@ -475,7 +485,7 @@ async function batchRephrase(
     chunkProgress.status = 'processing';
     saveProgress(progressPath, progress);
 
-    const output = await rephraseChunk(chunk, progress.settings.model);
+    const output = await rephraser.rephraseChunk(chunk, i);
     chunkProgress.status = 'completed';
     chunkProgress.completedAt = new Date().toISOString();
     chunkProgress.attempts = output.attempts;
@@ -496,17 +506,12 @@ async function batchRephrase(
     saveProgress(progressPath, progress);
     if (usesClaudeForBook) continue;
 
-    // Rotate to next API key for next chunk
-    rotateAIClient();
-
     // Wait before next chunk (delay divided by number of API keys)
     if (i < chunks.length - 1 && !shouldStop) {
       const pendingCount = progress.chunks.items.filter(c => c.status === 'pending').length;
       if (pendingCount > 0) {
-        const keyCount = getApiKeyCount();
-        const effectiveDelay = Math.ceil(progress.settings.delaySeconds / keyCount);
-        console.log(`\n  Rotating to API key ${(currentClientIndex % keyCount) + 1}/${keyCount}`);
-        console.log(`  Waiting ${formatDuration(effectiveDelay)} before next chunk...`);
+        const effectiveDelay = Math.ceil(progress.settings.delaySeconds / rephraser.keyCount);
+        console.log(`\n  Waiting ${formatDuration(effectiveDelay)} before next chunk...`);
         console.log(`  (Press Ctrl+C to stop and save progress)\n`);
         await sleep(effectiveDelay * 1000);
       }
@@ -661,7 +666,7 @@ Example:
 
   // Step 4: Batch Rephrase (unless skipped)
   if (!options.skipRephrase) {
-    const success = await batchRephrase(bookName, sourceDir, options);
+    const success = await batchRephrase({ bookName, sourceDir }, options, createRephraser);
     if (!success && !options.dryRun) {
       console.log('\nRephrasing incomplete. Run again to resume.');
     }
