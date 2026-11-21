@@ -28,16 +28,23 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { ApiError, GoogleGenAI } from '@google/genai';
+import type { GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
 import sharp from 'sharp';
 import { CONTINUATION_MARKER, findStrayMarker } from './page-markers';
-
-dotenv.config({ path: [path.join(process.cwd(), '.env.local'), path.join(process.cwd(), '.env')] });
+import { isEntryPoint } from '../shared/entryPoint';
+import {
+  PAID_API_KEY_ENV_NAME,
+  createKeyPool,
+  describeError,
+  describeUnusableKey,
+  isRetryable,
+  pickKey,
+  retireKey,
+  type KeyPool,
+} from '../shared/geminiKeyPool';
 
 const DEFAULT_MODEL = 'gemini-3.5-flash';
-const FREE_API_KEY_ENV_NAMES = ['GEMINI_API_KEY', 'GEMINI_API_KEY2', 'GEMINI_API_KEY3', 'GEMINI_API_KEY4', 'GEMINI_API_KEY5'];
-const PAID_API_KEY_ENV_NAME = 'GEMINI_API_KEY_PAID';
 const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -77,18 +84,6 @@ interface CliOptions {
   outDir: string;
   model: string;
   concurrency?: number;
-}
-
-interface ApiKey {
-  envName: string;
-  client: GoogleGenAI;
-}
-
-interface KeyPool {
-  freeKeys: ApiKey[];
-  paidKey?: ApiKey;
-  // Free keys out of daily quota or rejected, skipped for the rest of the run.
-  retiredFreeKeys: Set<ApiKey>;
 }
 
 interface OcrContext {
@@ -150,56 +145,6 @@ function parseCliOptions(): CliOptions {
   };
 }
 
-function readApiKey(envName: string): ApiKey | undefined {
-  const apiKey = process.env[envName];
-  if (!apiKey) return undefined;
-  return { envName, client: new GoogleGenAI({ apiKey }) };
-}
-
-function createKeyPool(): KeyPool {
-  const freeKeys = FREE_API_KEY_ENV_NAMES.map(readApiKey).filter((key): key is ApiKey => key !== undefined);
-  const paidKey = readApiKey(PAID_API_KEY_ENV_NAME);
-  if (freeKeys.length === 0 && !paidKey) {
-    throw new Error(`No Gemini API key found. Set ${FREE_API_KEY_ENV_NAMES.join(' / ')} in .env.local or ${PAID_API_KEY_ENV_NAME}.`);
-  }
-  return { freeKeys, paidKey, retiredFreeKeys: new Set() };
-}
-
-function pickKey(keyPool: KeyPool, spreadIndex: number): ApiKey | undefined {
-  const availableFreeKeys = keyPool.freeKeys.filter((key) => !keyPool.retiredFreeKeys.has(key));
-  if (availableFreeKeys.length === 0) return keyPool.paidKey;
-  return availableFreeKeys[spreadIndex % availableFreeKeys.length];
-}
-
-/** Why the key that made the request can serve nothing more this run, or undefined when the error is not about the key. */
-function describeUnusableKey(error: unknown, model: string): string | undefined {
-  if (!(error instanceof ApiError)) return undefined;
-  // A per-minute limit clears by itself; a per-day quota or a rejected key does not.
-  if (error.status === 429 && error.message.includes('PerDay')) return `out of daily quota for ${model}`;
-  if (error.status === 403 || error.message.includes('API_KEY_INVALID')) return `rejected (${describeError(error)})`;
-  return undefined;
-}
-
-function isRetryable(error: unknown): boolean {
-  // Network failures and blocked (empty) replies are not ApiErrors and can pass on a retry; any other 4xx, such as an unknown model, cannot.
-  if (!(error instanceof ApiError)) return true;
-  return error.status === 429 || error.status >= 500;
-}
-
-function describeFallback(keyPool: KeyPool): string {
-  const remainingFreeKeyCount = keyPool.freeKeys.length - keyPool.retiredFreeKeys.size;
-  if (remainingFreeKeyCount > 0) return `${remainingFreeKeyCount} free key(s) left`;
-  if (keyPool.paidKey) return `switching to ${keyPool.paidKey.envName}`;
-  return `no ${PAID_API_KEY_ENV_NAME} to fall back to`;
-}
-
-function retireKey(keyPool: KeyPool, key: ApiKey, reason: string): void {
-  // Concurrent workers can hit the same key; report it once.
-  if (keyPool.retiredFreeKeys.has(key)) return;
-  keyPool.retiredFreeKeys.add(key);
-  console.log(`  ${key.envName} is ${reason}; ${describeFallback(keyPool)}`);
-}
-
 async function listImageNames(imageDir: string): Promise<string[]> {
   const entries = await readdir(imageDir);
   const imageNames = entries
@@ -214,12 +159,6 @@ async function listImageNames(imageDir: string): Promise<string[]> {
 
 function pageTextPath(pagesDir: string, imageName: string): string {
   return path.join(pagesDir, `${path.parse(imageName).name}.txt`);
-}
-
-function describeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  // Gemini API errors are a JSON body; the first line of its "message" field is the readable part.
-  return /"message":"([^"\\]*)/.exec(message)?.[1]?.trim() ?? message;
 }
 
 async function transcribeImage(client: GoogleGenAI, model: string, imagePath: string): Promise<string> {
@@ -385,8 +324,11 @@ async function main(): Promise<void> {
   throw new Error(`${failedImageNames.length} page(s) failed and are missing from the text: ${failedImageNames.join(', ')}. Rerun to retry them.`);
 }
 
-main().catch((error: unknown) => {
-  console.error(describeError(error));
-  // process.exit() while Gemini's sockets are still closing trips a libuv assertion on Windows; let the event loop drain instead.
-  process.exitCode = 1;
-});
+if (isEntryPoint(import.meta.url)) {
+  dotenv.config({ path: [path.join(process.cwd(), '.env.local'), path.join(process.cwd(), '.env')] });
+  main().catch((error: unknown) => {
+    console.error(describeError(error));
+    // process.exit() while Gemini's sockets are still closing trips a libuv assertion on Windows; let the event loop drain instead.
+    process.exitCode = 1;
+  });
+}
