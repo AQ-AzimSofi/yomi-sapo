@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { API_ROUTES, COLORS } from '@/lib/constants';
 import { formatBookTitle } from '@/lib/utils/bookTitle';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
+import { bookQuery } from '@/lib/books/bookRef';
 import BookCover from './BookCover';
 
 const PAGE_ONLY_BOOKMARK = /^page:\d+$/;
@@ -31,7 +32,7 @@ export default function ContinueReading({
   totalPages,
 }: ContinueReadingProps) {
   const [lastReadLine, setLastReadLine] = useState('');
-  const bookPath = `${directory}/${fileName}`;
+  const bookParams = bookQuery({ directory, fileName });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -39,7 +40,7 @@ export default function ContinueReading({
     const fetchLastReadLine = async () => {
       try {
         const response = await fetch(
-          `${API_ROUTES.READ_BOOKMARK}?fileName=${encodeURIComponent(bookPath)}`,
+          `${API_ROUTES.READ_BOOKMARK}?${bookParams}`,
           { signal: controller.signal }
         );
         if (!response.ok) return;
@@ -53,11 +54,11 @@ export default function ContinueReading({
 
     fetchLastReadLine();
     return () => controller.abort();
-  }, [bookPath]);
+  }, [bookParams]);
 
   const title = formatBookTitle(fileName);
   const progressPercent = Math.round(Math.min(100, Math.max(0, progress)));
-  const readHref = `/read?directory=${encodeURIComponent(directory)}&fileName=${encodeURIComponent(fileName)}&page=${bookmarkPage}`;
+  const readHref = `/read?${bookParams}&page=${bookmarkPage}`;
 
   return (
     <section
