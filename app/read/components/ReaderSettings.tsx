@@ -12,7 +12,6 @@ function sliderGradient(value: number, min: number, max: number): string {
 export default function ReaderSettings() {
   const [fontSize, setFontSize] = usePreference(READER_PREFERENCES.fontSize);
   const [lineHeight, setLineHeight] = usePreference(READER_PREFERENCES.lineHeight);
-  const [displayMode, setDisplayMode] = usePreference(READER_PREFERENCES.displayMode);
   const [aiExplanationEnabled, setAiExplanationEnabled] = usePreference(READER_PREFERENCES.aiExplanationEnabled);
   const [audiobookEnabled, setAudiobookEnabled] = usePreference(READER_PREFERENCES.audiobookEnabled);
 
@@ -57,24 +56,6 @@ export default function ReaderSettings() {
             }}
           />
           <span className="settings-sublabel">Spacious</span>
-        </div>
-      </div>
-
-      <div>
-        <label className="settings-label font-bold mb-3 block">Display Mode</label>
-        <div className="segmented-control">
-          <button
-            className={displayMode === 'collapsed' ? 'active' : ''}
-            onClick={() => setDisplayMode('collapsed')}
-          >
-            Collapsed
-          </button>
-          <button
-            className={displayMode === 'expanded' ? 'active' : ''}
-            onClick={() => setDisplayMode('expanded')}
-          >
-            Expanded
-          </button>
         </div>
       </div>
 
