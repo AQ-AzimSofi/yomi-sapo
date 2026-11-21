@@ -48,7 +48,14 @@ describe('GET /api/book-assets', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/jpeg');
+    expect(response.headers.get('cache-control')).toBe('private, max-age=86400');
     expect(new Uint8Array(await response.arrayBuffer())).toStrictEqual(IMAGE_BYTES);
+  });
+
+  it('reads the asset path from the bucket without its leading slash', async () => {
+    await GET(assetRequest(PRIVATE_IMAGE, OWNER_HEADERS));
+
+    expect(s3Send.mock.calls[0][0].input).toStrictEqual({ Bucket: 'book-images', Key: 'bookv2-furigana/ほん/images/cover.jpg' });
   });
 
   it('serves the signed-in owner an illustration from any book', async () => {
@@ -71,6 +78,7 @@ describe('GET /api/book-assets', () => {
     const response = await GET(assetRequest(PRIVATE_IMAGE, OWNER_HEADERS));
 
     expect(response.status).toBe(404);
+    expect(await response.json()).toStrictEqual({ error: { code: 'not_found', message: 'No such book asset' } });
   });
 
   it('answers a generic 500 when storage fails', async () => {
