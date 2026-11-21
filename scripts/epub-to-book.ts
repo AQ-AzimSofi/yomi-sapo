@@ -6,7 +6,7 @@
  * 1. Extract text + images from EPUB
  * 2. Extract ruby registry from EPUB
  * 3. Upload illustrations + image metadata to the BookImages bucket (BOOK_IMAGES_BUCKET)
- * 4. Batch rephrase with Gemini AI
+ * 4. Batch rephrase with Claude (claude -p, on the subscription) or the Gemini API
  * 5. Add furigana to rephrased text
  * 6. Sync to database after each chunk
  *
@@ -16,8 +16,8 @@
  * Options:
  *   --output-dir <dir>   Output directory in public/ (default: bookv2-furigana)
  *   --chunk-size <n>     Target characters per chunk (default: 5000)
- *   --delay <n>          Seconds between chunks (default: 600 = 10min)
- *   --model <name>       Gemini model (default: gemini-2.5-flash)
+ *   --delay <n>          Seconds between Gemini chunks (default: 120; Claude runs without delay)
+ *   --model <name>       Claude model (sonnet, opus) or a gemini-* model (default: sonnet)
  *   --skip-rephrase      Only extract, don't rephrase
  *   --skip-images        Don't extract images
  *   --filter <level>     Kanji filter: all, n3 (default: all)
@@ -31,6 +31,7 @@ import { execSync, spawnSync } from 'child_process';
 import { GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
 import { alignRephrase, parseMarkdown, type AlignReport } from './utils/rephrase-output';
+import { isClaudeModel, rephraseWithClaude, splitParagraphs } from './utils/claude-rephrase';
 
 // Load environment variables
 const envLocalPath = path.join(process.cwd(), '.env.local');
@@ -66,6 +67,8 @@ const MODEL_FALLBACK_ORDER = [
   AI_MODELS.GEMINI_2_5_FLASH,
   AI_MODELS.GEMINI_2_5_FLASH_LITE,
 ];
+
+const DEFAULT_REPHRASE_MODEL = 'sonnet';
 
 const VN_RETRY_CONFIG = {
   MAX_ATTEMPTS: 4,
@@ -640,6 +643,19 @@ async function rephraseChunkWithGemini(chunk: string, model: string): Promise<Ch
   };
 }
 
+// A failed claude -p call (usage limit, sign-in) throws and stops the run; rerunning resumes this chunk.
+async function rephraseChunkWithClaude(chunk: string, model: string): Promise<ChunkOutput> {
+  const rephrased = await rephraseWithClaude(splitParagraphs(stripRubyTags(chunk)), model);
+  const skippedCount = rephrased.skippedParagraphs.length;
+  rephrased.skippedParagraphs.forEach((paragraph) => console.log(`    ? kept original: ${paragraph.slice(0, 60)}`));
+  return {
+    rawText: rephrased.text,
+    readerText: rephrased.text,
+    attempts: rephrased.attempts,
+    error: skippedCount > 0 ? `${skippedCount} paragraph(s) kept their original text` : undefined,
+  };
+}
+
 // ============================================================================
 // Database Sync
 // ============================================================================
@@ -762,18 +778,23 @@ async function batchRephrase(
     const result = chunkText(sourceText, options.chunkSize);
     chunks = result.chunks;
 
-    const keyCount = getApiKeyCount();
-    const effectiveDelay = Math.ceil(options.delaySeconds / keyCount);
+    const usesClaude = isClaudeModel(options.model);
+    // The Claude subscription has no per-minute quota to wait out, so its chunks run back to back
+    const delaySeconds = usesClaude ? 0 : options.delaySeconds;
 
     console.log(`\nChunks: ${chunks.length} (target size: ${options.chunkSize} chars)`);
-    console.log(`API Keys: ${keyCount} (rotating for faster processing)`);
-    console.log(`Delay: ${effectiveDelay}s (${formatDuration(effectiveDelay)}) between chunks (base: ${options.delaySeconds}s / ${keyCount} keys)`);
+    if (usesClaude) {
+      console.log(`Rephraser: claude -p (no delay between chunks)`);
+    } else {
+      const keyCount = getApiKeyCount();
+      const effectiveDelay = Math.ceil(delaySeconds / keyCount);
+      console.log(`API Keys: ${keyCount} (rotating for faster processing)`);
+      console.log(`Delay: ${effectiveDelay}s (${formatDuration(effectiveDelay)}) between chunks (base: ${delaySeconds}s / ${keyCount} keys)`);
+      console.log(`Estimated total time: ${formatDuration(chunks.length * effectiveDelay)}`);
+    }
     console.log(`Model: ${options.model}`);
     console.log(`Database sync: ${options.apiUrl}`);
     console.log(`Furigana: enabled (adding after each chunk)`);
-
-    const estimatedTime = chunks.length * effectiveDelay;
-    console.log(`Estimated total time: ${formatDuration(estimatedTime)}`);
 
     progress = createProgress(
       bookName,
@@ -781,7 +802,7 @@ async function batchRephrase(
       sourceText,
       chunks,
       result.boundaries,
-      { chunkSize: options.chunkSize, delaySeconds: options.delaySeconds, model: options.model }
+      { chunkSize: options.chunkSize, delaySeconds, model: options.model }
     );
   }
 
@@ -813,6 +834,9 @@ async function batchRephrase(
     fileName: `${bookName}-rephrase-furigana`,
     directory: `${options.outputDir}/${bookName}`,
   };
+  // A resumed run keeps the model it started with, whatever --model says now
+  const usesClaudeForBook = isClaudeModel(progress.settings.model);
+  const rephraseChunk = usesClaudeForBook ? rephraseChunkWithClaude : rephraseChunkWithGemini;
   const startTime = Date.now();
   let processedCount = 0;
 
@@ -833,7 +857,7 @@ async function batchRephrase(
     chunkProgress.status = 'processing';
     saveProgress(progressPath, progress);
 
-    const output = await rephraseChunkWithGemini(chunk, progress.settings.model);
+    const output = await rephraseChunk(chunk, progress.settings.model);
     chunkProgress.status = 'completed';
     chunkProgress.completedAt = new Date().toISOString();
     chunkProgress.attempts = output.attempts;
@@ -852,6 +876,7 @@ async function batchRephrase(
     console.log(`  ETA for remaining: ${formatDuration(eta)}`);
 
     saveProgress(progressPath, progress);
+    if (usesClaudeForBook) continue;
 
     // Rotate to next API key for next chunk
     rotateAIClient();
@@ -902,8 +927,8 @@ Usage:
 Options:
   --output-dir <dir>   Output directory in public/ (default: bookv2-furigana)
   --chunk-size <n>     Target characters per chunk (default: 5000)
-  --delay <n>          Seconds between chunks (default: 600 = 10min)
-  --model <name>       Gemini model (default: gemini-2.5-flash)
+  --delay <n>          Seconds between Gemini chunks (default: 120; Claude runs without delay)
+  --model <name>       Claude model (sonnet, opus) or a gemini-* model (default: sonnet)
   --skip-rephrase      Only extract, don't rephrase
   --skip-images        Don't extract images
   --filter <level>     Kanji filter: all, n3 (default: all)
@@ -923,7 +948,7 @@ Example:
     outputDir: 'bookv2-furigana',
     chunkSize: 5000,
     delaySeconds: 120, // Base delay (divided by number of API keys)
-    model: AI_MODELS.GEMINI_3_FLASH_PREVIEW,
+    model: DEFAULT_REPHRASE_MODEL,
     skipRephrase: false,
     skipExtract: false,
     skipImages: false,
