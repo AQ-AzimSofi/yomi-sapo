@@ -60,14 +60,3 @@ export function removeHashPrefix(line: string): string {
   }
   return line;
 }
-
-/**
- * 見出し行を正規化し、すべての可能なプレフィックスを削除します
- */
-export function normalizeHeading(line: string): string {
-  let normalized = line;
-  normalized = removeHeadingPrefix(normalized);
-  normalized = removeBoldFormatting(normalized);
-  normalized = removeHashPrefix(normalized);
-  return normalized.trim();
-}

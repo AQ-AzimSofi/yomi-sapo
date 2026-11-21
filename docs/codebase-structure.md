@@ -37,8 +37,7 @@ yomi-sapo/
 | `/api/read-bookmark` | GET | Get bookmark position |
 | `/api/write-bookmark` | POST | Update bookmark |
 | `/api/list-text-files` | GET | List available text files |
-| `/api/text-entries` | GET, DELETE, PUT | Database text entries |
-| `/api/text-entries/reset` | POST | Reset text entries |
+| `/api/text-entries` | PUT | Copy a local book file into text_entries (dev server only) |
 | `/api/explain-sentence` | POST | Sentence explanations |
 | `/api/tts` | POST | Text-to-speech |
 | `/api/ruby-registry` | GET, POST | Furigana registry |
@@ -53,22 +52,21 @@ components/
 ├── icons/              # Icon components
 │   ├── BookmarkFilled.tsx
 │   ├── BookmarkUnfilled.tsx
-│   ├── ChevronDown.tsx
-│   ├── ChevronUp.tsx
-│   └── SpeakerIcon.tsx
-└── ui/                 # UI components
+│   ├── SpeakerIcon.tsx
+│   ├── StartHereIcon.tsx
+│   └── TranslateIcon.tsx
+├── reading/            # Reader components
+│   ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
+│   ├── ExplanationSidebar.tsx  # AI explanations panel
+│   ├── ParagraphItem.tsx       # Individual paragraph
+│   ├── RubyLookupSidebar.tsx   # Furigana lookup
+│   ├── TTSButton.tsx           # Text-to-speech button
+│   ├── GuestApiKeyModal.tsx    # Guest Gemini key prompt
+│   └── BookImage.tsx           # Book illustration
+└── ui/                 # Shared UI components
     ├── AppHeader.tsx           # Shared header (logo, 本棚/単語帳 nav, ログアウト)
-    ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
-    ├── ExplanationSidebar.tsx  # AI explanations panel
-    ├── ParagraphItem.tsx       # Individual paragraph
-    ├── Pagination.tsx          # Page navigation
-    ├── FileSelector.tsx        # File dropdown
-    ├── TTSButton.tsx           # Text-to-speech button
-    ├── TTSPlayerBar.tsx        # TTS player UI
-    ├── VocabularySidebar.tsx   # Vocabulary panel
-    ├── VocabularySaveDialog.tsx
-    ├── RubyLookupSidebar.tsx   # Furigana lookup
-    └── BookImage.tsx           # Book cover display
+    ├── BottomSheet.tsx         # Mobile bottom sheet
+    └── GuestModeBanner.tsx     # Guest preview banner
 ```
 
 ### Hooks (`/app/hooks`)
@@ -79,18 +77,21 @@ components/
 | `useBookMetadata` | Load book metadata from JSON |
 | `useTTS` | Text-to-speech control |
 | `useRubyRegistry` | Manage furigana registry |
+| `useAudioBook` | Reader audio playback (narration or TTS) |
+| `useNarration` | Load a book's narration manifest |
+| `useGuestMode` | Whether the visitor is a guest |
 
-**Barrel Export:** Import from `@/app/hooks`
+Import each hook from its own file:
 
 ```typescript
-import { useExplanationCache, useBookMetadata } from '@/app/hooks';
+import { useExplanationCache } from '@/app/hooks/useExplanationCache';
 ```
 
 ### Pages
 
 | Page | Path | Description |
 |------|------|-------------|
-| Home | `/` | Main reading interface |
+| Home | `/` | Redirects to /library |
 | Read | `/read` | Enhanced reader |
 | Library | `/library` | Book library |
 | Vocabulary | `/vocabulary` | Vocabulary tracker |
@@ -132,7 +133,6 @@ Raw SQL database operations using the `postgres` library.
 
 ```
 db/
-├── index.ts                # Barrel export
 ├── connection.ts           # PostgreSQL connection pool
 ├── schema.ts               # TypeScript interfaces & CREATE TABLE SQL
 ├── queries.ts              # Bookmark & text entry queries
@@ -140,53 +140,50 @@ db/
 ```
 
 **Key Interfaces:**
-- `Book`, `BookImage`, `ProcessingHistory`
-- `UserBookmark`, `VocabularyEntry`
-- `Bookmark`, `TextEntry`
+- `Bookmark`, `TextEntry`, `VocabularyEntry`
 
 **Usage:**
 ```typescript
-import { getBookmark, upsertBookmark } from '@/lib/db';
-import { getVocabularyEntries } from '@/lib/db';
+import { getBookmark, upsertBookmark } from '@/lib/db/queries';
+import { getVocabularyEntries } from '@/lib/db/vocabularyQueries.sql';
 ```
 
 ### Services (`/lib/services`)
 
 ```
 services/
-├── index.ts            # Barrel export
-└── fileService.ts      # File system operations
+└── fileService.ts      # Book files and ruby registries on disk
 ```
 
 **fileService functions:**
-- `readTextFile(fileName, directory?)`
-- `writeTextFile(fileName, content, directory?)`
-- `readBookmark(fileName, directory?)`
-- `updateBookmark(fileName, content, directory?)`
-- `listTextFiles()` - Returns `{directories, filesByDirectory, files}`
-- `syncBookmarks()` - Cleanup + initialize bookmarks
+- `readTextFile(fileName)`
+- `readRubyRegistry`, `writeRubyRegistry`, `upsertRubyEntry`, `deleteRubyEntry`, `ignoreSuggestion`
 
 ### Utilities (`/lib/utils`)
 
 ```
 utils/
-├── index.ts                # Barrel export
-├── furiganaParser.ts       # Parse kanji[furigana] and <ruby> tags
-├── dictionaryParser.ts     # Parse word[reading・meaning] format
+├── furiganaParser.ts       # Parse kanji[furigana] and <ruby> tags, render escaped HTML
+├── html.ts                 # HTML escaping
+├── safeMarkdown.ts         # Render AI markdown with raw HTML escaped
+├── buildPlayableUnits.ts   # Split book text into reader units
+├── truncatePreview.ts      # Guest preview cut
 ├── ttsTextCleaner.ts       # Clean text for TTS
-├── markdownParser/         # AI response parser
-│   ├── index.ts
-│   ├── validator.ts
-│   ├── normalizer.ts
-│   └── splitter.ts
-└── validation/             # Input validation
+├── ttsCache.ts             # Cache synthesized TTS audio
+├── colorTint.ts            # toTint(): tint a theme color
+├── bookAssetPath.ts        # Paths and URLs of book images and metadata
+├── bookTitle.ts            # Display title from a file name
+└── markdownParser/         # Rephrase-format parser
     ├── index.ts
-    └── pathValidator.ts    # Path traversal prevention
+    ├── validator.ts
+    ├── normalizer.ts
+    └── splitter.ts
 ```
 
 **Usage:**
 ```typescript
-import { parseFurigana, parseMarkdown, validateFileName } from '@/lib/utils';
+import { parseFurigana } from '@/lib/utils/furiganaParser';
+import { parseMarkdown } from '@/lib/utils/markdownParser';
 ```
 
 ### Other Lib Modules
@@ -247,33 +244,33 @@ Tables are created via `/api/init-db`:
 |-------|---------|
 | `bookmarks` | File-based bookmark positions |
 | `text_entries` | Stored text content |
-| `books` | Book metadata from EPUB |
-| `book_images` | Images extracted from EPUB |
-| `processing_history` | EPUB processing records |
-| `user_bookmarks` | User bookmarks linked to books |
+| `narration` | Audiobook narration manifests |
 | `vocabulary_entries` | User vocabulary diary |
+
+The old Prisma tables (`"Book"`, `"BookImage"`, `"ProcessingHistory"`, `"UserBookmark"`) still exist in both databases but nothing reads them, and they are not synced.
 
 ---
 
 ## Import Conventions
 
-Use barrel exports for cleaner imports:
+Import from the module that defines the function; only `lib/ai` keeps a barrel:
 
 ```typescript
 // Database
-import { getBookmark, getVocabularyEntries } from '@/lib/db';
+import { getBookmark } from '@/lib/db/queries';
+import { getVocabularyEntries } from '@/lib/db/vocabularyQueries.sql';
 
 // Services
-import { readTextFile, listTextFiles } from '@/lib/services';
+import { readTextFile } from '@/lib/services/fileService';
 
 // Utilities
-import { parseFurigana, parseMarkdown, validateFileName } from '@/lib/utils';
+import { parseFurigana } from '@/lib/utils/furiganaParser';
 
 // AI
-import { getAIClient, ai_instructions } from '@/lib/ai';
+import { getAIClient, ai_instructions_quick } from '@/lib/ai';
 
 // Hooks
-import { useExplanationCache, useBookMetadata } from '@/app/hooks';
+import { useExplanationCache } from '@/app/hooks/useExplanationCache';
 ```
 
 ---

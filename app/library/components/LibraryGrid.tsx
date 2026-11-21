@@ -175,7 +175,7 @@ export default function LibraryGrid() {
           本がまだありません
         </p>
         <p className="text-sm" style={{ color: COLORS.SECONDARY }}>
-          public/ に .txt ファイルを追加すると、ここに並びます。
+          scripts/epub-to-book.ts で本をデータベースに取り込むと、ここに並びます。
         </p>
       </div>
     );
