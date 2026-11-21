@@ -6,9 +6,9 @@
  * by the page-route middleware and by the content API routes.
  */
 
-export interface PublicBook {
-  directory: string;
-  fileName: string;
+import { parseBookKey, sameBook, type BookRef } from '@/lib/books/bookRef';
+
+export interface PublicBook extends BookRef {
   maxPreviewPages: number;
 }
 
@@ -32,20 +32,13 @@ export const PUBLIC_BOOKS: readonly PublicBook[] = [
   },
 ];
 
-function publicBookPath(book: PublicBook): string {
-  return `${book.directory}/${book.fileName}`;
-}
-
 export function findPublicBook(
   directory: string | null | undefined,
   fileName: string | null | undefined
 ): PublicBook | null {
   if (!directory || !fileName) return null;
-  return (
-    PUBLIC_BOOKS.find(
-      (book) => book.directory === directory && book.fileName === fileName
-    ) || null
-  );
+  const requested = { directory, fileName };
+  return PUBLIC_BOOKS.find((book) => sameBook(book, requested)) ?? null;
 }
 
 /**
@@ -56,7 +49,8 @@ export function findPublicBookByPath(
   fullPath: string | null | undefined
 ): PublicBook | null {
   if (!fullPath) return null;
-  return PUBLIC_BOOKS.find((book) => publicBookPath(book) === fullPath) || null;
+  const { directory, fileName } = parseBookKey(fullPath);
+  return findPublicBook(directory, fileName);
 }
 
 /**
