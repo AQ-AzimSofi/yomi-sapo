@@ -145,7 +145,10 @@ export async function DELETE(request: Request) {
  */
 export async function PUT(request: Request) {
   if (process.env.NODE_ENV !== 'development') {
-    return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+    return NextResponse.json(
+      { success: false, message: 'text-entries PUT runs only on the local dev server (NODE_ENV=development)' },
+      { status: 404 }
+    );
   }
 
   if (request.headers.get('content-type') !== 'application/json') {

@@ -55,20 +55,21 @@ components/
 │   ├── BookmarkUnfilled.tsx
 │   ├── ChevronDown.tsx
 │   ├── ChevronUp.tsx
-│   └── SpeakerIcon.tsx
-└── ui/                 # UI components
+│   ├── SpeakerIcon.tsx
+│   ├── StartHereIcon.tsx
+│   └── TranslateIcon.tsx
+├── reading/            # Reader components
+│   ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
+│   ├── ExplanationSidebar.tsx  # AI explanations panel
+│   ├── ParagraphItem.tsx       # Individual paragraph
+│   ├── RubyLookupSidebar.tsx   # Furigana lookup
+│   ├── TTSButton.tsx           # Text-to-speech button
+│   ├── GuestApiKeyModal.tsx    # Guest Gemini key prompt
+│   └── BookImage.tsx           # Book illustration
+└── ui/                 # Shared UI components
     ├── AppHeader.tsx           # Shared header (logo, 本棚/単語帳 nav, ログアウト)
-    ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
-    ├── ExplanationSidebar.tsx  # AI explanations panel
-    ├── ParagraphItem.tsx       # Individual paragraph
-    ├── Pagination.tsx          # Page navigation
-    ├── FileSelector.tsx        # File dropdown
-    ├── TTSButton.tsx           # Text-to-speech button
-    ├── TTSPlayerBar.tsx        # TTS player UI
-    ├── VocabularySidebar.tsx   # Vocabulary panel
-    ├── VocabularySaveDialog.tsx
-    ├── RubyLookupSidebar.tsx   # Furigana lookup
-    └── BookImage.tsx           # Book cover display
+    ├── BottomSheet.tsx         # Mobile bottom sheet
+    └── GuestModeBanner.tsx     # Guest preview banner
 ```
 
 ### Hooks (`/app/hooks`)
@@ -90,7 +91,7 @@ import { useExplanationCache, useBookMetadata } from '@/app/hooks';
 
 | Page | Path | Description |
 |------|------|-------------|
-| Home | `/` | Main reading interface |
+| Home | `/` | Redirects to /library |
 | Read | `/read` | Enhanced reader |
 | Library | `/library` | Book library |
 | Vocabulary | `/vocabulary` | Vocabulary tracker |
@@ -171,22 +172,26 @@ services/
 ```
 utils/
 ├── index.ts                # Barrel export
-├── furiganaParser.ts       # Parse kanji[furigana] and <ruby> tags
-├── dictionaryParser.ts     # Parse word[reading・meaning] format
+├── furiganaParser.ts       # Parse kanji[furigana] and <ruby> tags, render escaped HTML
+├── html.ts                 # HTML escaping
+├── safeMarkdown.ts         # Render AI markdown with raw HTML escaped
+├── buildPlayableUnits.ts   # Split book text into reader units
+├── truncatePreview.ts      # Guest preview cut
 ├── ttsTextCleaner.ts       # Clean text for TTS
-├── markdownParser/         # AI response parser
-│   ├── index.ts
-│   ├── validator.ts
-│   ├── normalizer.ts
-│   └── splitter.ts
-└── validation/             # Input validation
+├── ttsCache.ts             # Cache synthesized TTS audio
+├── colorTint.ts            # toTint(): tint a theme color
+├── bookAssetPath.ts        # Paths and URLs of book images and metadata
+├── bookTitle.ts            # Display title from a file name
+└── markdownParser/         # Rephrase-format parser
     ├── index.ts
-    └── pathValidator.ts    # Path traversal prevention
+    ├── validator.ts
+    ├── normalizer.ts
+    └── splitter.ts
 ```
 
 **Usage:**
 ```typescript
-import { parseFurigana, parseMarkdown, validateFileName } from '@/lib/utils';
+import { parseFurigana, parseMarkdown } from '@/lib/utils';
 ```
 
 ### Other Lib Modules
@@ -264,10 +269,10 @@ Use barrel exports for cleaner imports:
 import { getBookmark, getVocabularyEntries } from '@/lib/db';
 
 // Services
-import { readTextFile, listTextFiles } from '@/lib/services';
+import { readTextFile } from '@/lib/services';
 
 // Utilities
-import { parseFurigana, parseMarkdown, validateFileName } from '@/lib/utils';
+import { parseFurigana, parseMarkdown } from '@/lib/utils';
 
 // AI
 import { getAIClient, ai_instructions } from '@/lib/ai';

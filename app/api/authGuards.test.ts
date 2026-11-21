@@ -70,6 +70,15 @@ describe('GET /api/init-db', () => {
     expect(sql.unsafe).toHaveBeenCalledTimes(2);
   });
 
+  it.each(['test', 'staging'])('rejects a guest when NODE_ENV is %s', async (nodeEnv) => {
+    vi.stubEnv('NODE_ENV', nodeEnv);
+
+    const response = await initDb();
+
+    expect(response.status).toBe(401);
+    expect(sql.unsafe).not.toHaveBeenCalled();
+  });
+
   it('runs the schema SQL without a session on the local dev server', async () => {
     vi.stubEnv('NODE_ENV', 'development');
 
@@ -111,6 +120,25 @@ describe('/api/vocabulary/[id]', () => {
     expect(response.status).toBe(200);
     expect(getVocabularyEntryById).toHaveBeenCalledWith('entry-1');
   });
+
+  it('updates an entry for a signed-in owner', async () => {
+    vi.mocked(isAuthenticated).mockResolvedValue(true);
+    vi.mocked(updateVocabularyEntry).mockResolvedValue({ id: 'entry-1', word: '言葉' } as never);
+
+    const response = await putVocabulary(jsonRequest('PUT', { notes: 'x' }), ENTRY_PARAMS);
+
+    expect(response.status).toBe(200);
+    expect(updateVocabularyEntry).toHaveBeenCalledWith('entry-1', expect.objectContaining({ notes: 'x' }));
+  });
+
+  it('deletes an entry for a signed-in owner', async () => {
+    vi.mocked(isAuthenticated).mockResolvedValue(true);
+
+    const response = await deleteVocabulary(new Request('http://localhost/api/vocabulary/entry-1', { method: 'DELETE' }), ENTRY_PARAMS);
+
+    expect(response.status).toBe(200);
+    expect(deleteVocabularyEntry).toHaveBeenCalledWith('entry-1');
+  });
 });
 
 describe('PUT /api/text-entries', () => {
@@ -118,6 +146,17 @@ describe('PUT /api/text-entries', () => {
 
   it('is not available outside the local dev server', async () => {
     vi.stubEnv('NODE_ENV', 'production');
+
+    const response = await putTextEntry(jsonRequest('PUT', BOOK));
+
+    expect(response.status).toBe(404);
+    expect(readTextFile).not.toHaveBeenCalled();
+    expect(upsertTextEntry).not.toHaveBeenCalled();
+  });
+
+  it.each(['production', 'test'])('is not available to a signed-in owner when NODE_ENV is %s', async (nodeEnv) => {
+    vi.stubEnv('NODE_ENV', nodeEnv);
+    vi.mocked(isAuthenticated).mockResolvedValue(true);
 
     const response = await putTextEntry(jsonRequest('PUT', BOOK));
 
