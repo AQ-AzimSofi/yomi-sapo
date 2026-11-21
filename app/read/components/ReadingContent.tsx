@@ -1,16 +1,17 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import { pageStartIndex, type ContentType, type ReaderItem } from "@/lib/content/bookModel";
+import { useSearchParams } from "next/navigation";
+import { itemMainText, pageStartIndex, type ContentType, type ReaderItem as ReaderUnit } from "@/lib/content/bookModel";
 import { PRIORITY_LEVELS, THEME, type PriorityScore } from "@/lib/constants";
 import { toTint } from "@/lib/utils/colorTint";
-import CollapsibleItem from "@/app/components/reading/CollapsibleItem";
-import ParagraphItem from "@/app/components/reading/ParagraphItem";
+import ReaderItem from "@/app/components/reading/ReaderItem";
 import type { BookRef } from "@/lib/books/bookRef";
 import type { SentenceLocation } from "@/lib/content/explanationContext";
+import type { ImageMap } from "@/lib/types";
 
 interface ReadingContentProps {
-  items: readonly ReaderItem[];
+  items: readonly ReaderUnit[];
   contentType: ContentType;
   book: BookRef;
   bookmarkIndex: number | null;
@@ -19,13 +20,13 @@ interface ReadingContentProps {
   aiExplanationEnabled: boolean;
   currentPage: number;
   onBookmarkSuccess: () => void;
-  onSentenceClick?: (location: SentenceLocation) => void;
-  imageMap?: Record<string, string>;
-  audiobookEnabled?: boolean;
-  startCursorIndex?: number;
-  playingIndex?: number;
-  onStartFromHere?: (unitIndex: number) => void;
-  priorityScores?: Record<number, PriorityScore>;
+  onSentenceClick: (location: SentenceLocation) => void;
+  imageMap: ImageMap;
+  audiobookEnabled: boolean;
+  startCursorIndex: number;
+  playingIndex: number;
+  onStartFromHere: (unitIndex: number) => void;
+  priorityScores: Record<number, PriorityScore>;
 }
 
 function priorityWrapperStyle(score: PriorityScore): CSSProperties {
@@ -85,12 +86,14 @@ export default function ReadingContent({
   onStartFromHere,
   priorityScores,
 }: ReadingContentProps) {
+  const searchParams = useSearchParams();
   const pageStart = pageStartIndex(currentPage);
-
-  const sentenceClickFor = (unitIndex: number) =>
-    onSentenceClick
-      ? (sentence: string, occurrence: number) => onSentenceClick({ unitIndex, sentence, occurrence })
-      : undefined;
+  const isRephrase = contentType === "rephrase";
+  // Kept as the two former item components had them: only the rephrase layout flashes the
+  // word the vocabulary list linked to, and a paragraph's sentences are clickable even with
+  // AI explanations off (the click then does nothing).
+  const highlightWord = isRephrase ? searchParams.get("highlight") : null;
+  const areSentencesClickable = isRephrase ? aiExplanationEnabled : true;
 
   const paginatedItems = useMemo(
     () => items.slice(pageStart, pageStartIndex(currentPage + 1)),
@@ -108,80 +111,11 @@ export default function ReadingContent({
     );
   }
 
-  if (contentType === "rephrase") {
-    return (
-      <div className="space-y-1">
-        {paginatedItems.map((item, index) => {
-          const typedItem = item as { head: string; subItems: string[] };
-          const globalIndex = pageStart + index;
-          const isBookmarked = globalIndex === bookmarkIndex;
-          const priorityScore = priorityScores?.[globalIndex];
-
-          const itemEl = (
-            <CollapsibleItem
-              key={`${currentPage}-${index}`}
-              {...(isBookmarked ? { id: "bookmark" } : {})}
-              globalIndex={globalIndex}
-              head={typedItem.head}
-              subItems={typedItem.subItems}
-              initialDropdownState={displayMode === "expanded"}
-              showFurigana={showFurigana}
-              aiExplanationEnabled={aiExplanationEnabled}
-              onSubmitSuccess={onBookmarkSuccess}
-              onSentenceClick={sentenceClickFor(globalIndex)}
-              imageMap={imageMap}
-              book={book}
-              currentPage={currentPage}
-              audiobookEnabled={audiobookEnabled}
-              isStartCursor={startCursorIndex === globalIndex}
-              isPlaying={playingIndex === globalIndex}
-              onStartFromHere={onStartFromHere}
-            />
-          );
-
-          // Always the same wrapper + key so toggling Prioritize never remounts
-          // the item (which would reset its open/translation state and flash).
-          return (
-            <div
-              key={`${currentPage}-${index}`}
-              style={priorityScore !== undefined ? priorityWrapperStyle(priorityScore) : undefined}
-            >
-              {priorityScore !== undefined && <PriorityBadge score={priorityScore} />}
-              {itemEl}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-4">
+    <div className={isRephrase ? "space-y-1" : "space-y-4"}>
       {paginatedItems.map((item, index) => {
-        const typedItem = item as { text: string };
         const globalIndex = pageStart + index;
-        const isBookmarked = globalIndex === bookmarkIndex;
-        const priorityScore = priorityScores?.[globalIndex];
-
-        const itemEl = (
-          <ParagraphItem
-            key={`${currentPage}-${index}`}
-            {...(isBookmarked ? { id: "bookmark" } : {})}
-            globalIndex={globalIndex}
-            text={typedItem.text}
-            isBookmarked={isBookmarked}
-            book={book}
-            showFurigana={showFurigana}
-            onBookmarkSuccess={onBookmarkSuccess}
-            onSentenceClick={sentenceClickFor(globalIndex)}
-            imageMap={imageMap}
-            currentPage={currentPage}
-            audiobookEnabled={audiobookEnabled}
-            isStartCursor={startCursorIndex === globalIndex}
-            isPlaying={playingIndex === globalIndex}
-            onStartFromHere={onStartFromHere}
-          />
-        );
+        const priorityScore = priorityScores[globalIndex];
 
         // Always the same wrapper + key so toggling Prioritize never remounts
         // the item (which would reset its open/translation state and flash).
@@ -191,7 +125,25 @@ export default function ReadingContent({
             style={priorityScore !== undefined ? priorityWrapperStyle(priorityScore) : undefined}
           >
             {priorityScore !== undefined && <PriorityBadge score={priorityScore} />}
-            {itemEl}
+            <ReaderItem
+              globalIndex={globalIndex}
+              text={itemMainText(item)}
+              subItems={"subItems" in item ? item.subItems : null}
+              book={book}
+              currentPage={currentPage}
+              imageMap={imageMap}
+              showFurigana={showFurigana}
+              isExpanded={displayMode === "expanded"}
+              areSentencesClickable={areSentencesClickable}
+              highlightWord={highlightWord}
+              isBookmarked={globalIndex === bookmarkIndex}
+              isStartCursor={startCursorIndex === globalIndex}
+              isPlaying={playingIndex === globalIndex}
+              audiobookEnabled={audiobookEnabled}
+              onBookmarkSaved={onBookmarkSuccess}
+              onSentenceClick={onSentenceClick}
+              onStartFromHere={onStartFromHere}
+            />
           </div>
         );
       })}

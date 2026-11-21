@@ -94,13 +94,9 @@ body {
   color: inherit;
 }
 
-/* Reading content typography.
-   Shared so a plain/furigana book reads identically to a rephrased one; they are
-   rendered by different components (ParagraphItem vs CollapsibleItem). */
-.collapsibleItem,
-.collapsibleItem p,
-.paragraph-item,
-.paragraph-item p {
+/* Reading content typography, the same for plain, furigana and rephrased books (ReaderItem). */
+.reader-item,
+.reader-item p {
   font-size: 1.3rem !important;
   @apply font-mincho;
   font-weight: 500;
