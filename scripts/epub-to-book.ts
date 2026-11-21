@@ -39,6 +39,7 @@ import {
   type ChunkRephraser,
 } from './pipeline/rephraseChunk';
 import { createKeyPool } from './shared/geminiKeyPool';
+import { findReaderMismatches } from './pipeline/rephraseFormat';
 import { assertPythonHasMeCab, describePython, resolvePython, runPython } from './shared/python';
 import { loadRepoEnv, REPO_ROOT } from './shared/repoPaths';
 import { isEntryPoint } from './shared/entryPoint';
@@ -327,6 +328,7 @@ async function saveChunkOutput(target: ChunkOutputTarget, output: ChunkOutput): 
 
   console.log(`  Adding furigana...`);
   const withFurigana = addFuriganaToChunk(output.readerText, target.sourceDir);
+  findReaderMismatches(withFurigana).forEach((mismatch) => console.log(`    ! the reader reads this differently: ${mismatch}`));
   const furiganaSeparator = fs.existsSync(target.furiganaPath) ? '\n\n' : '';
   fs.appendFileSync(target.furiganaPath, furiganaSeparator + withFurigana, 'utf-8');
 
