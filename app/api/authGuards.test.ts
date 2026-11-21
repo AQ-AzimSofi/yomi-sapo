@@ -115,14 +115,25 @@ describe('GET /api/read-bookmark', () => {
 });
 
 describe('GET /api/narration', () => {
+  const NARRATION_URL = 'http://localhost/api/narration?directory=bookv2-furigana%2F%E3%81%BB%E3%82%93&fileName=x';
+
   // useNarration treats 401 as a guest, who is never served a recording, and shows no error.
   it('answers a guest 401 without looking up the recording', async () => {
-    const response = await getNarrationManifest(
-      new Request('http://localhost/api/narration?directory=bookv2-furigana%2F%E3%81%BB%E3%82%93&fileName=x')
-    );
+    const response = await getNarrationManifest(new Request(NARRATION_URL));
 
     expect(response.status).toBe(401);
     expect(getNarration).not.toHaveBeenCalled();
+  });
+
+  // useNarration also stays silent on 404; any other failure shows the owner an error.
+  it('answers the owner 404 for a text with no recording', async () => {
+    vi.stubEnv('NARRATION_AUDIO_BUCKET', 'narration-audio');
+    vi.mocked(getNarration).mockResolvedValue(null);
+
+    const response = await getNarrationManifest(new Request(NARRATION_URL, { headers: OWNER_HEADERS }));
+
+    expect(response.status).toBe(404);
+    expect(getNarration).toHaveBeenCalledWith('x', 'bookv2-furigana/ほん');
   });
 });
 
