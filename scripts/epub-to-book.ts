@@ -39,7 +39,7 @@ import {
   type ChunkRephraser,
 } from './pipeline/rephraseChunk';
 import { createKeyPool } from './shared/geminiKeyPool';
-import { describePython, resolvePython, runPython } from './shared/python';
+import { assertPythonHasMeCab, describePython, resolvePython, runPython } from './shared/python';
 import { loadRepoEnv, REPO_ROOT } from './shared/repoPaths';
 import { isEntryPoint } from './shared/entryPoint';
 
@@ -611,6 +611,9 @@ async function main(options: CLIOptions) {
     console.error(`Error: EPUB file not found: ${options.epubPath}`);
     process.exit(1);
   }
+
+  const needsPython = !options.skipExtract || !options.skipRephrase;
+  if (needsPython) assertPythonHasMeCab(resolvePython());
 
   console.log(`
 ============================================================
