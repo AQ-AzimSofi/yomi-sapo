@@ -17,7 +17,7 @@ export interface SanitizedRephrase {
 
 const IMAGE_MARKER_GLOBAL_PATTERN = /\[IMAGE:[^\]]+\]/g;
 
-function normalizeForCompare(text: string): string {
+export function normalizeForCompare(text: string): string {
   return stripRubyTags(text).replace(/[\s　]/g, '');
 }
 
