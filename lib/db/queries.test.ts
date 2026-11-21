@@ -69,6 +69,7 @@ describe('initializeBookmarksForFiles', () => {
     await initializeBookmarksForFiles(['ある本', '新しい本', '次の本'], 'd');
 
     expect(sql).not.toHaveBeenCalled();
+    expect(sql.begin).toHaveBeenCalledTimes(1);
     expect(transaction.mock.calls.map(([, ...values]) => values)).toEqual([['d'], ['新しい本', 'd'], ['次の本', 'd']]);
   });
 });
