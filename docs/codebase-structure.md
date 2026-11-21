@@ -50,7 +50,9 @@ Every handler is declared as `export const GET = withAuth(policy, handler)` (`li
 - `owner`: needs a valid session; anyone else gets 401.
 - `viewer`: the handler receives `'owner' | 'guest'` and decides (guest previews answer 403 outside the allowlist; the AI and speech routes answer 401 with `requiresGuestKey` when a guest sends no key).
 - `admin-key`: needs `x-api-key` to equal `ADMIN_API_KEY`.
-- `public`: no check. `app/api/routeInventory.test.ts` keeps an allowlist of these and fails on a handler with no policy.
+- `public`: no check.
+
+`app/api/routeInventory.test.ts` lists the expected policy of every handler and fails on a handler that is missing from the list or declares another policy.
 
 Errors are `{ error: { code, message } }` from `apiError()` (`lib/api/respond.ts`), plus any field a client reads (`requiresGuestKey`, the login page's `message`). `parseJsonBody(request, check, requirement)` answers 400 for a body that is not JSON or fails `check`. An error a handler does not handle is logged and answered with a generic 500.
 

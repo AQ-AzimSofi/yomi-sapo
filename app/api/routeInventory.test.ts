@@ -11,14 +11,38 @@ const API_DIR = fileURLToPath(new URL('.', import.meta.url));
 const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as const;
 const ACCESS_POLICIES: readonly unknown[] = ['owner', 'viewer', 'admin-key', 'public'] satisfies AccessPolicy[];
 
-// Handlers anyone may call without a session or an admin key. Adding one here is a
-// deliberate decision; say why next to it.
-const PUBLIC_HANDLERS = [
-  'auth POST', // login and logout
-  'covers GET', // publishers' cover art; CloudFront caches it for everyone anyway
-  'health GET', // uptime check
-  'text-entries PUT', // answers 404 outside the local dev server, where the book pipeline calls it
-];
+// The policy of every handler, so a new handler or a changed policy needs a deliberate
+// edit here. Anyone may call a public handler; say why next to it.
+const EXPECTED_POLICIES: Record<string, AccessPolicy> = {
+  'admin POST': 'admin-key',
+  'auth GET': 'viewer',
+  'auth POST': 'public', // login and logout
+  'book-assets GET': 'viewer',
+  'covers GET': 'public', // publishers' cover art; CloudFront caches it for everyone anyway
+  'db-sync GET': 'owner',
+  'db-sync POST': 'owner',
+  'explain-sentence POST': 'viewer',
+  'health GET': 'public', // uptime check
+  'init-db GET': 'viewer',
+  'library-progress GET': 'viewer',
+  'list-text-files GET': 'viewer',
+  'narration GET': 'owner',
+  'prioritize POST': 'viewer',
+  'read-bookmark GET': 'owner',
+  'read-public-txt GET': 'viewer',
+  'ruby-registry DELETE': 'owner',
+  'ruby-registry GET': 'viewer',
+  'ruby-registry POST': 'owner',
+  'text-entries PUT': 'public', // answers 404 outside the local dev server, where the book pipeline calls it
+  'translate POST': 'viewer',
+  'tts POST': 'viewer',
+  'vocabulary GET': 'owner',
+  'vocabulary POST': 'owner',
+  'vocabulary/[id] DELETE': 'owner',
+  'vocabulary/[id] GET': 'owner',
+  'vocabulary/[id] PUT': 'owner',
+  'write-bookmark POST': 'owner',
+};
 
 interface RouteHandler {
   route: string;
@@ -63,13 +87,10 @@ describe('API route inventory', () => {
     expect(undeclared).toStrictEqual([]);
   });
 
-  it('keeps public only the handlers on the allowlist', async () => {
+  it('gives every handler the policy the table expects', async () => {
     const handlers = (await Promise.all(ROUTE_FILES.map(loadHandlers))).flat();
 
-    const publicHandlers = handlers
-      .filter(({ policy }) => policy === 'public')
-      .map(({ route, method }) => `${route} ${method}`)
-      .sort();
-    expect(publicHandlers).toStrictEqual([...PUBLIC_HANDLERS].sort());
+    const policies = Object.fromEntries(handlers.map(({ route, method, policy }) => [`${route} ${method}`, policy]));
+    expect(policies).toStrictEqual(EXPECTED_POLICIES);
   });
 });
