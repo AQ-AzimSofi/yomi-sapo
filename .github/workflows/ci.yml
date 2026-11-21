@@ -6,11 +6,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Superseded pull request runs are cancelled; runs on main always finish, so
-# every merge gets its own result.
+# A newer push to a pull request cancels its older run. Every other run gets a
+# group of its own commit, so a burst of merges to main cannot cancel one.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
