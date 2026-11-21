@@ -55,16 +55,28 @@ describe('recountRow', () => {
 });
 
 describe('getLibraryRows', () => {
-  it('saves the recounted pages and the bookmark page in one transaction', async () => {
-    const transaction = vi.fn().mockResolvedValue([]);
-    vi.mocked(sql.begin).mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+  function mockStaleBookReads(): void {
     vi.mocked(sql)
       .mockResolvedValueOnce([staleRow({ bookmark_text: REPEATED_TEXT, bookmark_page: null })] as never)
       .mockResolvedValueOnce([CONTENT] as never);
+  }
+
+  it('saves the recounted pages and the bookmark page in one transaction', async () => {
+    const transaction = vi.fn().mockResolvedValue([]);
+    vi.mocked(sql.begin).mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+    mockStaleBookReads();
 
     await getLibraryRows(() => true);
 
+    expect(sql.begin).toHaveBeenCalledTimes(1);
     expect(updatedTables(transaction)).toEqual(['text_entries', 'bookmarks']);
     expect(updatedTables(vi.mocked(sql))).toEqual([]);
+  });
+
+  it('fails when the transaction that saves the recounted rows rolls back', async () => {
+    vi.mocked(sql.begin).mockRejectedValue(new Error('rolled back'));
+    mockStaleBookReads();
+
+    await expect(getLibraryRows(() => true)).rejects.toThrow('rolled back');
   });
 });
