@@ -97,6 +97,14 @@ describe('POST /api/explain-sentence', () => {
 });
 
 describe('POST /api/prioritize', () => {
+  it("scores with the guest's own Gemini key", async () => {
+    generateContent.mockResolvedValue({ text: '{"scores":[3]}' });
+
+    await prioritize(postRequest({ sentences: ['本を読む。'] }, { [GUEST_KEY_HEADERS.GEMINI]: 'guest-key' }));
+
+    expect(getAIClient).toHaveBeenCalledWith('guest-key');
+  });
+
   it('answers 400 for an empty page', async () => {
     const response = await prioritize(postRequest({ sentences: [] }, OWNER_HEADERS));
 
@@ -130,6 +138,14 @@ describe('POST /api/translate', () => {
     expect(upstreamFetch).toHaveBeenCalledWith(expect.stringContaining('key=owner-translate-key'), expect.anything());
   });
 
+  it("translates with the guest's own key", async () => {
+    upstreamFetch.mockResolvedValue(Response.json({ data: { translations: [{ translatedText: 'I read a book.' }] } }));
+
+    await translate(postRequest({ text: '本を読む。' }, { [GUEST_KEY_HEADERS.TRANSLATE]: 'guest-key' }));
+
+    expect(upstreamFetch).toHaveBeenCalledWith(expect.stringContaining('key=guest-key'), expect.anything());
+  });
+
   it('answers 400 without calling Google when there is no text', async () => {
     const response = await translate(postRequest({}, OWNER_HEADERS));
 
@@ -139,6 +155,17 @@ describe('POST /api/translate', () => {
 });
 
 describe('POST /api/tts', () => {
+  it("speaks with the guest's own key", async () => {
+    upstreamFetch.mockResolvedValue(Response.json({ audioContent: 'bXAz' }));
+
+    await synthesizeSpeech(postRequest({ text: '本を読む。' }, { [GUEST_KEY_HEADERS.TTS]: 'guest-key' }));
+
+    expect(upstreamFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ headers: expect.objectContaining({ 'X-Goog-Api-Key': 'guest-key' }) })
+    );
+  });
+
   it('answers 504 when Google TTS times out', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     upstreamFetch.mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError'));
