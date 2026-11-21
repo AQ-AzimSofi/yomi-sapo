@@ -149,8 +149,10 @@ interface ChunkProgress {
 // Utility Functions
 // ============================================================================
 
+// Removing readings tag by tag keeps every base character of multi-part ruby such as
+// <ruby>一<rt>いつ</rt>色<rt>しき</rt></ruby>, which EPUBs use for names.
 function stripRubyTags(text: string): string {
-  return text.replace(/<ruby>(?:<rb>)?(.+?)(?:<\/rb>)?<rt>.+?<\/rt><\/ruby>/g, '$1');
+  return text.replace(/<rp>[^<]*<\/rp>|<rt>[^<]*<\/rt>/g, '').replace(/<\/?(ruby|rb)>/g, '');
 }
 
 function simpleHash(str: string): string {
