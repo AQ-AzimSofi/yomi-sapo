@@ -113,6 +113,10 @@ describe('truncateToPreviewPages', () => {
     warn.mockRestore();
   });
 
+  it('keeps a furigana book whose preview has no furigana, since both render as paragraphs', () => {
+    expect(truncateToPreviewPages('一。\n\n二。\n\n漢字[かんじ]。', 1, ITEMS_PER_PAGE)).toBe('一。\n\n二。');
+  });
+
   it('never returns text the parser did not keep, even when the book fits in the preview', () => {
     const content = '>>見出しの前の要約\n\n<一\n>>い\n\n<二\n>>に';
 

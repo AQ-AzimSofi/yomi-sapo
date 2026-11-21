@@ -26,10 +26,13 @@ export function truncateToPreviewPages(
   // widen the preview via slice(0, negative) or a fractional boundary.
   const maxUnits = Math.max(0, Math.floor(maxPages)) * itemsPerPage;
   const preview = parseReaderItems(content).slice(0, maxUnits).map(serializeItem).join('\n\n');
-  // The guest reader detects the format again. A preview that reads as another
-  // format would show different units, so send nothing rather than wrong text.
-  if (preview && detectContentType(preview) !== detectContentType(normalizeNewlines(content))) {
-    console.warn('Guest preview changed content type; sending an empty preview');
+  // The guest reader detects the format again. Furigana and plain split the same
+  // way, but a preview that switches between rephrase and paragraphs would show
+  // different units, so send nothing rather than wrong text.
+  const isRephrasePreview = detectContentType(preview) === 'rephrase';
+  const isRephraseBook = detectContentType(normalizeNewlines(content)) === 'rephrase';
+  if (preview && isRephrasePreview !== isRephraseBook) {
+    console.warn('Guest preview changed between rephrase and paragraphs; sending an empty preview');
     return '';
   }
   return preview;
