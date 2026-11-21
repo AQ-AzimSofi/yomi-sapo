@@ -5,9 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Deploys queue instead of cancelling each other: cancelling a running
+# `sst deploy` leaves its state lock behind, and the next deploy then fails.
 concurrency:
   group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
