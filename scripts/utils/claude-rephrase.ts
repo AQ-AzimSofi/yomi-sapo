@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 
 const PROMPT_PATH = path.join(process.cwd(), 'scripts', 'prompts', 'claude-rephrase.md');
@@ -76,6 +77,7 @@ function parseReply(stdout: string): ClaudeReply | undefined {
 }
 
 // Runs headless Claude Code, so the rephrase uses the Claude subscription rather than an API key.
+// It starts outside the repo so the project's CLAUDE.md files stay out of the prompt.
 function runClaude(input: string, model: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -90,7 +92,7 @@ function runClaude(input: string, model: string): Promise<string> {
         '--no-session-persistence',
         '--output-format', 'json',
       ],
-      { timeout: CLAUDE_TIMEOUT_MS },
+      { cwd: os.tmpdir(), timeout: CLAUDE_TIMEOUT_MS },
     );
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
