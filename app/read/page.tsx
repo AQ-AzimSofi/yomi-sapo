@@ -36,6 +36,7 @@ import { applyReaderTheme } from './readerTheme';
 import { READER_PREFERENCES } from './readerPreferences';
 import { acceptsAudioShortcut, closePanel, togglePanel, type ActivePanel } from './readerPanels';
 import { readerMenuActions } from './readerMenuActions';
+import { showsPreviewEnd } from './previewEnd';
 
 const ExplanationSidebar = dynamic(
   () => import('@/app/components/reading/ExplanationSidebar'),
@@ -700,7 +701,7 @@ function ReaderContent({
           </div>
         )}
 
-        {isGuest && (
+        {showsPreviewEnd({ isGuest, currentPage, totalPages }) && (
           <div
             className="mt-10 p-6 text-center font-gothic"
             style={{ backgroundColor: THEME.SURFACE_MUTED, border: `1px solid ${THEME.NEUTRAL}` }}
