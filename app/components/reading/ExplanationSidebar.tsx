@@ -79,7 +79,7 @@ export default function ExplanationSidebar({
   // aborted, because the server would pay for the AI call anyway.
   const showExplanation = React.useCallback(
     ({ bypassCache }: { bypassCache: boolean }) => {
-      const cached = bypassCache ? null : getCache({ fileName, sentence, mode, contextSize });
+      const cached = bypassCache ? null : getCache({ fileName, sentence, mode, contextSize, context });
       if (cached) {
         dispatchDisplay({ type: 'cacheHit', text: cached.explanation, cachedAt: cached.timestamp });
         return;
@@ -93,7 +93,7 @@ export default function ExplanationSidebar({
       const answer = shareRequest(pendingExplanations, JSON.stringify(request), async () => {
         const requestedAt = Date.now();
         const { explanation } = await explainSentence(request);
-        setCache({ fileName, sentence, mode, contextSize, explanation, requestedAt });
+        setCache({ fileName, sentence, mode, contextSize, context, explanation, requestedAt });
         return explanation;
       });
       answer.then(

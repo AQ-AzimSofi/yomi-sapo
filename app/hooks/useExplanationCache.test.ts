@@ -73,7 +73,12 @@ describe('readStoredExplanationState', () => {
     const legacyEntry = { sentence: '一文目', explanation: '説明', contextSize: 50, timestamp: 1 };
     const state = readStoredExplanationState(
       storageWith({
-        [STORAGE_KEYS.EXPLANATION_CACHE]: JSON.stringify({ explanation_book_123: legacyEntry, broken: { sentence: '文' }, empty: null }),
+        [STORAGE_KEYS.EXPLANATION_CACHE]: JSON.stringify({
+          explanation_book_123: legacyEntry,
+          broken: { sentence: '文' },
+          empty: null,
+          badPassage: { ...SAVED_ENTRY, context: 7 },
+        }),
       })
     );
 
@@ -94,7 +99,7 @@ describe('readStoredExplanationState', () => {
   });
 });
 
-const QUERY = { fileName: 'book', sentence: '一文目', mode: DEFAULT_EXPLANATION_MODE, contextSize: 50 };
+const QUERY = { fileName: 'book', sentence: '一文目', mode: DEFAULT_EXPLANATION_MODE, contextSize: 50, context: '前の文。一文目次の文。' };
 
 function cacheHolding(entry: CachedExplanation): ExplanationCache {
   return { [explanationCacheKey(QUERY)]: entry };
@@ -116,6 +121,21 @@ describe('findCachedExplanation', () => {
 
   it('misses an entry made for another context size', () => {
     expect(findCachedExplanation(cacheHolding({ ...SAVED_ENTRY, contextSize: 80 }), QUERY)).toBeNull();
+  });
+
+  it('misses an entry made for the same sentence in another passage', () => {
+    expect(findCachedExplanation(cacheHolding({ ...SAVED_ENTRY, context: '別の場面。一文目別の続き。' }), QUERY)).toBeNull();
+  });
+
+  it('returns an entry made for the same passage', () => {
+    const entry = { ...SAVED_ENTRY, context: QUERY.context };
+
+    expect(findCachedExplanation(cacheHolding(entry), QUERY)).toEqual(entry);
+  });
+
+  // Saved before the passage was stored, so it was made from the sentence alone.
+  it('returns an entry saved without a passage wherever the sentence appears', () => {
+    expect(findCachedExplanation(cacheHolding(SAVED_ENTRY), { ...QUERY, context: '別の場面。一文目別の続き。' })).toEqual(SAVED_ENTRY);
   });
 
   it('misses an entry whose stored sentence differs, as after a hash collision', () => {
@@ -140,10 +160,26 @@ describe('findCachedExplanation', () => {
 describe('storeExplanation', () => {
   const answer = { ...QUERY, explanation: '新しい説明', requestedAt: 10 };
 
-  it('stores the answer under the sentence key with its request time', () => {
+  it('stores the answer and its passage under the sentence key with its request time', () => {
     expect(storeExplanation({}, answer)).toEqual(
-      cacheHolding({ sentence: '一文目', explanation: '新しい説明', contextSize: 50, mode: DEFAULT_EXPLANATION_MODE, timestamp: 10 })
+      cacheHolding({
+        sentence: '一文目',
+        context: QUERY.context,
+        explanation: '新しい説明',
+        contextSize: 50,
+        mode: DEFAULT_EXPLANATION_MODE,
+        timestamp: 10,
+      })
     );
+  });
+
+  it('overwrites the entry for another passage instead of adding one', () => {
+    const otherPassage = { ...SAVED_ENTRY, context: '別の場面。一文目別の続き。' };
+
+    const cache = storeExplanation(cacheHolding(otherPassage), answer);
+
+    expect(Object.keys(cache)).toHaveLength(1);
+    expect(findCachedExplanation(cache, QUERY)?.explanation).toBe('新しい説明');
   });
 
   it('overwrites the entry for another context size instead of adding one', () => {

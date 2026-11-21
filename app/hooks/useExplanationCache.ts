@@ -6,7 +6,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { STORAGE_KEYS, EXPLANATION_CONFIG, DEFAULT_EXPLANATION_MODE, EXPLANATION_MODES } from '@/lib/constants';
-import { isRecord } from '@/lib/utils/typeGuards';
+import { isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import type { ExplanationCache, CachedExplanation } from '@/lib/types';
 import type { ExplanationMode } from '@/lib/constants';
 
@@ -18,6 +18,7 @@ interface ExplanationCacheKeyParts {
 
 export interface ExplanationCacheQuery extends ExplanationCacheKeyParts {
   contextSize: number;
+  context: string;
 }
 
 export interface ExplanationAnswer extends ExplanationCacheQuery {
@@ -61,11 +62,18 @@ export function explanationCacheKey({ fileName, sentence, mode }: ExplanationCac
   return `${EXPLANATION_CONFIG.CACHE_KEY_PREFIX}${fileName}_${mode}_${hash}`;
 }
 
-/** A saved answer only counts when it was made for this very sentence and context size. */
+/**
+ * A saved answer only counts when it was made for this very sentence, context
+ * size and passage, so a line repeated elsewhere in the book gets its own answer.
+ * Entries saved before the passage was stored were made from the sentence alone,
+ * so they still count wherever it appears.
+ */
 export function findCachedExplanation(cache: ExplanationCache, query: ExplanationCacheQuery): CachedExplanation | null {
   const entry = cache[explanationCacheKey(query)];
   if (!entry || entry.sentence !== query.sentence) return null;
-  return entry.contextSize === query.contextSize ? entry : null;
+  if (entry.contextSize !== query.contextSize) return null;
+  const isOtherPassage = entry.context !== undefined && entry.context !== query.context;
+  return isOtherPassage ? null : entry;
 }
 
 export function keepNewestExplanations(cache: ExplanationCache, maxEntries: number): ExplanationCache {
@@ -80,8 +88,8 @@ export function storeExplanation(cache: ExplanationCache, answer: ExplanationAns
   const stored = cache[key];
   const isOutdatedAnswer = stored?.sentence === answer.sentence && stored.timestamp > answer.requestedAt;
   if (isOutdatedAnswer) return cache;
-  const { sentence, explanation, contextSize, mode, requestedAt } = answer;
-  const entry: CachedExplanation = { sentence, explanation, contextSize, mode, timestamp: requestedAt };
+  const { sentence, context, explanation, contextSize, mode, requestedAt } = answer;
+  const entry: CachedExplanation = { sentence, context, explanation, contextSize, mode, timestamp: requestedAt };
   return keepNewestExplanations({ ...cache, [key]: entry }, EXPLANATION_CONFIG.MAX_CACHED_EXPLANATIONS);
 }
 
@@ -91,7 +99,8 @@ function isCachedExplanation(value: unknown): value is CachedExplanation {
     typeof value.sentence === 'string' &&
     typeof value.explanation === 'string' &&
     typeof value.contextSize === 'number' &&
-    typeof value.timestamp === 'number'
+    typeof value.timestamp === 'number' &&
+    isOptionalString(value.context)
   );
 }
 

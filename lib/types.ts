@@ -69,6 +69,9 @@ export type ImageMap = Record<string, string>;
 // 説明キャッシュ型
 export interface CachedExplanation {
   sentence: string;
+  // The passage sent with the request. Missing on entries saved before it was
+  // stored, which were made from the sentence alone.
+  context?: string;
   explanation: string;
   contextSize: number;
   // Missing on entries saved before explanation modes existed.

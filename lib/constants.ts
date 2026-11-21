@@ -101,10 +101,10 @@ export const EXPLANATION_CONFIG = {
   MAX_CONTEXT_SIZE: 100,
   DEFAULT_CONTEXT_SIZE: 50,
   CACHE_KEY_PREFIX: 'explanation_',
-  // An entry (sentence with ruby markup plus a Japanese answer) is at most about
-  // 2,000 characters, so 300 stay near 1.2 MB of UTF-16: a quarter of the 5 MB a
-  // browser gives the origin, leaving room for every other saved setting, while
-  // still holding several books' worth of lookups.
+  // An entry (sentence with ruby markup, the passage around it and a Japanese
+  // answer) is at most about 2,400 characters, so 300 stay near 1.4 MB of UTF-16:
+  // under a third of the 5 MB a browser gives the origin, leaving room for every
+  // other saved setting, while still holding several books' worth of lookups.
   MAX_CACHED_EXPLANATIONS: 300,
   SENTENCE_DELIMITERS: ['。', '！', '？'],
   CONTEXT_SIZE_EXPANDED_DEFAULT: false,
