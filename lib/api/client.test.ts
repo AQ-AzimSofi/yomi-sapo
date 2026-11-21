@@ -331,6 +331,14 @@ describe('translate', () => {
     await expect(translate('本')).rejects.toMatchObject({ promptedGuestKey: true });
     expect(promptedKinds).toEqual(['translate']);
   });
+
+  it("opens the key prompt when Google rejects the guest's stored key with its own status", async () => {
+    storedValues.set(STORAGE_KEYS.GUEST_TRANSLATE_KEY, 'rejected-key');
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'upstream_failed', message: 'Translation failed' } }, 400));
+
+    await expect(translate('本')).rejects.toMatchObject({ status: 400, promptedGuestKey: true });
+    expect(promptedKinds).toEqual(['translate']);
+  });
 });
 
 describe('explainSentence', () => {
@@ -410,6 +418,14 @@ describe('synthesizeSpeech', () => {
     fetchMock.mockResolvedValue(guestKeyRequired('tts'));
 
     await expect(synthesizeSpeech({ text: '本' })).rejects.toMatchObject({ promptedGuestKey: true });
+    expect(promptedKinds).toEqual(['tts']);
+  });
+
+  it("opens the key prompt when Google rejects the guest's stored key, which the route reports as a 502", async () => {
+    storedValues.set(STORAGE_KEYS.GUEST_TTS_KEY, 'rejected-key');
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'upstream_failed', message: 'Google TTS エラー (403)' } }, 502));
+
+    await expect(synthesizeSpeech({ text: '本' })).rejects.toMatchObject({ status: 502, promptedGuestKey: true });
     expect(promptedKinds).toEqual(['tts']);
   });
 });
