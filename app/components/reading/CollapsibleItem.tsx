@@ -8,7 +8,8 @@ import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
 import TTSButton from "@/app/components/reading/TTSButton";
 import { useSearchParams } from "next/navigation";
-import { COLORS, EXPLANATION_CONFIG, THEME } from "@/lib/constants";
+import { COLORS, THEME } from "@/lib/constants";
+import { sentenceOccurrence, splitIntoSentences } from "@/lib/content/sentences";
 import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
@@ -26,7 +27,7 @@ interface CollapsibleItemProps {
   onSubmitSuccess: () => void;
   showFurigana?: boolean;
   aiExplanationEnabled?: boolean;
-  onSentenceClick?: (sentence: string) => void;
+  onSentenceClick?: (sentence: string, occurrence: number) => void;
   imageMap?: Record<string, string>;
   book: BookRef;
   currentPage?: number;
@@ -123,27 +124,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
     }
   };
 
-  const splitIntoSentences = (text: string): string[] => {
-    const delimiters: readonly string[] = EXPLANATION_CONFIG.SENTENCE_DELIMITERS;
-    const sentences: string[] = [];
-    let currentSentence = "";
-
-    for (let i = 0; i < text.length; i++) {
-      currentSentence += text[i];
-
-      if (delimiters.includes(text[i])) {
-        sentences.push(currentSentence.trim());
-        currentSentence = "";
-      }
-    }
-
-    if (currentSentence.trim()) {
-      sentences.push(currentSentence.trim());
-    }
-
-    return sentences.filter((s) => s.length > 0);
-  };
-
   const handleTripleClickSelect = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.detail >= 3) {
       e.stopPropagation();
@@ -181,7 +161,7 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
               dangerouslySetInnerHTML={{ __html: html }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSentenceClick?.(sentence);
+                onSentenceClick?.(sentence, sentenceOccurrence(sentences, index));
               }}
               className={
                 onSentenceClick

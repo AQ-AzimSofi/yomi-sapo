@@ -16,6 +16,12 @@ import { useGuestMode } from '@/app/hooks/useGuestMode';
 import GuestModeBanner from '@/app/components/ui/GuestModeBanner';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
 import {
+  NO_SURROUNDINGS,
+  sentenceSurroundings,
+  type SentenceLocation,
+  type SentenceSurroundings,
+} from '@/lib/content/explanationContext';
+import {
   detectContentType,
   locateBookmark,
   pageOfIndex,
@@ -116,8 +122,10 @@ function ReaderContent({
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   // Not a panel: the key prompt opens over whichever panel asked for the key.
   const [isGuestKeyPromptOpen, setIsGuestKeyPromptOpen] = useState(false);
-  const [selectedSentence, setSelectedSentence] = useState('');
-  const [sentenceContext, setSentenceContext] = useState('');
+  const [explanationTarget, setExplanationTarget] = useState<{ sentence: string; surroundings: SentenceSurroundings }>({
+    sentence: '',
+    surroundings: NO_SURROUNDINGS,
+  });
 
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [copyRangeFeedback, setCopyRangeFeedback] = useState(false);
@@ -440,12 +448,10 @@ function ReaderContent({
     setKeyboardMode(prev => !prev);
   };
 
-  const handleSentenceClick = (sentence: string) => {
+  const handleSentenceClick = (location: SentenceLocation) => {
     if (!aiExplanationEnabled) return;
 
-    const cleanSentence = stripFurigana(sentence).trim();
-    setSelectedSentence(sentence);
-    setSentenceContext(cleanSentence);
+    setExplanationTarget({ sentence: location.sentence, surroundings: sentenceSurroundings(readerItems, location) });
     setActivePanel('explanation');
   };
 
@@ -747,8 +753,8 @@ function ReaderContent({
         <ExplanationSidebar
           isOpen={activePanel === 'explanation'}
           onClose={() => setActivePanel(active => closePanel(active, 'explanation'))}
-          sentence={selectedSentence}
-          context={sentenceContext}
+          sentence={explanationTarget.sentence}
+          surroundings={explanationTarget.surroundings}
           fileName={toBookKey(book)}
           showFurigana={showFurigana}
         />

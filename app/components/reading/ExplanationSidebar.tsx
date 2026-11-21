@@ -3,46 +3,43 @@
 import * as React from 'react';
 import { EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG, THEME } from '@/lib/constants';
 import { useExplanationCache } from '@/app/hooks/useExplanationCache';
+import { useEscapeKey } from '@/app/hooks/useEscapeKey';
 import { parseFurigana, segmentsToHTML, stripAiFurigana } from '@/lib/utils/furiganaParser';
 import { renderSafeMarkdown } from '@/lib/utils/safeMarkdown';
 import { toTint } from '@/lib/utils/colorTint';
 import { GUEST_KEY_UPDATED_EVENT } from '@/lib/guestKeys';
-import { ApiError, explainSentence } from '@/lib/api/client';
-import type { ExplanationRequest } from '@/lib/api/contracts';
+import { explainSentence } from '@/lib/api/client';
 import type { ExplanationMode } from '@/lib/constants';
+import type { SentenceSurroundings } from '@/lib/content/explanationContext';
+import { IDLE_EXPLANATION, nextExplanationDisplay } from './explanationDisplay';
+import { askForExplanation } from './explanationRequest';
+import { contextSizeToCommit, isSliderStepKey } from './contextSlider';
 
 interface ExplanationSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   sentence: string;
-  context: string;
+  surroundings: SentenceSurroundings;
   fileName: string;
   showFurigana?: boolean;
 }
 
-function describeExplanationFailure(error: unknown): string {
-  if (error instanceof ApiError && error.promptedGuestKey) {
-    return 'Guest mode: add or update your Gemini API key to use AI explanations.';
-  }
-  if (error instanceof ApiError) return `Failed to fetch explanation: ${error.statusText}`;
-  if (error instanceof Error) return error.message;
-  return 'An unknown error occurred';
-}
+// Shared across mounts, so a sidebar that is closed and reopened, or mounted
+// twice in development, joins the request already out instead of paying again.
+const pendingExplanations = new Map<string, Promise<string>>();
 
 export default function ExplanationSidebar({
   isOpen,
   onClose,
   sentence,
-  context,
+  surroundings,
   fileName,
   showFurigana = true,
 }: ExplanationSidebarProps) {
-  const [explanation, setExplanation] = React.useState<string>('');
-  const [isLoading, setIsLoading] = React.useState<boolean>(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [isCached, setIsCached] = React.useState<boolean>(false);
-  const [cacheTimestamp, setCacheTimestamp] = React.useState<number | null>(null);
-  const [forceRegenerate, setForceRegenerate] = React.useState<boolean>(false);
+  const [display, dispatchDisplay] = React.useReducer(nextExplanationDisplay, IDLE_EXPLANATION);
+  const requestCountRef = React.useRef(0);
+  const lastAskBypassedCacheRef = React.useRef(false);
+  const [draftContextSize, setDraftContextSize] = React.useState<number | null>(null);
 
   const [touchStart, setTouchStart] = React.useState<number>(0);
   const [touchEnd, setTouchEnd] = React.useState<number>(0);
@@ -60,27 +57,41 @@ export default function ExplanationSidebar({
     setContextSizeExpanded,
   } = useExplanationCache();
 
-  React.useEffect(() => {
-    const handleEscKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
+  useEscapeKey(isOpen, onClose);
 
-    document.addEventListener('keydown', handleEscKey);
-    return () => {
-      document.removeEventListener('keydown', handleEscKey);
-    };
-  }, [isOpen, onClose]);
+  const showExplanation = React.useCallback(
+    ({ bypassCache }: { bypassCache: boolean }) => {
+      lastAskBypassedCacheRef.current = bypassCache;
+      const nextRequestId = () => {
+        requestCountRef.current += 1;
+        return requestCountRef.current;
+      };
+      askForExplanation(
+        { getCache, setCache, explain: explainSentence, dispatch: dispatchDisplay, nextRequestId, pending: pendingExplanations },
+        { fileName, sentence, surroundings, contextSize, mode },
+        { bypassCache }
+      );
+    },
+    [sentence, surroundings, fileName, contextSize, mode, getCache, setCache]
+  );
 
-  // After a guest saves their API key, retry the explanation automatically.
   React.useEffect(() => {
-    const handleKeyUpdated = () => {
-      if (isOpen) setForceRegenerate(true);
-    };
-    window.addEventListener(GUEST_KEY_UPDATED_EVENT, handleKeyUpdated);
-    return () => window.removeEventListener(GUEST_KEY_UPDATED_EVENT, handleKeyUpdated);
-  }, [isOpen]);
+    if (!isOpen || !sentence) return;
+    showExplanation({ bypassCache: false });
+  }, [isOpen, sentence, showExplanation]);
+
+  // After a guest saves their API key, retry the explanation. A failed Regenerate
+  // is retried without the cache, so the saved answer it was replacing does not
+  // come back; anything else asks the AI only when nothing is saved, since a
+  // failure is never cached.
+  const isShowingFailure = display.status === 'error';
+  React.useEffect(() => {
+    if (!isOpen || !sentence) return;
+    const retryExplanation = () =>
+      showExplanation({ bypassCache: isShowingFailure && lastAskBypassedCacheRef.current });
+    window.addEventListener(GUEST_KEY_UPDATED_EVENT, retryExplanation);
+    return () => window.removeEventListener(GUEST_KEY_UPDATED_EVENT, retryExplanation);
+  }, [isOpen, sentence, showExplanation, isShowingFailure]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.targetTouches[0].clientX);
@@ -114,66 +125,9 @@ export default function ExplanationSidebar({
     }
   }, [isOpen]);
 
-  React.useEffect(() => {
-    if (!isOpen || !sentence) {
-      return;
-    }
-
-    const fetchExplanation = async () => {
-      if (!forceRegenerate) {
-        const cached = getCache(fileName, sentence, mode);
-        if (cached) {
-          setExplanation(cached.explanation);
-          setIsCached(true);
-          setCacheTimestamp(cached.timestamp);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      setIsLoading(true);
-      setError(null);
-      setIsCached(false);
-      setCacheTimestamp(null);
-
-      try {
-        const requestData: ExplanationRequest = {
-          sentence,
-          context,
-          fileName,
-          contextSize,
-          mode,
-        };
-
-        const data = await explainSentence(requestData);
-        setExplanation(data.explanation);
-        setCache(fileName, sentence, data.explanation, contextSize, mode);
-
-        if (forceRegenerate) {
-          setForceRegenerate(false);
-        }
-      } catch (err) {
-        setError(describeExplanationFailure(err));
-
-        if (forceRegenerate) {
-          setForceRegenerate(false);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchExplanation();
-  }, [isOpen, sentence, context, fileName, contextSize, mode, forceRegenerate, getCache, setCache]);
-
-  const renderTextWithFurigana = (text: string) => {
-    if (!showFurigana) {
-      return <span>{text}</span>;
-    }
-    const segments = parseFurigana(text);
-    const html = segmentsToHTML(segments, showFurigana);
-    return <span dangerouslySetInnerHTML={{ __html: html }} />;
-  };
+  const renderTextWithFurigana = (text: string) => (
+    <span dangerouslySetInnerHTML={{ __html: segmentsToHTML(parseFurigana(text), showFurigana) }} />
+  );
 
   const getTimeAgo = (timestamp: number): string => {
     const now = Date.now();
@@ -190,8 +144,15 @@ export default function ExplanationSidebar({
 
   const renderMarkdown = (text: string): string => renderSafeMarkdown(stripAiFurigana(text));
 
+  const commitContextSize = () => {
+    const settledSize = contextSizeToCommit(draftContextSize, contextSize);
+    setDraftContextSize(null);
+    if (settledSize !== null) setContextSize(settledSize);
+  };
+
+  const shownContextSize = draftContextSize ?? contextSize;
   const contextPercent =
-    ((contextSize - EXPLANATION_CONFIG.MIN_CONTEXT_SIZE) /
+    ((shownContextSize - EXPLANATION_CONFIG.MIN_CONTEXT_SIZE) /
       (EXPLANATION_CONFIG.MAX_CONTEXT_SIZE - EXPLANATION_CONFIG.MIN_CONTEXT_SIZE)) *
     100;
 
@@ -238,13 +199,15 @@ export default function ExplanationSidebar({
               <h2 className="text-lg font-mincho font-bold" style={{ color: THEME.INK }}>
                 AI Explanation
               </h2>
-              {isCached && cacheTimestamp && (
+              {display.status === 'ready' && (
                 <div className="flex items-center gap-3 mt-1">
-                  <span className="text-xs" style={{ color: THEME.SECONDARY }}>
-                    Cached {getTimeAgo(cacheTimestamp)}
-                  </span>
+                  {display.cachedAt !== undefined && (
+                    <span className="text-xs" style={{ color: THEME.SECONDARY }}>
+                      Cached {getTimeAgo(display.cachedAt)}
+                    </span>
+                  )}
                   <button
-                    onClick={() => setForceRegenerate(true)}
+                    onClick={() => showExplanation({ bypassCache: true })}
                     className="text-xs font-bold cursor-pointer interactive-link"
                     style={{ color: THEME.PRIMARY }}
                   >
@@ -310,7 +273,7 @@ export default function ExplanationSidebar({
                 className="text-xs font-medium flex items-center gap-1 cursor-pointer interactive-link"
                 style={{ color: THEME.SECONDARY }}
               >
-                Context: {contextSize} chars
+                Context: {shownContextSize} chars
                 <svg
                   className="w-3 h-3"
                   fill="none"
@@ -332,8 +295,16 @@ export default function ExplanationSidebar({
                     type="range"
                     min={EXPLANATION_CONFIG.MIN_CONTEXT_SIZE}
                     max={EXPLANATION_CONFIG.MAX_CONTEXT_SIZE}
-                    value={contextSize}
-                    onChange={(e) => setContextSize(parseInt(e.target.value, 10))}
+                    value={shownContextSize}
+                    onChange={(e) => setDraftContextSize(parseInt(e.target.value, 10))}
+                    // Captured so the release still reaches the slider when the pointer has left it.
+                    onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+                    onPointerUp={commitContextSize}
+                    onPointerCancel={commitContextSize}
+                    onKeyUp={(e) => {
+                      if (isSliderStepKey(e.key)) commitContextSize();
+                    }}
+                    onBlur={commitContextSize}
                     className="w-full"
                     style={{
                       background: `linear-gradient(to right, ${THEME.PRIMARY} 0%, ${THEME.PRIMARY} ${contextPercent}%, ${THEME.NEUTRAL} ${contextPercent}%, ${THEME.NEUTRAL} 100%)`,
@@ -355,7 +326,7 @@ export default function ExplanationSidebar({
               border: `1px solid ${THEME.NEUTRAL}`,
             }}
           >
-            {isLoading && (
+            {display.status === 'loading' && (
               <div className="flex flex-col items-center justify-center py-10">
                 <div
                   className="animate-spin rounded-full h-8 w-8 border-2 border-transparent"
@@ -367,7 +338,7 @@ export default function ExplanationSidebar({
               </div>
             )}
 
-            {error && !isLoading && (
+            {display.status === 'error' && (
               <div
                 className="p-4"
                 style={{
@@ -377,15 +348,15 @@ export default function ExplanationSidebar({
                 }}
               >
                 <p className="text-sm font-bold mb-1">Error</p>
-                <p className="text-sm">{error}</p>
+                <p className="text-sm">{display.message}</p>
               </div>
             )}
 
-            {explanation && !isLoading && !error && (
+            {display.status === 'ready' && (
               <div
                 className="text-sm leading-relaxed"
                 style={{ color: THEME.INK }}
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(explanation) }}
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(display.text) }}
               />
             )}
           </div>
