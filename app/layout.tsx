@@ -1,17 +1,7 @@
 import type { Metadata } from "next";
 import React from "react";
-import { Geist, Geist_Mono, Shippori_Mincho, Zen_Kaku_Gothic_New } from "next/font/google";
+import { Shippori_Mincho, Zen_Kaku_Gothic_New } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 // Japanese glyphs arrive in on-demand unicode-range slices, so there is nothing useful to preload.
 const shipporiMincho = Shippori_Mincho({
@@ -41,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${shipporiMincho.variable} ${zenKakuGothic.variable} antialiased`}
+        className={`${shipporiMincho.variable} ${zenKakuGothic.variable} antialiased`}
       >
         {children}
       </body>
