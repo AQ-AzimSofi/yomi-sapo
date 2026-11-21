@@ -18,7 +18,7 @@ export default function ReaderSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <label className="settings-label font-bold">Font Size</label>
+        <label className="settings-label font-bold">文字サイズ</label>
         <div className="flex items-center gap-4 mt-3">
           <span className="settings-sublabel" style={{ fontSize: '14px' }}>A</span>
           <input
@@ -37,9 +37,9 @@ export default function ReaderSettings() {
       </div>
 
       <div>
-        <label className="settings-label font-bold">Line Height</label>
+        <label className="settings-label font-bold">行間</label>
         <div className="flex items-center gap-4 mt-3">
-          <span className="settings-sublabel">Compact</span>
+          <span className="settings-sublabel">狭い</span>
           <input
             type="range"
             min={READER_CONFIG.MIN_LINE_HEIGHT * 10}
@@ -55,15 +55,15 @@ export default function ReaderSettings() {
               ),
             }}
           />
-          <span className="settings-sublabel">Spacious</span>
+          <span className="settings-sublabel">広い</span>
         </div>
       </div>
 
       <div className="settings-group">
         <div className="settings-row">
           <div>
-            <div className="settings-label">AI Explanation</div>
-            <div className="settings-sublabel">Tap text for AI analysis</div>
+            <div className="settings-label">AI解説</div>
+            <div className="settings-sublabel">文をタップすると解説を表示</div>
           </div>
           <button
             className={`apple-toggle ${aiExplanationEnabled ? 'on' : ''}`}
@@ -77,8 +77,8 @@ export default function ReaderSettings() {
       <div className="settings-group">
         <div className="settings-row">
           <div>
-            <div className="settings-label">Audiobook</div>
-            <div className="settings-sublabel">Read sentences aloud with a player</div>
+            <div className="settings-label">オーディオブック</div>
+            <div className="settings-sublabel">プレーヤーで文を読み上げる</div>
           </div>
           <button
             className={`apple-toggle ${audiobookEnabled ? 'on' : ''}`}

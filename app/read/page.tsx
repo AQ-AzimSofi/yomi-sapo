@@ -736,7 +736,7 @@ function ReaderContent({
       <BottomSheet
         isOpen={activePanel === 'settings'}
         onClose={() => setActivePanel(active => closePanel(active, 'settings'))}
-        title="Display"
+        title="表示設定"
       >
         <ReaderSettings />
       </BottomSheet>
