@@ -237,7 +237,7 @@ interface ReaderFABProps {
 Renders the parsed items of the current page. Format detection lives in \`lib/content/bookModel.ts\`:
 
 - \`rephrase\`: a line starting with \`>>\` and a heading line starting with \`<\` or \`＜\` (not a ruby tag)
-- \`furigana\`: \`<ruby>\` markup or a kanji run followed by a kana \`[reading]\`
+- \`furigana\`: \`<ruby>\` markup or text followed by a \`[bracketed]\` reading
 - \`plain\`: anything else
 
 - \`rephrase\`: Renders with \`CollapsibleItem\`
