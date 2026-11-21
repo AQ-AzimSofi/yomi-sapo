@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
-import { recountRow, type ContentRow, type LibraryRow } from './libraryProgressQueries.sql';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { sql } from '@/lib/db/connection';
+import { getLibraryRows, recountRow, type ContentRow, type LibraryRow } from './libraryProgressQueries.sql';
 
-vi.mock('@/lib/db/connection', () => ({ sql: vi.fn() }));
+vi.mock('@/lib/db/connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }) }));
 
 const REPEATED_TEXT = '同じ文。';
 // 150 paragraphs: the repeated text sits on page 1 (unit 10) and page 3 (unit 110).
@@ -24,6 +25,17 @@ function staleRow(bookmark: Pick<LibraryRow, 'bookmark_text' | 'bookmark_page'>)
 
 const CONTENT: ContentRow = { id: 1, content: BOOK_TEXT, character_count: BOOK_TEXT.length, byte_count: 2 };
 
+function updatedTables(client: { mock: { calls: readonly unknown[][] } }): string[] {
+  return client.mock.calls
+    .map(([strings]) => /UPDATE (\w+)/.exec((strings as string[]).join('?')))
+    .filter((match) => match !== null)
+    .map((match) => match[1]);
+}
+
+afterEach(() => {
+  vi.resetAllMocks();
+});
+
 describe('recountRow', () => {
   it('keeps the saved page of a bookmark whose text appears on an earlier page too', () => {
     expect(recountRow(staleRow({ bookmark_text: REPEATED_TEXT, bookmark_page: 3 }), CONTENT).bookmark_page).toBe(3);
@@ -39,5 +51,20 @@ describe('recountRow', () => {
 
   it('recounts the total pages of the book', () => {
     expect(recountRow(staleRow({ bookmark_text: null, bookmark_page: null }), CONTENT).total_pages).toBe(3);
+  });
+});
+
+describe('getLibraryRows', () => {
+  it('saves the recounted pages and the bookmark page in one transaction', async () => {
+    const transaction = vi.fn().mockResolvedValue([]);
+    vi.mocked(sql.begin).mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+    vi.mocked(sql)
+      .mockResolvedValueOnce([staleRow({ bookmark_text: REPEATED_TEXT, bookmark_page: null })] as never)
+      .mockResolvedValueOnce([CONTENT] as never);
+
+    await getLibraryRows(() => true);
+
+    expect(updatedTables(transaction)).toEqual(['text_entries', 'bookmarks']);
+    expect(updatedTables(vi.mocked(sql))).toEqual([]);
   });
 });

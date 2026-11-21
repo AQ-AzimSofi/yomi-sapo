@@ -70,31 +70,33 @@ export function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
 }
 
 async function saveRecountedRows(recounted: LibraryRow[], bookmarkRows: LibraryRow[]): Promise<void> {
-  await sql`
-    UPDATE text_entries AS t
-    SET total_pages = u.total_pages, total_characters = u.total_characters, content_bytes = u.content_bytes
-    FROM unnest(
-      ${recounted.map((row) => row.id)}::int[],
-      ${recounted.map((row) => row.total_pages)}::int[],
-      ${recounted.map((row) => row.total_characters)}::int[],
-      ${recounted.map((row) => row.content_bytes)}::int[]
-    ) AS u(id, total_pages, total_characters, content_bytes)
-    WHERE t.id = u.id
-  `;
-  if (bookmarkRows.length === 0) return;
-  // Matching bookmark_text skips a bookmark that moved while this request ran, so
-  // the page of its old position never overwrites the page saved with the new one.
-  await sql`
-    UPDATE bookmarks AS b
-    SET bookmark_page = u.bookmark_page
-    FROM unnest(
-      ${bookmarkRows.map((row) => row.file_name)}::text[],
-      ${bookmarkRows.map((row) => row.directory)}::text[],
-      ${bookmarkRows.map((row) => row.bookmark_text)}::text[],
-      ${bookmarkRows.map((row) => row.bookmark_page)}::int[]
-    ) AS u(file_name, directory, bookmark_text, bookmark_page)
-    WHERE b.file_name = u.file_name AND b.directory = u.directory AND b.bookmark_text = u.bookmark_text
-  `;
+  await sql.begin(async (tx) => {
+    await tx`
+      UPDATE text_entries AS t
+      SET total_pages = u.total_pages, total_characters = u.total_characters, content_bytes = u.content_bytes
+      FROM unnest(
+        ${recounted.map((row) => row.id)}::int[],
+        ${recounted.map((row) => row.total_pages)}::int[],
+        ${recounted.map((row) => row.total_characters)}::int[],
+        ${recounted.map((row) => row.content_bytes)}::int[]
+      ) AS u(id, total_pages, total_characters, content_bytes)
+      WHERE t.id = u.id
+    `;
+    if (bookmarkRows.length === 0) return;
+    // Matching bookmark_text skips a bookmark that moved while this request ran, so
+    // the page of its old position never overwrites the page saved with the new one.
+    await tx`
+      UPDATE bookmarks AS b
+      SET bookmark_page = u.bookmark_page
+      FROM unnest(
+        ${bookmarkRows.map((row) => row.file_name)}::text[],
+        ${bookmarkRows.map((row) => row.directory)}::text[],
+        ${bookmarkRows.map((row) => row.bookmark_text)}::text[],
+        ${bookmarkRows.map((row) => row.bookmark_page)}::int[]
+      ) AS u(file_name, directory, bookmark_text, bookmark_page)
+      WHERE b.file_name = u.file_name AND b.directory = u.directory AND b.bookmark_text = u.bookmark_text
+    `;
+  });
 }
 
 async function refreshStaleRows(rows: LibraryRow[]): Promise<LibraryRow[]> {
