@@ -61,7 +61,6 @@ export const API_ROUTES = {
   AUTH_SESSION: '/api/auth?action=session',
   // Text entries management
   TEXT_ENTRIES: '/api/text-entries',
-  TEXT_ENTRIES_RESET: '/api/text-entries/reset',
   // TTS
   TTS: '/api/tts',
   // Ruby Registry

@@ -106,7 +106,6 @@ export async function getTextEntry(
   }
 }
 
-
 export async function upsertTextEntry(
   fileName: string,
   content: string,
@@ -123,21 +122,6 @@ export async function upsertTextEntry(
     `;
   } catch (error) {
     console.error('Error upserting text entry:', error);
-    throw error;
-  }
-}
-
-export async function deleteTextEntry(
-  fileName: string,
-  directory: string = 'public'
-): Promise<void> {
-  try {
-    await sql`
-      DELETE FROM text_entries
-      WHERE file_name = ${fileName} AND directory = ${directory}
-    `;
-  } catch (error) {
-    console.error('Error deleting text entry:', error);
     throw error;
   }
 }
@@ -185,100 +169,7 @@ export async function getAllTextEntries(): Promise<{
   }
 }
 
-export async function getTextEntriesInDirectory(
-  directory: string
-): Promise<string[]> {
-  try {
-    const result = await sql<Pick<TextEntry, 'file_name'>>`
-      SELECT file_name
-      FROM text_entries
-      WHERE directory = ${directory}
-      ORDER BY file_name
-    `;
-
-    const rows = normalizeResult(result);
-    return rows.map((row) => row.file_name);
-  } catch (error) {
-    console.error('Error fetching text entries in directory:', error);
-    throw error;
-  }
-}
-
-export async function cleanupTextEntries(
-  existingFileNames: string[],
-  directory: string = 'public'
-): Promise<number> {
-  try {
-    const result = await sql`
-      DELETE FROM text_entries
-      WHERE directory = ${directory}
-      AND file_name != ALL(${existingFileNames})
-      RETURNING id
-    `;
-
-    const rows = normalizeResult(result);
-    return rows.length;
-  } catch (error) {
-    console.error('Error cleaning up text entries:', error);
-    throw error;
-  }
-}
-
-export async function syncTextEntries(
-  autoAdd: boolean = false
-): Promise<{ removed: number; added: number }> {
-  try {
-    const { listTextFiles, readTextFile } = await import('@/lib/services/fileService');
-    const { directories, filesByDirectory } = await listTextFiles();
-
-    let totalRemoved = 0;
-    let totalAdded = 0;
-
-    for (const directory of directories) {
-      const filesInDir = filesByDirectory[directory] || [];
-      const removed = await cleanupTextEntries(filesInDir, directory);
-      totalRemoved += removed;
-
-      if (autoAdd) {
-        const existingFiles = await getTextEntriesInDirectory(directory);
-        const existingSet = new Set(existingFiles);
-
-        for (const fileName of filesInDir) {
-          if (!existingSet.has(fileName)) {
-            const filePath = directory ? `${directory}/${fileName}` : fileName;
-            const content = await readTextFile(filePath);
-            if (content) {
-              await upsertTextEntry(fileName, content, directory);
-              totalAdded++;
-              console.log(`Added new text entry: ${directory}/${fileName}`);
-            }
-          }
-        }
-      }
-    }
-
-    return { removed: totalRemoved, added: totalAdded };
-  } catch (error) {
-    console.error('Error syncing text entries:', error);
-    throw error;
-  }
-}
-
 export async function backfillTextMetadata(): Promise<number> {
   return 0;
 }
 
-export async function resetTextEntries(): Promise<number> {
-  try {
-    const result = await sql`
-      DELETE FROM text_entries
-      RETURNING id
-    `;
-
-    const rows = normalizeResult(result);
-    return rows.length;
-  } catch (error) {
-    console.error('Error resetting text entries:', error);
-    throw error;
-  }
-}
