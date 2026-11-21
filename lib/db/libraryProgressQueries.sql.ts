@@ -1,8 +1,13 @@
 import { sql } from './connection';
 import type { QueryResult } from './schema';
-import { stripFurigana } from '@/lib/utils/furiganaParser';
-import { parseReaderItems, type ReaderItem } from '@/lib/content/bookModel';
-import { PAGINATION_CONFIG } from '@/lib/constants';
+import {
+  findBookmarkIndex,
+  itemMainText,
+  pageOfIndex,
+  parseReaderItems,
+  totalPagesFor,
+  type ReaderItem,
+} from '@/lib/content/bookModel';
 
 /**
  * Per-book data for the library cards, without reading the books' text.
@@ -44,18 +49,9 @@ function normalizeResult<T>(result: QueryResult<T>): T[] {
   return Array.isArray(rows) ? (rows as T[]) : [];
 }
 
-function normalizeItemText(text: string): string {
-  return stripFurigana(text).replace(/[\r\n]/g, '').trim();
-}
-
 function bookmarkPageOf(bookmarkText: string, items: ReaderItem[]): number {
-  const normalizedBookmark = normalizeItemText(bookmarkText);
-  if (!normalizedBookmark) return BOOKMARK_NOT_FOUND;
-  const itemIndex = items.findIndex(
-    (item) => normalizeItemText('head' in item ? item.head : item.text) === normalizedBookmark
-  );
-  if (itemIndex === -1) return BOOKMARK_NOT_FOUND;
-  return Math.floor(itemIndex / PAGINATION_CONFIG.ITEMS_PER_PAGE) + 1;
+  const itemIndex = findBookmarkIndex(items.map(itemMainText), bookmarkText);
+  return itemIndex === null ? BOOKMARK_NOT_FOUND : pageOfIndex(itemIndex);
 }
 
 function hasStaleTextCounts(row: LibraryRow): boolean {
@@ -73,7 +69,7 @@ function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
   const items = parseReaderItems(content.content);
   return {
     ...row,
-    total_pages: Math.ceil(items.length / PAGINATION_CONFIG.ITEMS_PER_PAGE),
+    total_pages: totalPagesFor(items.length),
     total_characters: content.character_count,
     content_bytes: content.byte_count,
     current_bytes: content.byte_count,
