@@ -9,6 +9,7 @@ import {
   DARK_COLORS,
   READER_CONFIG,
   STORAGE_KEYS,
+  THEME,
   type PriorityScore,
 } from '@/lib/constants';
 import ProgressBar from './components/ProgressBar';
@@ -37,6 +38,7 @@ import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import { describeLoadFailure } from './loadFailure';
+import { readerThemeFrom, type ReaderTheme } from './readerTheme';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -105,7 +107,8 @@ function ReaderContent({
   const [displayMode, setDisplayMode] = useState<'collapsed' | 'expanded'>('collapsed');
   const [showRephrase, setShowRephrase] = useState(false);
   const [aiExplanationEnabled, setAiExplanationEnabled] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [readerTheme, setReaderTheme] = useState<ReaderTheme>('light');
+  const isDarkMode = readerTheme === 'dark';
 
   const [audiobookEnabled, setAudiobookEnabled] = useState(false);
   const [keyboardMode, setKeyboardMode] = useState(false);
@@ -156,8 +159,7 @@ function ReaderContent({
       setDisplayMode(isExpanded ? 'expanded' : 'collapsed');
     }
 
-    const storedDarkMode = localStorage.getItem(STORAGE_KEYS.READER_DARK_MODE);
-    if (storedDarkMode) setIsDarkMode(storedDarkMode === 'true');
+    setReaderTheme(readerThemeFrom(localStorage.getItem(STORAGE_KEYS.READER_DARK_MODE)));
 
     const storedAudiobook = localStorage.getItem(STORAGE_KEYS.AUDIOBOOK_ENABLED);
     if (storedAudiobook) setAudiobookEnabled(storedAudiobook === 'true');
@@ -168,12 +170,16 @@ function ReaderContent({
     }
   }, []);
 
+  // On the document element the theme also reaches the page ground and the scrollbars.
   useEffect(() => {
-    document.body.style.backgroundColor = isDarkMode ? DARK_COLORS.BASE : READER_THEME.SURFACE;
+    const root = document.documentElement;
+    root.dataset.theme = readerTheme;
+    document.body.style.backgroundColor = THEME.READER_BG;
     return () => {
+      delete root.dataset.theme;
       document.body.style.backgroundColor = '';
     };
-  }, [isDarkMode]);
+  }, [readerTheme]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -495,9 +501,9 @@ function ReaderContent({
   };
 
   const handleToggleDarkMode = () => {
-    const newValue = !isDarkMode;
-    setIsDarkMode(newValue);
-    localStorage.setItem(STORAGE_KEYS.READER_DARK_MODE, newValue.toString());
+    const nextTheme = isDarkMode ? 'light' : 'dark';
+    setReaderTheme(nextTheme);
+    localStorage.setItem(STORAGE_KEYS.READER_DARK_MODE, String(nextTheme === 'dark'));
   };
 
   const handleAudiobookChange = (enabled: boolean) => {
