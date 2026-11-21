@@ -23,7 +23,15 @@ function staleRow(bookmark: Pick<LibraryRow, 'bookmark_text' | 'bookmark_page'>)
   };
 }
 
-const CONTENT: ContentRow = { id: 1, content: BOOK_TEXT, character_count: BOOK_TEXT.length, byte_count: 2 };
+const CONTENT: ContentRow = { id: 1, content: BOOK_TEXT, character_count: BOOK_TEXT.length, byte_count: 2, stored_bytes: 2 };
+const MIB = 1024 * 1024;
+
+type Transaction = ReturnType<typeof vi.fn>;
+
+// The first parameter of each UPDATE is its key column: text_entries ids, or bookmarks file names.
+function updatedKeys(transaction: Transaction, table: string): unknown {
+  return transaction.mock.calls.find(([strings]) => (strings as string[]).join('?').includes(`UPDATE ${table}`))?.[1];
+}
 
 function updatedTables(client: { mock: { calls: readonly unknown[][] } }): string[] {
   return client.mock.calls
@@ -71,6 +79,25 @@ describe('getLibraryRows', () => {
     expect(sql.begin).toHaveBeenCalledTimes(1);
     expect(updatedTables(transaction)).toEqual(['text_entries', 'bookmarks']);
     expect(updatedTables(vi.mocked(sql))).toEqual([]);
+  });
+
+  it('saves the recounts in transactions that each stay under 8 MiB of stored book text', async () => {
+    const storedBytesById = new Map([[1, 5 * MIB], [2, 4 * MIB], [3, 2 * MIB]]);
+    const bookIds = [...storedBytesById.keys()];
+    vi.mocked(sql)
+      .mockResolvedValueOnce(bookIds.map((id) => ({ ...staleRow({ bookmark_text: REPEATED_TEXT, bookmark_page: null }), id, file_name: `ほん${id}` })) as never)
+      .mockResolvedValueOnce(bookIds.map((id) => ({ ...CONTENT, id, stored_bytes: storedBytesById.get(id) })) as never);
+    const transactions: Transaction[] = [];
+    vi.mocked(sql.begin).mockImplementation(((callback: (tx: Transaction) => unknown) => {
+      const transaction = vi.fn().mockResolvedValue([]);
+      transactions.push(transaction);
+      return Promise.resolve(callback(transaction));
+    }) as never);
+
+    await getLibraryRows(() => true);
+
+    expect(transactions.map((transaction) => updatedKeys(transaction, 'text_entries'))).toEqual([[1], [2, 3]]);
+    expect(transactions.map((transaction) => updatedKeys(transaction, 'bookmarks'))).toEqual([['ほん1'], ['ほん2', 'ほん3']]);
   });
 
   it('saves the recounted rows again after a DSQL write conflict', async () => {

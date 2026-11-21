@@ -1,5 +1,6 @@
 import { sql } from './connection';
 import { runWriteTransaction } from './writeTransaction';
+import { groupBySize } from '@/lib/utils/groupBySize';
 import {
   itemMainText,
   locateBookmark,
@@ -38,10 +39,16 @@ export interface ContentRow {
   content: string;
   character_count: number;
   byte_count: number;
+  stored_bytes: number;
 }
 
 // Records "computed, but the bookmark text is not in the book" so it is not retried.
 const BOOKMARK_NOT_FOUND = 0;
+
+// Aurora DSQL refuses a transaction that writes more than 10 MiB, and its UPDATE rewrites
+// the whole stored row, book text included, even when only a count changes. 8 MiB of
+// stored text leaves room for the rest of each row and for the bookmark rows.
+const MAX_STORED_BYTES_PER_TRANSACTION = 8 * 1024 * 1024;
 
 function bookmarkPageOf(bookmarkText: string, items: ReaderItem[], savedPage: number | null): number {
   return locateBookmark(items.map(itemMainText), bookmarkText, savedPage).page ?? BOOKMARK_NOT_FOUND;
@@ -70,7 +77,7 @@ export function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
   };
 }
 
-async function saveRecountedRows(recounted: LibraryRow[], bookmarkRows: LibraryRow[]): Promise<void> {
+async function saveRecountedGroup(recounted: LibraryRow[], bookmarkRows: LibraryRow[]): Promise<void> {
   await runWriteTransaction(sql, async (tx) => {
     await tx`
       UPDATE text_entries AS t
@@ -100,12 +107,25 @@ async function saveRecountedRows(recounted: LibraryRow[], bookmarkRows: LibraryR
   });
 }
 
+// A book's counts and its bookmark page commit together, so a saved recount never hides a stale bookmark page.
+async function saveRecountedRows(
+  recounted: LibraryRow[],
+  bookmarkRows: LibraryRow[],
+  storedBytesOf: (row: LibraryRow) => number
+): Promise<void> {
+  const bookmarkIds = new Set(bookmarkRows.map((row) => row.id));
+  for (const group of groupBySize(recounted, storedBytesOf, MAX_STORED_BYTES_PER_TRANSACTION)) {
+    await saveRecountedGroup(group, group.filter((row) => bookmarkIds.has(row.id)));
+  }
+}
+
 async function refreshStaleRows(rows: LibraryRow[]): Promise<LibraryRow[]> {
   const staleRows = rows.filter((row) => hasStaleTextCounts(row) || needsBookmarkPage(row));
   if (staleRows.length === 0) return rows;
 
   const contentRows = await sql<ContentRow[]>`
-    SELECT id, content, char_length(content) AS character_count, octet_length(content) AS byte_count
+    SELECT id, content, char_length(content) AS character_count, octet_length(content) AS byte_count,
+           pg_column_size(content) AS stored_bytes
     FROM text_entries
     WHERE id = ANY(${staleRows.map((row) => row.id)}::int[])
   `;
@@ -118,7 +138,7 @@ async function refreshStaleRows(rows: LibraryRow[]): Promise<LibraryRow[]> {
     .filter((row) => needsBookmarkPage(row) && recountedById.has(row.id))
     .map((row) => recountedById.get(row.id) as LibraryRow);
 
-  await saveRecountedRows(recounted, bookmarkRows);
+  await saveRecountedRows(recounted, bookmarkRows, (row) => contentById.get(row.id)?.stored_bytes ?? 0);
   return rows.map((row) => recountedById.get(row.id) ?? row);
 }
 
