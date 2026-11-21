@@ -36,6 +36,7 @@ import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
+import { describeLoadFailure } from './loadFailure';
 import type { AudioBookContentMode } from '@/lib/types';
 
 const ExplanationSidebar = dynamic(
@@ -64,13 +65,6 @@ const GuestApiKeyModal = dynamic(
 );
 
 const PRIORITIZE_ERROR_MESSAGE = 'このページを分析できませんでした。もう一度お試しください。';
-
-// The server's reason, such as a guest opening a book outside the preview, is not for the reader.
-function describeLoadFailure(error: unknown): string {
-  if (error instanceof ApiError) return 'Failed to load content';
-  if (error instanceof Error) return error.message;
-  return 'Unknown error';
-}
 
 function SearchParamsReader({
   children,
