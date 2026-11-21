@@ -1,65 +1,84 @@
 # Scripts Directory
 
-This directory contains Python utility scripts for processing Japanese text and EPUB files.
+Offline tools for preparing books, narration and the database. None of them run in the deployed app: `next.config.ts` keeps `scripts/` out of the bundle, and `tsc` and `npm run lint` skip it. Run them from the project root, TypeScript with `npx tsx` and Python with Python 3.12 and MeCab.
 
 ## Contents
 
-- **epub-to-text-furigana.py** - Converts EPUB files to plain text with furigana
-- **furigana_helper.py** - Helper functions for MeCab-based furigana generation
-- **requirements.txt** - Python dependencies
-- **README-epub-converter.md** - Detailed documentation for the EPUB converter
+| Path | What it does |
+|------|--------------|
+| `epub-to-book.ts` | The book pipeline, see [Book Pipeline](#book-pipeline-epub-to-bookts) |
+| `core/epub-to-text-furigana.py` | Pipeline step 1: EPUB to text with furigana, plus the images and a metadata JSON. It also runs on its own, see [README-epub-converter.md](./README-epub-converter.md) |
+| `core/extract-ruby-smart.py` | Pipeline step 2: the ruby registry (vocabulary index). It takes no arguments: it reads every `.epub` in `temp/` and writes `ruby-registry.json` into the matching book folder, so the pipeline copies the EPUB there first |
+| `core/add-furigana-to-text.py` | Pipeline step 5: furigana for the rephrased text |
+| `core/furigana_helper.py` | MeCab furigana generation shared by the three scripts above |
+| `utils/claude-rephrase.ts`, `prompts/claude-rephrase.md` | The Claude rephraser: runs `claude -p` with the prompt file as its system prompt |
+| `utils/rephrase-output.ts` | Parses a Gemini reply and aligns it with the source chunk |
+| `ocr/ocr-pages.ts` | OCRs a folder of page images into text with Gemini, for books with no EPUB (usage in the file header) |
+| `kindle/page-turner.ts` | Turns Kindle Cloud Reader pages and saves screenshots, see [kindle/README.md](./kindle/README.md) |
+| `covers/fetch-covers.py` | Collects book covers for the BookCovers bucket, see "Book Covers" in the root README |
+| `audio/` | Audiobook narration, see [Audiobook Narration](#audiobook-narration-audio) |
+| `db/` | Local schema, local and production sync, narration loading, stored text cleanup, see [db/README.md](./db/README.md) |
+| `auth/generate-password-hash.ts` | Prints a bcrypt hash of a password: `npx tsx scripts/auth/generate-password-hash.ts <password>`. `AUTH_PASSWORD_HASH` takes that hash base64-encoded, since `lib/auth/password.ts` decodes it |
+| `dev-with-sync.ts` | What `npm run dev` runs: starts the database container and syncs local with production when it starts and when it stops |
+| `requirements.txt` | Python dependencies |
 
-## Quick Start
-
-### 1. Create Virtual Environment (Recommended)
-
-```bash
-# From the scripts directory
-cd scripts
-
-# Create virtual environment
-python3 -m venv venv
-
-# Activate virtual environment
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-venv\Scripts\activate
-```
-
-### 2. Install Dependencies
+## Book Pipeline (`epub-to-book.ts`)
 
 ```bash
-# Make sure you're in the activated virtual environment
-pip install -r requirements.txt
+npx tsx scripts/epub-to-book.ts "path/to/book.epub"
+npx tsx scripts/epub-to-book.ts --help    # every listed option and its default
 ```
 
-This will install:
-- `ebooklib` - EPUB file parsing
-- `beautifulsoup4` - HTML/XML parsing
-- `lxml` - XML processing
-- `mecab-python3` - Japanese morphological analysis
-- `unidic-lite` - Japanese dictionary for MeCab
+Steps:
 
-### 3. Verify Installation
+1. Extract the text, images and metadata from the EPUB into `public/bookv2-furigana/<book>/` (`core/epub-to-text-furigana.py`).
+2. Build `ruby-registry.json` from the EPUB's ruby (`core/extract-ruby-smart.py`).
+3. Upload `images/` and the metadata JSON to the BookImages bucket when `BOOK_IMAGES_BUCKET` is set in `.env.local` (see "Book Illustrations" in the root README).
+4. Rephrase the text chunk by chunk.
+5. Add furigana to each rephrased chunk (`core/add-furigana-to-text.py`) and append it to `<book>-rephrase-furigana.txt`, the text the reader shows.
+6. After each chunk, call `PUT /api/text-entries` on the local dev server, which copies that file into the local database, so the book can be read while it is still being processed.
+
+```
+public/bookv2-furigana/<book>/
+├── <book>.txt                       extracted text with furigana
+├── <book>.json                      metadata, including the image list
+├── images/                          illustrations
+├── ruby-registry.json               vocabulary index
+├── <book>-rephrase.txt              rephrase before furigana
+├── <book>-rephrase-furigana.txt     rephrase with furigana (synced to the database)
+└── <book>-rephrase-progress.json    resume state
+```
+
+`public/bookv2-furigana/` is gitignored and never deployed. The app reads book text from the database and illustrations from the BookImages bucket.
+
+### Rephrasing
+
+- **Claude** (the default): a `--model` that does not start with `gemini`, such as `sonnet` or `opus`, runs `claude -p` on the Claude subscription with `prompts/claude-rephrase.md` as the system prompt. Chunks run back to back with no delay. When a call fails (usage limit, sign-in), the run stops and that chunk stays unfinished.
+- **Gemini**: a `gemini-*` model sends each chunk to the Gemini API. It rotates through `GEMINI_API_KEY` to `GEMINI_API_KEY5`, falls back to other Gemini models when one is unavailable or keeps failing, and waits `--delay` seconds divided by the number of keys between chunks. A chunk that still fails keeps its original lines as their own rephrase.
+
+### Resuming
+
+Progress is saved in `<book>-rephrase-progress.json`. Run the same command again to continue from the first unfinished chunk; a resumed run keeps the model the book started with. The script refuses to resume when the source text has changed since. `--reset` starts over and first moves the earlier `-rephrase.txt` and `-rephrase-furigana.txt` aside as `.bak` files.
+
+### Text That Is Not an EPUB
+
+For OCR output or a corrected source text, put the text at `public/bookv2-furigana/<book>/<book>.txt` and pass the folder with `--skip-extract`. Steps 1 and 2 are skipped, and the folder name is the book name:
 
 ```bash
-python3 -c "import MeCab; print('MeCab installed successfully!')"
+npx tsx scripts/epub-to-book.ts "public/bookv2-furigana/<book>" --skip-extract
 ```
 
-### 4. Run Scripts
+### Before a Run
 
-```bash
-# Convert an EPUB file (from scripts directory)
-python epub-to-text-furigana.py path/to/book.epub
+- Start the local database and the dev server on port 3333 (`npm run db:start`, then `npm run dev` or `npm run dev:nosync`). `--api-url <url>` points step 6 at another server. Without the dev server the files are still written, and each chunk logs a failed database sync
+- Install the Python dependencies (see [Python Setup](#python-setup)) into the Python the pipeline calls: `C:\Users\azimm\AppData\Local\Programs\Python\Python312\python.exe` on Windows, `python3` on PATH elsewhere
+- Claude rephrasing needs the `claude` CLI signed in; Gemini rephrasing needs at least one of `GEMINI_API_KEY` to `GEMINI_API_KEY5` in `.env.local`
 
-# Or from project root
-python scripts/epub-to-text-furigana.py path/to/book.epub
-```
+`--help` does not list `--skip-extract` or `--api-url`. It lists `--skip-images`, which has no effect: the extractor always writes the images.
 
-## EPUB Converter
+### After a Run
 
-For detailed documentation on the EPUB to Text converter, see [README-epub-converter.md](./README-epub-converter.md).
+The finished book is in the local database only. `npm run db:sync` and its push option copy it to production, as does the sync `npm run dev` runs when it stops. A new book also needs a cover (see "Book Covers" in the root README).
 
 ## Audiobook Narration (`audio/`)
 
@@ -121,66 +140,20 @@ Notes:
 Turns Kindle Cloud Reader pages on a timer and can save a screenshot of each page.
 See [kindle/README.md](./kindle/README.md).
 
-## Virtual Environment Notes
+## Python Setup
 
-**Important:** The `venv/` directory should NOT be committed to git. It's already in `.gitignore`.
-
-Each developer should create their own virtual environment locally:
+From the project root:
 
 ```bash
-cd scripts
-python3 -m venv venv
-source venv/bin/activate  # macOS/Linux
-pip install -r requirements.txt
+pip install -r scripts/requirements.txt
+python -c "import MeCab; print('MeCab installed successfully!')"
 ```
 
-## Deactivating Virtual Environment
+This installs EPUB and HTML parsing (`ebooklib`, `beautifulsoup4`, `lxml`), MeCab with its dictionary (`mecab-python3`, `unidic-lite`) and the cover script's `requests` and `Pillow`. A virtual environment also works for running the Python scripts on their own; `venv/` is gitignored.
 
-When you're done using the scripts:
+If MeCab fails to install, install the system package first, then retry `pip install mecab-python3 unidic-lite`:
 
 ```bash
-deactivate
+brew install mecab                                              # macOS
+sudo apt-get install mecab libmecab-dev mecab-ipadic-utf8       # Ubuntu/Debian
 ```
-
-## Troubleshooting
-
-### "Command not found: python3"
-
-Try `python` instead of `python3`:
-
-```bash
-python -m venv venv
-```
-
-### Permission errors on macOS/Linux
-
-Make the script executable:
-
-```bash
-chmod +x epub-to-text-furigana.py
-```
-
-### MeCab installation fails
-
-Install system dependencies first:
-
-**macOS:**
-```bash
-brew install mecab
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install mecab libmecab-dev mecab-ipadic-utf8
-```
-
-Then retry:
-```bash
-pip install mecab-python3 unidic-lite
-```
-
-## Integration with Main App
-
-These scripts are standalone utilities and do NOT run as part of the main Next.js application. They are used offline to prepare text files that are then read by the web app.
-
-The main Next.js app (`npm run dev`) is configured to ignore this directory to avoid file watcher issues with the large `venv/` folder.
