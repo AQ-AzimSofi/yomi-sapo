@@ -234,16 +234,11 @@ interface ReaderFABProps {
 #### \`ReadingContent\`
 **File**: \`app/read/components/ReadingContent.tsx\`
 
-Content type detection and rendering orchestrator.
+Renders the parsed items of the current page. Format detection lives in \`lib/content/bookModel.ts\`:
 
-**Content Type Detection**:
-\`\`\`typescript
-function detectContentType(text: string): 'rephrase' | 'furigana' | 'plain' {
-  if (text.includes('>>') && text.includes('<')) return 'rephrase';
-  if (/<ruby>/.test(text) || /[^\[\]]+\[[^\[\]]+\]/.test(text)) return 'furigana';
-  return 'plain';
-}
-\`\`\`
+- \`rephrase\`: a line starting with \`>>\` and a heading line starting with \`<\` or \`＜\` (not a ruby tag)
+- \`furigana\`: \`<ruby>\` markup or a kanji run followed by a kana \`[reading]\`
+- \`plain\`: anything else
 
 - \`rephrase\`: Renders with \`CollapsibleItem\`
 - \`furigana\`/\`plain\`: Renders with \`ParagraphItem\`

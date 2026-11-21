@@ -159,6 +159,10 @@ services/
 - `readTextFile(fileName)`
 - `readRubyRegistry`, `writeRubyRegistry`, `upsertRubyEntry`, `deleteRubyEntry`, `ignoreSuggestion`
 
+### Book model (`/lib/content`)
+
+`bookModel.ts` owns how a book's text becomes reader units: format detection, newline handling, unit splitting, page math (`pageStartIndex`, `pageOfIndex`, `totalPagesFor`) and bookmark lookup (`findBookmarkIndex`, `bookmarkPageFor`). The reader, the library, the guest preview and the narration builder all use it.
+
 ### Utilities (`/lib/utils`)
 
 ```
@@ -166,7 +170,6 @@ utils/
 ├── furiganaParser.ts       # Parse kanji[furigana] and <ruby> tags, render escaped HTML
 ├── html.ts                 # HTML escaping
 ├── safeMarkdown.ts         # Render AI markdown with raw HTML escaped
-├── buildPlayableUnits.ts   # Split book text into reader units
 ├── truncatePreview.ts      # Guest preview cut
 ├── ttsTextCleaner.ts       # Clean text for TTS
 ├── ttsCache.ts             # Cache synthesized TTS audio
