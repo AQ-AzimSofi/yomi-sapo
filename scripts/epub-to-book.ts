@@ -28,7 +28,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
-import { batchRephrase, createRephraser } from './pipeline/rephraseBook';
+import { batchRephrase, defaultRephraseDeps } from './pipeline/rephraseBook';
 import { assertPythonHasMeCab, describePython, resolvePython, runPython } from './shared/python';
 import { CORE_SCRIPTS_DIR, loadRepoEnv, REPO_ROOT } from './shared/repoPaths';
 import { isEntryPoint } from './shared/entryPoint';
@@ -346,7 +346,7 @@ async function main(options: CLIOptions) {
 
   // Step 4: Batch Rephrase (unless skipped)
   if (!options.skipRephrase) {
-    const success = await batchRephrase({ bookName, sourceDir }, options, createRephraser);
+    const success = await batchRephrase({ bookName, sourceDir }, options, defaultRephraseDeps);
     if (!success && !options.dryRun) {
       console.log('\nRephrasing incomplete. Run again to resume.');
     }
