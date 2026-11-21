@@ -35,6 +35,16 @@ const ENTRY = {
   updatedAt: '2026-01-02T03:04:05.006Z',
 };
 
+const CREATE_INPUT = {
+  word: ENTRY.word,
+  reading: 'ことば',
+  sentence: ENTRY.sentence,
+  fileName: ENTRY.fileName,
+  directory: ENTRY.directory,
+  paragraphText: ENTRY.paragraphText,
+  notes: 'メモ',
+};
+
 const UPDATE_INPUT = {
   word: ENTRY.word,
   reading: 'ことば',
@@ -90,10 +100,45 @@ describe('vocabulary queries', () => {
     expect(entry).toStrictEqual(ENTRY);
   });
 
+  it('inserts each input field into its own column', async () => {
+    answerQueries([], [ROW]);
+
+    await createVocabularyEntry(CREATE_INPUT);
+
+    expect(vi.mocked(sql).mock.calls[0].slice(1)).toEqual([
+      expect.any(String),
+      CREATE_INPUT.word,
+      CREATE_INPUT.reading,
+      CREATE_INPUT.sentence,
+      CREATE_INPUT.fileName,
+      CREATE_INPUT.directory,
+      CREATE_INPUT.paragraphText,
+      CREATE_INPUT.notes,
+      expect.any(Date),
+      expect.any(Date),
+    ]);
+  });
+
   it('returns an updated entry in the camelCase shape', async () => {
     answerQueries([], [ROW]);
 
     expect(await updateVocabularyEntry('entry-1', UPDATE_INPUT)).toStrictEqual(ENTRY);
+  });
+
+  it('sets each input field on its own column', async () => {
+    answerQueries([], [ROW]);
+
+    await updateVocabularyEntry('entry-1', UPDATE_INPUT);
+
+    expect(vi.mocked(sql).mock.calls[0].slice(1)).toEqual([
+      UPDATE_INPUT.word,
+      UPDATE_INPUT.reading,
+      UPDATE_INPUT.sentence,
+      UPDATE_INPUT.paragraphText,
+      UPDATE_INPUT.notes,
+      expect.any(Date),
+      'entry-1',
+    ]);
   });
 
   it.todo('keeps the columns an update leaves out, such as the sentence and paragraphText the PUT route never sends, instead of passing undefined to the driver (bug)');
