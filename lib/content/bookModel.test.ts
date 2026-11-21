@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { detectContentType, parseReaderItems, buildPlayableUnits } from './bookModel';
+import {
+  buildPlayableUnits,
+  detectContentType,
+  findBookmarkIndex,
+  itemMainText,
+  legacyPageBookmark,
+  normalizeNewlines,
+  pageOfIndex,
+  pageStartIndex,
+  parseReaderItems,
+  totalPagesFor,
+} from './bookModel';
 
 describe('detectContentType', () => {
   it('detects rephrase text by a >> sub item together with a < heading', () => {
@@ -34,8 +45,18 @@ describe('detectContentType', () => {
     expect(detectContentType('[注]')).toBe('plain');
   });
 
-  it.todo('detects rephrase text whose headings use the full-width ＜ prefix (bug)');
-  it.todo('scans long text without [ in linear time (bug)');
+  it('detects rephrase text whose headings use the full-width ＜ prefix', () => {
+    expect(detectContentType('＜原文\n>>要約')).toBe('rephrase');
+  });
+
+  it('scans long text without [ in linear time', () => {
+    const longText = 'あ'.repeat(200_000);
+    const startedMs = performance.now();
+
+    detectContentType(longText);
+
+    expect(performance.now() - startedMs).toBeLessThan(100);
+  });
 });
 
 describe('parseReaderItems', () => {
@@ -73,7 +94,9 @@ describe('parseReaderItems', () => {
     expect(parseReaderItems('')).toEqual([]);
   });
 
-  it.todo('splits CRLF text on blank lines like LF text (bug)');
+  it('splits CRLF text on blank lines like LF text', () => {
+    expect(parseReaderItems('一。\r\n\r\n二。')).toEqual(parseReaderItems('一。\n\n二。'));
+  });
 });
 
 describe('buildPlayableUnits', () => {
@@ -129,5 +152,69 @@ describe('buildPlayableUnits', () => {
     expect(buildPlayableUnits('')).toEqual([]);
   });
 
-  it.todo('builds the same units from CRLF rephrase text as from LF text, without a trailing \\r (bug)');
+  it('builds the same units from CRLF rephrase text as from LF text, without a trailing carriage return', () => {
+    const lfText = '<一\n>>い\n\n<二\n>>に';
+
+    expect(buildPlayableUnits(lfText.replace(/\n/g, '\r\n'))).toEqual(buildPlayableUnits(lfText));
+  });
+});
+
+describe('normalizeNewlines', () => {
+  it('turns CRLF and lone CR into LF', () => {
+    expect(normalizeNewlines('一\r\n二\r三\n四')).toBe('一\n二\n三\n四');
+  });
+});
+
+describe('itemMainText', () => {
+  it('reads the head of a rephrase item and the text of a paragraph item', () => {
+    expect([itemMainText({ head: '頭', subItems: ['い'] }), itemMainText({ text: '段落' })]).toEqual(['頭', '段落']);
+  });
+});
+
+describe('findBookmarkIndex', () => {
+  const mainTexts = ['一つ目。', '<ruby>二<rt>に</rt></ruby>つ目。', '三つ目。', '一つ目。'];
+
+  it('finds the unit whose text matches the bookmark', () => {
+    expect(findBookmarkIndex(mainTexts, '三つ目。')).toBe(2);
+  });
+
+  it('matches regardless of furigana and line breaks', () => {
+    expect(findBookmarkIndex(mainTexts, '二つ\n目。')).toBe(1);
+  });
+
+  it('returns the first match when the same text appears twice', () => {
+    expect(findBookmarkIndex(mainTexts, '一つ目。')).toBe(0);
+  });
+
+  it('returns null for a bookmark that matches no unit', () => {
+    expect(findBookmarkIndex(mainTexts, '四つ目。')).toBeNull();
+  });
+
+  it('returns null for an empty bookmark', () => {
+    expect(findBookmarkIndex(mainTexts, '  ')).toBeNull();
+  });
+});
+
+describe('legacyPageBookmark', () => {
+  it('reads the page of an old page:N bookmark', () => {
+    expect(legacyPageBookmark('page:12')).toBe(12);
+  });
+
+  it('returns null for a text bookmark', () => {
+    expect(legacyPageBookmark('page:12 の話')).toBeNull();
+  });
+});
+
+describe('page math', () => {
+  it('puts the first and fiftieth units on page 1 and the fifty-first on page 2', () => {
+    expect([pageOfIndex(0), pageOfIndex(49), pageOfIndex(50)]).toEqual([1, 1, 2]);
+  });
+
+  it('starts each page at a multiple of fifty', () => {
+    expect([pageStartIndex(1), pageStartIndex(3)]).toEqual([0, 100]);
+  });
+
+  it('counts the pages a book of N units needs', () => {
+    expect([totalPagesFor(0), totalPagesFor(1), totalPagesFor(50), totalPagesFor(51)]).toEqual([0, 1, 1, 2]);
+  });
 });
