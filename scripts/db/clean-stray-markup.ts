@@ -26,14 +26,31 @@ interface TextEntryRow {
   content: string;
 }
 
-function createClient(isProd: boolean): pg.Client {
+interface Connection {
+  client: pg.Client;
+  host: string;
+}
+
+const KNOWN_FLAGS = ['--prod', '--apply'];
+
+// One statement, so every book is written or none is. A book that changed after
+// it was read is skipped instead of being overwritten with a stale cleaned copy.
+const UPDATE_UNCHANGED_BOOKS_SQL = `
+  UPDATE text_entries AS entry
+  SET content = change.cleaned
+  FROM unnest($1::int[], $2::text[], $3::text[]) AS change(id, original, cleaned)
+  WHERE entry.id = change.id AND entry.content = change.original
+  RETURNING entry.id`;
+
+function connect(isProd: boolean): Connection {
   const connectionString = isProd ? process.env.PROD_DATABASE_URL : process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(`${isProd ? 'PROD_DATABASE_URL' : 'DATABASE_URL'} is not set in .env.local`);
   }
-  return isProd
+  const client = isProd
     ? new pg.Client({ connectionString, ssl: { rejectUnauthorized: false } })
     : new pg.Client({ connectionString });
+  return { client, host: new URL(connectionString).hostname };
 }
 
 function describeRemovals(removedByRule: Record<string, number>): string {
@@ -44,9 +61,14 @@ function describeRemovals(removedByRule: Record<string, number>): string {
 }
 
 async function main(): Promise<void> {
-  const isProd = process.argv.includes('--prod');
-  const shouldApply = process.argv.includes('--apply');
-  const client = createClient(isProd);
+  const flags = process.argv.slice(2);
+  const unknownFlags = flags.filter((flag) => !KNOWN_FLAGS.includes(flag));
+  if (unknownFlags.length > 0) {
+    throw new Error(`Unknown arguments: ${unknownFlags.join(' ')}. Only --prod and --apply are accepted.`);
+  }
+  const isProd = flags.includes('--prod');
+  const shouldApply = flags.includes('--apply');
+  const { client, host } = connect(isProd);
   await client.connect();
 
   try {
@@ -55,7 +77,7 @@ async function main(): Promise<void> {
       .map((row) => ({ row, ...cleanStrayMarkup(row.content) }))
       .filter(({ row, cleaned }) => cleaned !== row.content);
 
-    console.log(`${isProd ? 'production' : 'local'}: ${changes.length} of ${rows.length} books have stray markup`);
+    console.log(`${isProd ? 'production' : 'local'} (${host}): ${changes.length} of ${rows.length} books have stray markup`);
     changes.forEach(({ row, removedByRule }) => {
       console.log(`  ${row.directory}/${row.file_name}: ${describeRemovals(removedByRule)}`);
     });
@@ -65,10 +87,18 @@ async function main(): Promise<void> {
       return;
     }
 
-    for (const { row, cleaned } of changes) {
-      await client.query('UPDATE text_entries SET content = $1 WHERE id = $2', [cleaned, row.id]);
+    const { rows: writtenRows } = await client.query<{ id: number }>(UPDATE_UNCHANGED_BOOKS_SQL, [
+      changes.map(({ row }) => row.id),
+      changes.map(({ row }) => row.content),
+      changes.map(({ cleaned }) => cleaned),
+    ]);
+    const writtenIds = new Set(writtenRows.map(({ id }) => id));
+    const skipped = changes.filter(({ row }) => !writtenIds.has(row.id));
+    console.log(`Updated ${writtenIds.size} books.`);
+    if (skipped.length > 0) {
+      const skippedNames = skipped.map(({ row }) => `${row.directory}/${row.file_name}`).join(', ');
+      throw new Error(`Skipped ${skipped.length} books that changed after they were read: ${skippedNames}. Run the script again.`);
     }
-    console.log(`Updated ${changes.length} books.`);
   } finally {
     await client.end();
   }
