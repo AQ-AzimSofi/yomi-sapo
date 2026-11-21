@@ -54,7 +54,6 @@ export const DICTIONARY_PATTERNS = {
 
 // APIルート
 export const API_ROUTES = {
-  GEMINI: '/api/gemini-api',
   READ_TEXT: '/api/read-public-txt',
   READ_BOOKMARK: '/api/read-bookmark',
   WRITE_TEXT: '/api/write-public-txt',
@@ -117,7 +116,6 @@ export const PAGE_ROUTES = {
   LIBRARY: '/library',
   TEXT_INPUT: '/text-input',
   TEXT_INPUT_AI: '/text-input-ai',
-  VISUAL_NOVEL: '/visual-novel',
   BOOK_READER: '/book-reader',
   VOCABULARY: '/vocabulary',
   LOGIN: '/login',

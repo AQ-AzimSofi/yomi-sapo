@@ -28,9 +28,6 @@ export default function LibraryPage() {
           isGuest={isGuest}
           extraActions={
             <>
-              <Link href={PAGE_ROUTES.VISUAL_NOVEL} className={NAV_ITEM_CLASS}>
-                ビジュアルノベル
-              </Link>
               <Link href={PAGE_ROUTES.TEXT_INPUT_AI} className={NAV_ITEM_CLASS}>
                 テキスト追加
               </Link>
