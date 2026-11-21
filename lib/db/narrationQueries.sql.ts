@@ -1,4 +1,5 @@
 import { sql } from './connection';
+import { runWriteTransaction } from './writeTransaction';
 import type { NarrationCue } from '@/lib/types';
 
 export interface NarrationRow {
@@ -29,17 +30,19 @@ export async function upsertNarration(entry: {
   unitCount: number;
   cues: (NarrationCue | null)[];
 }): Promise<void> {
-  await sql`
-    INSERT INTO narration (file_name, directory, audio_key, unit_count, cues, created_at, updated_at)
-    VALUES (
-      ${entry.fileName}, ${entry.directory}, ${entry.audioKey}, ${entry.unitCount},
-      ${JSON.stringify(entry.cues)}::text::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-    )
-    ON CONFLICT (file_name, directory)
-    DO UPDATE SET
-      audio_key = ${entry.audioKey},
-      unit_count = ${entry.unitCount},
-      cues = ${JSON.stringify(entry.cues)}::text::jsonb,
-      updated_at = CURRENT_TIMESTAMP
-  `;
+  await runWriteTransaction(sql, async (tx) => {
+    await tx`
+      INSERT INTO narration (file_name, directory, audio_key, unit_count, cues, created_at, updated_at)
+      VALUES (
+        ${entry.fileName}, ${entry.directory}, ${entry.audioKey}, ${entry.unitCount},
+        ${JSON.stringify(entry.cues)}::text::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT (file_name, directory)
+      DO UPDATE SET
+        audio_key = ${entry.audioKey},
+        unit_count = ${entry.unitCount},
+        cues = ${JSON.stringify(entry.cues)}::text::jsonb,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+  });
 }
