@@ -7,11 +7,10 @@
  */
 
 import { NextResponse } from 'next/server';
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getNarration } from '@/lib/db/narrationQueries.sql';
 import { withAuth } from '@/lib/auth/guards';
 import { apiError } from '@/lib/api/respond';
+import { presignGet } from '@/lib/storage/s3';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,11 +37,7 @@ export const GET = withAuth('owner', async (request) => {
     return apiError(404, 'not_found', 'No narration for this text');
   }
 
-  const audioUrl = await getSignedUrl(
-    new S3Client({}),
-    new GetObjectCommand({ Bucket: bucket, Key: narration.audio_key }),
-    { expiresIn: SIGNED_URL_TTL_SECONDS }
-  );
+  const audioUrl = await presignGet(bucket, narration.audio_key, SIGNED_URL_TTL_SECONDS);
 
   return NextResponse.json({
     audioUrl,
