@@ -6,6 +6,7 @@ import BookmarkFilled from "@/app/components/icons/BookmarkFilled";
 import TranslateIcon from "@/app/components/icons/TranslateIcon";
 import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
+import IconButton from "@/app/components/reading/IconButton";
 import ParagraphText from "@/app/components/reading/ParagraphText";
 import TTSButton from "@/app/components/reading/TTSButton";
 import { useSearchParams } from "next/navigation";
@@ -231,20 +232,6 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
           }
         : {};
 
-  const buttonBaseStyle: React.CSSProperties = {
-    width: "32px",
-    height: "32px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "2px",
-    border: "none",
-    background: "none",
-    cursor: "pointer",
-    transition: "transform 0.15s ease, background-color 0.15s ease",
-    flexShrink: 0,
-  };
-
   // A line whose original is only illustrations, none of which exist, would be an empty card.
   const isOnlyUnavailableImages =
     headParts.length > 0 &&
@@ -308,79 +295,38 @@ const CollapsibleItem: React.FC<CollapsibleItemProps> = ({
           <span aria-hidden="true" className="flex-1 h-px" style={{ backgroundColor: THEME.NEUTRAL }} />
           <div className="flex items-center gap-0.5 flex-shrink-0 -mr-1.5">
             {audiobookEnabled && onStartFromHere && globalIndex != null && (
-              <button
+              <IconButton
                 onClick={(e) => {
                   e.stopPropagation();
                   onStartFromHere(globalIndex);
-                }}
-                style={buttonBaseStyle}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = THEME.HOVER;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = "scale(0.9)";
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = "scale(1)";
                 }}
                 aria-label="Set audio start here"
                 title="Start audio from here"
               >
                 <StartHereIcon isActive={isStartCursor} />
-              </button>
+              </IconButton>
             )}
             <TTSButton text={head} onLongPress={onStartContinuousPlay} />
-            <button
+            <IconButton
               disabled={translating}
               onClick={handleTranslateClick}
-              style={{
-                ...buttonBaseStyle,
-                opacity: translating ? 0.5 : 1,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = THEME.HOVER;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-              onMouseDown={(e) => {
-                e.currentTarget.style.transform = "scale(0.9)";
-              }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.transform = "scale(1)";
-              }}
+              style={{ opacity: translating ? 0.5 : 1 }}
               aria-label="Translate"
             >
               <TranslateIcon isActive={showTranslation} />
-            </button>
+            </IconButton>
             <form
               onSubmit={handleSubmit}
               onClick={(e) => e.stopPropagation()}
               className="inline-flex"
             >
-              <button
+              <IconButton
                 disabled={loading}
                 type="submit"
-                style={buttonBaseStyle}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = THEME.HOVER;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = "scale(0.9)";
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = "scale(1)";
-                }}
                 aria-label="Bookmark"
               >
                 {isBookmarked ? <BookmarkFilled /> : <BookmarkUnfilled />}
-              </button>
+              </IconButton>
             </form>
           </div>
         </div>

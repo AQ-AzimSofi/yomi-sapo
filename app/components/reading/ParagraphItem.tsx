@@ -6,6 +6,7 @@ import BookmarkFilled from "@/app/components/icons/BookmarkFilled";
 import TranslateIcon from "@/app/components/icons/TranslateIcon";
 import StartHereIcon from "@/app/components/icons/StartHereIcon";
 import BookImage from "@/app/components/reading/BookImage";
+import IconButton from "@/app/components/reading/IconButton";
 import ParagraphText from "@/app/components/reading/ParagraphText";
 import { COLORS, THEME } from "@/lib/constants";
 import { hasIllustration, splitUnitParts } from "@/lib/content/unitParts";
@@ -188,19 +189,6 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
     );
   };
 
-  const buttonBaseStyle: React.CSSProperties = {
-    width: "32px",
-    height: "32px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "2px",
-    border: "none",
-    background: "none",
-    cursor: "pointer",
-    transition: "transform 0.15s ease, background-color 0.15s ease",
-  };
-
   // A paragraph made only of illustrations, none of which exist, would be an empty card.
   const isOnlyUnavailableImages =
     paragraphParts.length > 0 &&
@@ -236,77 +224,36 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
           <div className="flex-1 min-w-0">{renderContentWithImages()}</div>
           <div className="flex items-center gap-0.5 flex-shrink-0 pt-0.5 self-end sm:self-auto">
         {audiobookEnabled && onStartFromHere && globalIndex != null && (
-          <button
+          <IconButton
             onClick={(e) => {
               e.stopPropagation();
               onStartFromHere(globalIndex);
-            }}
-            style={buttonBaseStyle}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = THEME.HOVER;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = "scale(0.9)";
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = "scale(1)";
             }}
             aria-label="Set audio start here"
             title="Start audio from here"
           >
             <StartHereIcon isActive={isStartCursor} />
-          </button>
+          </IconButton>
         )}
-        <button
+        <IconButton
           disabled={translating}
           onClick={handleTranslateClick}
-          style={{
-            ...buttonBaseStyle,
-            opacity: translating ? 0.5 : 1,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = THEME.HOVER;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = "transparent";
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = "scale(0.9)";
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = "scale(1)";
-          }}
+          style={{ opacity: translating ? 0.5 : 1 }}
           aria-label="Translate"
         >
           <TranslateIcon isActive={showTranslation} />
-        </button>
+        </IconButton>
         <form
           onSubmit={handleBookmarkClick}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
+          <IconButton
             disabled={loading}
             type="submit"
-            style={buttonBaseStyle}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = THEME.HOVER;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = "scale(0.9)";
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = "scale(1)";
-            }}
             aria-label="Bookmark"
           >
             {isBookmarked ? <BookmarkFilled /> : <BookmarkUnfilled />}
-          </button>
+          </IconButton>
         </form>
           </div>
         </div>
