@@ -72,6 +72,19 @@ describe('GET /api/db-sync', () => {
 });
 
 describe('POST /api/db-sync', () => {
+  it('rejects a guest without opening either database', async () => {
+    const response = await POST(
+      new Request(SYNC_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ direction: 'push' }),
+      })
+    );
+
+    expect(response.status).toBe(401);
+    expect(withClients).not.toHaveBeenCalled();
+  });
+
   it.each([{ direction: 'sideways' }, {}, ['pull']])('answers 400 without syncing for %j', async (body) => {
     const response = await POST(syncRequest(body));
 
