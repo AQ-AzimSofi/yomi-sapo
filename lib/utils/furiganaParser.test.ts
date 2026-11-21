@@ -266,9 +266,12 @@ describe('stripAiFurigana', () => {
     expect(stripAiFurigana(text)).toBe(expected);
   });
 
-  it('keeps a markdown link whose text is kana', () => {
-    expect(stripAiFurigana('[ここ](https://example.com)')).toBe('[ここ](https://example.com)');
-  });
+  it.each(['[ここ](https://example.com)', '[ここ](HTTPS://example.com)', '[ここ]( https://example.com)', '[ここ](<https://example.com>)'])(
+    'keeps the markdown link %j whose text is kana',
+    (markdown) => {
+      expect(stripAiFurigana(markdown)).toBe(markdown);
+    }
+  );
 
   it('keeps a bracket that holds more than kana', () => {
     expect(stripAiFurigana('[注1]を見る')).toBe('[注1]を見る');

@@ -21,7 +21,7 @@ const BRACKET_FURIGANA_PATTERN = /([㐀-䶿一-鿿々〆ヶ]+)\[([ぁ-ゖァ-ヺ
 const TAG_PATTERN = /<[^>]*>/g;
 // AI explanations put a reading after any word (難しい[むずかしい]), not only after kanji.
 // A bracket followed by a link target is link text, the only links safeMarkdown keeps.
-const AI_READING_PATTERN = /\[[ぁ-ゖー]+\](?!\((?:https?:|mailto:))/g;
+const AI_READING_PATTERN = /\[[ぁ-ゖー]+\](?!\(\s*<?(?:https?:|mailto:))/gi;
 
 function escapeBookText(text: string): string {
   return escapeHtml(text).replace(ESCAPED_FOOTNOTE_TAG, '<$1sup>');
