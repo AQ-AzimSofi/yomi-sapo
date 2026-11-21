@@ -55,6 +55,10 @@ export function describeUnusableKey(error: unknown, model: string): string | und
   return undefined;
 }
 
+export function isUnknownModel(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
 export function isRetryable(error: unknown): boolean {
   // Network failures and blocked (empty) replies are not ApiErrors and can pass on a retry; any other 4xx, such as an unknown model, cannot.
   if (!(error instanceof ApiError)) return true;
