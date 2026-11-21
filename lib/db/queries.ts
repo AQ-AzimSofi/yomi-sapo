@@ -34,20 +34,27 @@ export async function getBookmark(
   }
 }
 
-export async function upsertBookmark(
-  fileName: string,
-  bookmarkText: string,
-  directory: string = 'public',
-  _bookmarkPage?: number
-): Promise<void> {
+interface BookmarkWrite {
+  fileName: string;
+  directory: string;
+  bookmarkText: string;
+  bookmarkPage?: number;
+}
+
+/**
+ * Saves a bookmark with the reader page it sits on. Without a page,
+ * bookmark_page is cleared and the library works it out from the text.
+ */
+export async function upsertBookmark({ fileName, directory, bookmarkText, bookmarkPage }: BookmarkWrite): Promise<void> {
+  const page = bookmarkPage ?? null;
   try {
     await sql`
-      INSERT INTO bookmarks (file_name, directory, bookmark_text, updated_at)
-      VALUES (${fileName}, ${directory}, ${bookmarkText}, CURRENT_TIMESTAMP)
+      INSERT INTO bookmarks (file_name, directory, bookmark_text, bookmark_page, updated_at)
+      VALUES (${fileName}, ${directory}, ${bookmarkText}, ${page}, CURRENT_TIMESTAMP)
       ON CONFLICT (file_name, directory)
       DO UPDATE SET
-        bookmark_text = ${bookmarkText},
-        bookmark_page = NULL,
+        bookmark_text = EXCLUDED.bookmark_text,
+        bookmark_page = EXCLUDED.bookmark_page,
         updated_at = CURRENT_TIMESTAMP
     `;
   } catch (error) {

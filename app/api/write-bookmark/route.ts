@@ -11,6 +11,10 @@ import type { BookmarkRequest, WriteResponse } from '@/lib/types';
 // Mark as dynamic to prevent static generation during build
 export const dynamic = 'force-dynamic';
 
+function validPage(page: unknown): number | undefined {
+  return Number.isInteger(page) && (page as number) >= 1 ? (page as number) : undefined;
+}
+
 export async function POST(request: Request): Promise<NextResponse<WriteResponse>> {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ message: 'Sign in required' }, { status: 401 });
@@ -47,9 +51,7 @@ export async function POST(request: Request): Promise<NextResponse<WriteResponse
     const directory = parts.length > 1 ? parts.slice(0, -1).join('/') : 'public';
     const file = parts[parts.length - 1];
 
-    console.log(`ブックマーク保存: fileName="${target}", content length=${content.length}, page=${page}`);
-    await upsertBookmark(file, content, directory, page);
-    console.log(`ブックマーク保存成功: fileName="${target}"`);
+    await upsertBookmark({ fileName: file, directory, bookmarkText: content, bookmarkPage: validPage(page) });
 
     return NextResponse.json({ success: true, message: 'ブックマークを更新しました' });
   } catch (error) {
