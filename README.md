@@ -34,9 +34,6 @@ https://github.com/user-attachments/assets/16d81533-e417-4123-b764-a0066d0b6c84
 *   **Vocabulary tracker** — save words together with their sentence context.
 *   **Ruby lookup** — per-book kanji→reading registry.
 
-### Visual novels
-*   **Real-time capture** — pulls in-game text via Textractor + a clipboard inserter and AI-rephrases it on the fly.
-
 ### Access
 *   **Password login** for the full library, plus a **guest preview**: a few books are readable without signing in, capped to the first few pages (copyright-safe). In guest mode, AI explanation / TTS / translation run on the visitor's **own** API keys, stored only in their browser.
 
@@ -106,7 +103,7 @@ Files are created in: `public/bookv2-furigana/[book-name]/`
 
 ### Using processed books in the app:
 
-Once processed, the book will automatically appear in the file selector dropdown in the app.
+Once processed, the book will automatically appear in the library.
 
 ---
 
@@ -170,18 +167,13 @@ npm run db:init     # Initialize tables
 
 3. **Add books** (choose one method):
 
-**Option A: Via Swagger UI** (Recommended for single files)
-- Navigate to `http://localhost:3333/api-docs`
-- Click "Authorize" and enter your `ADMIN_API_KEY`
-- Use `POST /api/admin?action=text-entries` to upload book content
-
-**Option B: Via EPUB Script** (Recommended for EPUB files)
+**Option A: Via EPUB Script** (Recommended for EPUB files)
 ```bash
 export ADMIN_API_KEY=your_key_here
 python3 scripts/epub-to-text-furigana.py book.epub --output-mode api
 ```
 
-**Option C: Via Direct API Call**
+**Option B: Via Direct API Call**
 ```bash
 curl -X POST 'http://localhost:3333/api/admin?action=text-entries' \
   -H "Content-Type: application/json" \
@@ -240,13 +232,6 @@ Upload multiple text entries at once.
 }
 ```
 
-### Interactive API Documentation
-
-Access the Swagger UI at `http://localhost:3333/api-docs` for:
-- Interactive endpoint testing
-- Request/response examples
-- API authentication setup
-
 ### EPUB Script API Mode
 
 The EPUB processing script supports direct upload to the database:
@@ -281,7 +266,7 @@ npm run dev         # Start Next.js (port 3333)
 2. **Add your books** via any method above
 
 3. **Access app**: Open `http://localhost:3333`
-   - Books automatically appear in dropdown
+   - Books automatically appear in the library
    - All content served from database
 
 ### Production Deployment

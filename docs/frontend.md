@@ -49,11 +49,6 @@ The frontend follows a **minimal, reading-focused** design philosophy:
 /                    -> Redirects to /library (or /read if params exist)
 /library             -> Book library grid view
 /read                -> Minimal distraction-free reader
-/book-reader         -> Legacy reader with paragraph view
-/text-input          -> Manual text entry
-/text-input-ai       -> Manual text entry with AI processing
-/visual-novel        -> Real-time VN text capture
-/ocr                 -> OCR-based text extraction
 /vocabulary          -> Saved vocabulary list
 /ruby-registry       -> Character name readings management
 /login               -> Authentication page
@@ -70,17 +65,19 @@ The entry point for browsing and selecting books.
 - Grid layout of all books organized by directory
 - Progress bar per book showing reading completion
 - Collapsible directory sections
-- Minimal header with tool links
+- Shared \`AppHeader\` with 本棚, 単語帳, 同期 and ログアウト
 
 **Components Used**:
+- \`AppHeader\` - Shared page header
 - \`LibraryGrid\` - Main grid container
 - \`DirectorySection\` - Collapsible directory group
 - \`BookCard\` - Individual book card
 
 **Navigation**:
 - Click book -> \`/read?directory=x&fileName=y\`
-- Add button -> \`/text-input-ai\`
-- VN icon -> \`/visual-novel\`
+- 単語帳 -> \`/vocabulary\`
+- 同期 -> Opens the database sync dialog (\`DbSyncModal\`)
+- ログアウト -> Clears the session and goes to \`/login\`
 
 ---
 
@@ -117,32 +114,6 @@ The primary reading experience with distraction-free design.
 
 ---
 
-#### \`/book-reader\` - Legacy Reader
-**File**: \`app/book-reader/page.tsx\`
-
-Alternative paragraph-based reader (preserved for backwards compatibility).
-
-**Features**:
-- Paragraph-by-paragraph display
-- Font size and line height controls
-- Bookmark functionality
-- AI explanation sidebar
-
----
-
-#### \`/visual-novel\` - Visual Novel Mode
-**File**: \`app/visual-novel/page.tsx\`
-
-Real-time text capture from Visual Novels via Textractor.
-
-**Features**:
-- Captures last \`<p>\` tag content from clipboard
-- Sends to Gemini AI for rephrasing
-- Retry logic with format validation
-- Displays results in CollapsibleItem components
-
----
-
 ## Component Architecture
 
 ### Directory Structure
@@ -151,24 +122,21 @@ Real-time text capture from Visual Novels via Textractor.
 app/
 ├── components/
 │   ├── ui/                        # Shared UI components
+│   │   ├── AppHeader.tsx          # Shared page header
 │   │   ├── CollapsibleItem.tsx    # Expandable reading unit
 │   │   ├── ParagraphItem.tsx      # Paragraph display
 │   │   ├── ExplanationSidebar.tsx # AI explanation panel
-│   │   ├── TopNavigation.tsx      # Legacy navigation (854 lines)
-│   │   ├── Sidebar.tsx            # Progress sidebar
 │   │   ├── Pagination.tsx         # Page navigation
 │   │   ├── TTSButton.tsx          # Text-to-speech button
 │   │   ├── TTSPlayerBar.tsx       # TTS playback controls
 │   │   ├── VocabularySaveDialog.tsx
 │   │   ├── RubyLookupSidebar.tsx
-│   │   ├── ReadingControls.tsx
 │   │   └── BookImage.tsx
 │   ├── icons/                     # Icon components
 │   │   ├── BookmarkFilled.tsx
 │   │   ├── BookmarkUnfilled.tsx
 │   │   ├── ChevronUp.tsx
 │   │   └── ChevronDown.tsx
-│   └── ClientLayout.tsx           # Layout wrapper
 ├── library/
 │   ├── page.tsx                   # Library page
 │   └── components/
@@ -205,7 +173,6 @@ interface CollapsibleItemProps {
   imageMap?: Record<string, string>;
   bookDirectory?: string;
   bookFileName?: string;
-  onVocabularySelect?: (data: {...}) => void;
   onStartContinuousPlay?: () => void;
 }
 \`\`\`
@@ -215,7 +182,6 @@ interface CollapsibleItemProps {
 - Bookmark icon (circular, filled/unfilled)
 - TTS button with long-press for continuous play
 - Sentence click for AI explanation
-- Vocabulary mode for word selection
 - Furigana support (bracket and ruby formats)
 - Image placeholder rendering
 
@@ -300,29 +266,25 @@ AI-powered sentence explanation panel.
 
 ---
 
-#### \`ClientLayout\`
-**File**: \`app/components/ClientLayout.tsx\`
+#### \`AppHeader\`
+**File**: \`app/components/ui/AppHeader.tsx\`
 
-Layout wrapper with conditional navigation.
+Shared page header for \`/library\`, \`/vocabulary\` and \`/ruby-registry\`. The root layout adds no navigation; \`/read\` and \`/login\` do not use this header.
+
+**Props**:
+\`\`\`typescript
+interface AppHeaderProps {
+  currentPage?: 'library' | 'vocabulary';  // Nav item shown as the current page
+  isGuest?: boolean;                       // Hides the nav for guests
+  extraActions?: ReactNode;                // Page-specific nav buttons
+}
+\`\`\`
 
 **Behavior**:
-- Hides TopNavigation on \`/library\` and \`/read\` paths
-- Shows TopNavigation on all other pages
-- Handles client-side rendering for TopNavigation
-
-\`\`\`typescript
-const MINIMAL_LAYOUT_PATHS = ['/library', '/read'];
-
-if (isMinimalLayout) {
-  return <>{children}</>;  // No navigation
-}
-return (
-  <>
-    <TopNavigation />
-    <div className="my-18">{children}</div>
-  </>
-);
-\`\`\`
+- Logo links to \`/library\`
+- Nav: 本棚 (\`/library\`), 単語帳 (\`/vocabulary\`), any \`extraActions\`, then ログアウト
+- The library passes a 同期 button as \`extraActions\`
+- ログアウト calls \`/api/auth?action=logout\` and redirects to \`/login\`
 
 ---
 
@@ -437,9 +399,7 @@ style={{
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | \`furigana_enabled\` | boolean | false | Show furigana annotations |
-| \`vocabulary_mode\` | boolean | false | Enable text selection mode |
 | \`ai_explanation_enabled\` | boolean | false | Enable sentence explanations |
-| \`topnav_collapsed\` | boolean | false | Collapse top navigation |
 | \`reader_font_size\` | number | 16 | Font size in pixels |
 | \`reader_line_height\` | number | 1.8 | Line height multiplier |
 | \`explanation_mode\` | string | 'quick' | Selected explanation type |
@@ -454,60 +414,11 @@ style={{
 window.dispatchEvent(new CustomEvent('furiganaChanged', {
   detail: { enabled: boolean }
 }));
-
-// Vocabulary mode toggle
-window.dispatchEvent(new CustomEvent('vocabularyModeChanged', {
-  detail: { enabled: boolean }
-}));
-
-// AI explanation toggle
-window.dispatchEvent(new CustomEvent('aiExplanationChanged', {
-  detail: { enabled: boolean }
-}));
-
-// Ruby lookup toggle
-window.dispatchEvent(new CustomEvent('toggleRubyLookup'));
 \`\`\`
 
 ---
 
 ## Hooks
-
-### \`useTextContent\`
-**File**: \`app/hooks/useTextContent.ts\`
-
-Fetches text content from API.
-
-\`\`\`typescript
-const { text, isLoading, error, refetch } = useTextContent({
-  fileName: 'chapter-1',
-  directory: 'bookv2-furigana',
-});
-\`\`\`
-
-### \`useBookmark\`
-**File**: \`app/hooks/useBookmark.ts\`
-
-Manages bookmark state.
-
-\`\`\`typescript
-const { bookmarkText, isLoading, error, updateBookmark, refetch } = useBookmark({
-  fileName: 'chapter-1',
-  enabled: true,
-});
-\`\`\`
-
-### \`useReadingProgress\`
-**File**: \`app/hooks/useReadingProgress.ts\`
-
-Calculates reading progress metrics.
-
-\`\`\`typescript
-const { progress, totalItems, characterCount } = useReadingProgress({
-  fileName: 'chapter-1',
-  directory: 'bookv2-furigana',
-});
-\`\`\`
 
 ### \`useExplanationCache\`
 **File**: \`app/hooks/useExplanationCache.ts\`
@@ -614,10 +525,9 @@ const ttsPlayer = useTTSPlayer({
 
 | Breakpoint | Size | Usage |
 |------------|------|-------|
-| Mobile | < 768px | Full-width, hamburger menu |
+| Mobile | < 768px | Full-width |
 | Tablet | 768px+ | Increased margins |
 | Desktop | 1024px+ | Larger content area |
-| Large | 1280px+ | Desktop sidebar visible |
 
 ### Layout Patterns
 

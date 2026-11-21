@@ -23,39 +23,26 @@ A comprehensive word diary system that allows you to save interesting words whil
 - `DELETE /api/vocabulary/[id]` - Delete entry
 
 ### Features:
-1. **Vocabulary Mode Toggle** (in TopNavigation):
-   - Button to switch between "Explanation Mode" and "Vocabulary Mode"
-   - When ON (単語帳 ON), text selection is enabled
-   - When OFF, sentence explanation clicks work normally
-
-2. **Text Selection**:
-   - In vocabulary mode, select any text in a paragraph
-   - Save dialog appears automatically with the selected word
-   - Full sentence context is saved for reference
-
-3. **Today's Words Sidebar**:
+1. **Today's Words Sidebar**:
    - Quick access to words saved today
    - Shows word, reading, sentence preview, and notes
    - Click any word to navigate back to its source
 
-4. **Full Vocabulary Page** (`/vocabulary`):
+2. **Full Vocabulary Page** (`/vocabulary`):
+   - Opened from 単語帳 in the shared `AppHeader`
    - View all saved words in a grid layout
    - Search across word, reading, sentence, and notes
    - Click any word for detailed view
    - Delete functionality
    - Navigate back to source with word highlighting
 
-5. **Word Highlighting**:
+3. **Word Highlighting**:
    - When navigating from vocabulary page to source
    - Paragraph containing the word gets highlighted (orange glow)
    - Highlight fades after 3 seconds
 
 ### How to Use:
-1. Click "単語帳 OFF" button in navigation to enable Vocabulary Mode
-2. Select any text with your cursor
-3. Fill in optional reading/notes in the save dialog
-4. View today's words in the sidebar (accessible from navigation)
-5. View all words at `/vocabulary` page
+1. View all words at `/vocabulary` page (単語帳 in the shared `AppHeader`)
 
 ---
 
@@ -93,8 +80,7 @@ Simple password-only authentication to protect your Japanese reading helper from
    - Secure httpOnly cookies (prevents XSS attacks)
 
 3. **Logout Button**:
-   - Added to TopNavigation (both desktop and mobile)
-   - Red "ログアウト" button
+   - "ログアウト" button in the shared `AppHeader` (`app/components/ui/AppHeader.tsx`) on `/library`, `/vocabulary` and `/ruby-registry`
    - Clears session and redirects to login
 
 4. **Route Protection**:
@@ -113,7 +99,6 @@ Simple password-only authentication to protect your Japanese reading helper from
 ### `lib/constants.ts`:
 - Added `API_ROUTES.VOCABULARY`, `AUTH_LOGIN`, `AUTH_LOGOUT`, `AUTH_SESSION`
 - Added `PAGE_ROUTES.VOCABULARY`, `LOGIN`
-- Added `STORAGE_KEYS.VOCABULARY_MODE`
 
 ### `lib/types.ts`:
 - Added `VocabularyEntry` interface
@@ -124,17 +109,7 @@ Simple password-only authentication to protect your Japanese reading helper from
 ## Modified Existing Files
 
 ### `app/components/ui/CollapsibleItem.tsx`:
-- Added vocabulary mode state listener
-- Added text selection handler (`onMouseUp` event)
-- Disabled sentence clicks when in vocabulary mode
 - Added word highlighting effect when navigating from vocabulary page
-- Added `onVocabularySelect` prop for parent components
-
-### `app/components/ui/TopNavigation.tsx`:
-- Added vocabulary mode toggle button (desktop + mobile)
-- Added logout button (desktop + mobile)
-- Vocabulary mode persisted in localStorage
-- Custom event emitted on mode change
 
 ### `prisma/schema.prisma`:
 - Added `VocabularyEntry` model with indexes
