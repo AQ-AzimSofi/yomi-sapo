@@ -45,6 +45,21 @@ describe('safeReturnPath', () => {
     expect(safeReturnPath(next)).toBe('/');
   });
 
+  it.each(['/.//evil.com', '/..//evil.com', '/%2e//evil.com', '/%2e%2e//evil.com', '/read/..//evil.com/phish', '/a/b/../..//evil.com'])(
+    'goes home instead of to %j, which the URL parser turns into //evil.com',
+    (next) => {
+      expect(safeReturnPath(next)).toBe('/');
+    }
+  );
+
+  it('goes home instead of to a path whose dot segments leave an encoded off-site path', () => {
+    expect(safeReturnPath('/read/../%2F%2Fevil.com')).toBe('/');
+  });
+
+  it('returns to the page a dot segment points at', () => {
+    expect(safeReturnPath('/read/../library')).toBe('/library');
+  });
+
   it.each(['/\t/evil.com', '/\n/evil.com', '/%09/evil.com', '/%0d%0a/evil.com', '/library\u0000'])(
     'goes home instead of to %j, which hides a control character',
     (next) => {
