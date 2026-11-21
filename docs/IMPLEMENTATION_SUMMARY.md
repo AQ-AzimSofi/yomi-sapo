@@ -12,7 +12,7 @@ A comprehensive word diary system that allows you to save interesting words whil
 - **Vocabulary Page** (`app/vocabulary/page.tsx`): Full list of all saved words with search functionality
 
 ### Database:
-- Added `vocabulary_entries` table to Prisma schema
+- Added `vocabulary_entries` table to `lib/db/schema.ts`
 - Stores: word, reading (furigana), sentence context, source file location, notes, timestamps
 
 ### API Routes:
@@ -110,9 +110,6 @@ Simple password-only authentication to protect your Japanese reading helper from
 
 ### `app/components/ui/CollapsibleItem.tsx`:
 - Added word highlighting effect when navigating from vocabulary page
-
-### `prisma/schema.prisma`:
-- Added `VocabularyEntry` model with indexes
 
 ---
 

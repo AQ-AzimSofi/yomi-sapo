@@ -20,8 +20,7 @@ yomi-sapo/
 │   └── middleware/         # Request middleware
 ├── scripts/                # Utility scripts (Python/JS/TS)
 ├── public/                 # Static assets & text files
-├── docs/                   # Documentation
-└── prisma/                 # Database schema (legacy)
+└── docs/                   # Documentation
 ```
 
 ---
@@ -137,7 +136,7 @@ db/
 ├── connection.ts           # PostgreSQL connection pool
 ├── schema.ts               # TypeScript interfaces & CREATE TABLE SQL
 ├── queries.ts              # Bookmark & text entry queries
-└── vocabularyQueries.sql.ts # Vocabulary queries (replaced Prisma)
+└── vocabularyQueries.sql.ts # Vocabulary queries
 ```
 
 **Key Interfaces:**
