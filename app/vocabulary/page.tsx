@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { PAGE_ROUTES } from '@/lib/constants';
 import AppHeader from '@/app/components/ui/AppHeader';
-import { COLORS, STORAGE_KEYS } from '@/lib/constants';
+import { COLORS, PAGE_ROUTES, STORAGE_KEYS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { parseFurigana, segmentsToHTML } from '@/lib/utils/furiganaParser';
 import type { VocabularyEntry } from '@/lib/types';
@@ -172,7 +171,7 @@ export default function VocabularyPage() {
               まだ単語を保存していません
             </p>
             <p className="text-sm mb-6" style={{ color: COLORS.SECONDARY }}>
-              読書中に保存した単語がここに表示されます
+              リーダーから単語を保存する機能は、今後のアップデートで戻ります
             </p>
             <Link
               href={PAGE_ROUTES.LIBRARY}
