@@ -64,6 +64,11 @@ function answerQueries(...results: object[][]): void {
   });
 }
 
+function firstQueryText(): string {
+  const [strings] = vi.mocked(sql).mock.calls[0];
+  return strings.join('?').replace(/\s+/g, ' ').trim();
+}
+
 afterEach(() => {
   vi.mocked(sql).mockReset();
 });
@@ -105,6 +110,9 @@ describe('vocabulary queries', () => {
 
     await createVocabularyEntry(CREATE_INPUT);
 
+    expect(firstQueryText()).toBe(
+      'INSERT INTO vocabulary_entries (id, word, reading, sentence, file_name, directory, paragraph_text, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
     expect(vi.mocked(sql).mock.calls[0].slice(1)).toEqual([
       expect.any(String),
       CREATE_INPUT.word,
@@ -130,6 +138,9 @@ describe('vocabulary queries', () => {
 
     await updateVocabularyEntry('entry-1', UPDATE_INPUT);
 
+    expect(firstQueryText()).toBe(
+      'UPDATE vocabulary_entries SET word = COALESCE(?, word), reading = COALESCE(?, reading), sentence = COALESCE(?, sentence), paragraph_text = COALESCE(?, paragraph_text), notes = COALESCE(?, notes), updated_at = ? WHERE id = ?'
+    );
     expect(vi.mocked(sql).mock.calls[0].slice(1)).toEqual([
       UPDATE_INPUT.word,
       UPDATE_INPUT.reading,
