@@ -6,6 +6,8 @@ import {
   describeError,
   describeUnusableKey,
   isRetryable,
+  isUnknownModel,
+  PAID_API_KEY_ENV_NAME,
   pickKey,
   retireKey,
   type ApiKey,
@@ -61,6 +63,8 @@ export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+export const FALLBACK_ERROR = 'Used original text (rephrase failed)';
+const RESUME_HINT = 'Progress is saved. Run the same command again to resume from this chunk.';
 const CORRECTION_PREFIX = '回答のフォーマットが正しくありません。もう一度やり直してください。必ず下記の構成に従ってください。\n';
 const MAX_RETRY_WAIT_SECS = 30;
 
@@ -68,6 +72,8 @@ export interface ChunkOutput {
   rawText: string;
   readerText: string;
   attempts: number;
+  /** The rephrase failed and every line stands in as its own rephrase; the next run retries the chunk. */
+  isFallback: boolean;
   error?: string;
 }
 
@@ -89,10 +95,12 @@ interface ModelAttempt {
   instruction: string;
 }
 
-interface ModelResult {
-  response?: string;
-  requestCount: number;
-}
+// out-of-keys and model-unavailable stop the run rather than save original text for every chunk that follows.
+type ModelResult =
+  | { outcome: 'rephrased'; response: string; requestCount: number }
+  | { outcome: 'attempts-used-up'; requestCount: number }
+  | { outcome: 'out-of-keys'; requestCount: number }
+  | { outcome: 'model-unavailable'; requestCount: number };
 
 async function generateText(key: ApiKey, model: string, prompt: string): Promise<string> {
   const response = await key.client.models.generateContent({ model, contents: prompt });
@@ -104,12 +112,9 @@ async function requestWithModel(request: ModelRequest, current: ModelAttempt): P
   const { model, keyPool } = request;
   const maxAttempts = VN_RETRY_CONFIG.MAX_ATTEMPTS;
   const requestCount = current.attempt - 1;
-  if (current.attempt > maxAttempts) return { requestCount };
+  if (current.attempt > maxAttempts) return { outcome: 'attempts-used-up', requestCount };
   const key = pickKey(keyPool, request.chunkIndex + current.attempt - 1);
-  if (!key) {
-    console.log(`    No usable key left for ${model}`);
-    return { requestCount };
-  }
+  if (!key) return { outcome: 'out-of-keys', requestCount };
 
   console.log(`    Attempt ${current.attempt}/${maxAttempts} (${key.envName})...`);
   const outcome = await generateText(key, model, current.instruction + request.cleanChunk).then(
@@ -118,7 +123,7 @@ async function requestWithModel(request: ModelRequest, current: ModelAttempt): P
   );
   if (outcome.text !== undefined) {
     const formatProblem = findFormatProblem(outcome.text);
-    if (!formatProblem) return { response: outcome.text, requestCount: current.attempt };
+    if (!formatProblem) return { outcome: 'rephrased', response: outcome.text, requestCount: current.attempt };
     console.log(`    Invalid format (${formatProblem}), retrying with correction prompt...`);
     console.log('    Response preview:', outcome.text.slice(0, 200).replace(/\n/g, '\\n'));
     return requestWithModel(request, { attempt: current.attempt + 1, instruction: CORRECTION_PREFIX + ai_instructions });
@@ -132,11 +137,14 @@ async function requestWithModel(request: ModelRequest, current: ModelAttempt): P
     retireKey(keyPool, key, unusableKeyReason);
     return requestWithModel(request, current);
   }
-  if (unusableKeyReason || !isRetryable(outcome.error)) {
+  if (unusableKeyReason) return { outcome: 'out-of-keys', requestCount: current.attempt };
+  if (isUnknownModel(outcome.error)) {
     console.log(`    Model ${model} unavailable, trying next fallback...`);
-    return { requestCount: current.attempt };
+    return { outcome: 'model-unavailable', requestCount: current.attempt };
   }
-  if (current.attempt >= maxAttempts) return { requestCount: current.attempt };
+  if (!isRetryable(outcome.error) || current.attempt >= maxAttempts) {
+    return { outcome: 'attempts-used-up', requestCount: current.attempt };
+  }
   const waitSecs = Math.min(MAX_RETRY_WAIT_SECS, current.attempt * 10);
   console.log(`    Waiting ${waitSecs}s before retry...`);
   await sleep(waitSecs * 1000);
@@ -147,9 +155,25 @@ function listModelsToTry(model: string): string[] {
   return [model, ...MODEL_FALLBACK_ORDER.filter((fallbackModel) => fallbackModel !== model)];
 }
 
+// Each line stands in as its own rephrase so no content is skipped
+function createFallbackOutput(cleanChunk: string, requestCount: number): ChunkOutput {
+  console.log(`  Failed after ${requestCount} attempts, using original text as fallback...`);
+  const lines = cleanChunk.split('\n').filter(l => l.trim().length > 0);
+  const fallbackResponse = lines.map(line => `< ${line}\n>> ${line}`).join('\n\n');
+  return {
+    rawText: fallbackResponse,
+    readerText: fallbackResponse,
+    attempts: requestCount,
+    isFallback: true,
+    error: FALLBACK_ERROR,
+  };
+}
+
 /**
- * Free keys first, then GEMINI_API_KEY_PAID, and only then the next model in the fallback order.
- * Daily quotas are per model, so every model keeps its own pool of retired keys.
+ * Free keys first, then GEMINI_API_KEY_PAID on the same model. A key out of daily quota hands the
+ * request to the next key; a per-minute limit or a server error waits and retries. Only an unknown
+ * model moves on to the next model in the fallback order. Daily quotas are per model, so every
+ * model keeps its own pool of retired keys.
  */
 export function createGeminiRephraser(model: string, createPool: () => KeyPool): ChunkRephraser {
   const poolsByModel = new Map<string, KeyPool>();
@@ -164,35 +188,30 @@ export function createGeminiRephraser(model: string, createPool: () => KeyPool):
 
   const rephraseChunk = async (chunk: string, chunkIndex: number): Promise<ChunkOutput> => {
     const cleanChunk = stripRubyTags(chunk);
-    const result = await listModelsToTry(model).reduce<Promise<ModelResult & { usedModel?: string }>>(
+    const result = await listModelsToTry(model).reduce<Promise<ModelResult & { usedModel: string }>>(
       async (previous, currentModel) => {
         const earlier = await previous;
-        if (earlier.response !== undefined) return earlier;
+        if (earlier.outcome !== 'model-unavailable') return earlier;
         console.log(`    Trying model: ${currentModel}`);
         const request = { model: currentModel, keyPool: getPool(currentModel), chunkIndex, cleanChunk };
         const modelResult = await requestWithModel(request, { attempt: 1, instruction: ai_instructions });
         return { ...modelResult, requestCount: earlier.requestCount + modelResult.requestCount, usedModel: currentModel };
       },
-      Promise.resolve({ requestCount: 0 }),
+      Promise.resolve({ outcome: 'model-unavailable', requestCount: 0, usedModel: model }),
     );
 
-    if (result.response !== undefined) {
-      if (result.usedModel !== model) console.log(`    Success with fallback model: ${result.usedModel}`);
-      const sanitized = sanitizeRephraseResponse(cleanChunk, result.response);
-      logRephraseCheck(sanitized);
-      return { rawText: result.response, readerText: sanitized.text, attempts: result.requestCount };
+    if (result.outcome === 'out-of-keys') {
+      throw new Error(`No Gemini key has quota left for ${result.usedModel} today (the free keys, then ${PAID_API_KEY_ENV_NAME}).\n${RESUME_HINT}`);
     }
+    if (result.outcome === 'model-unavailable') {
+      throw new Error(`No Gemini model could be reached (${listModelsToTry(model).join(', ')}).\n${RESUME_HINT}`);
+    }
+    if (result.outcome === 'attempts-used-up') return createFallbackOutput(cleanChunk, result.requestCount);
 
-    // Each line stands in as its own rephrase so no content is skipped
-    console.log(`  Failed after ${result.requestCount} attempts, using original text as fallback...`);
-    const lines = cleanChunk.split('\n').filter(l => l.trim().length > 0);
-    const fallbackResponse = lines.map(line => `< ${line}\n>> ${line}`).join('\n\n');
-    return {
-      rawText: fallbackResponse,
-      readerText: fallbackResponse,
-      attempts: result.requestCount,
-      error: 'Used original text (rephrase failed)',
-    };
+    if (result.usedModel !== model) console.log(`    Success with fallback model: ${result.usedModel}`);
+    const sanitized = sanitizeRephraseResponse(cleanChunk, result.response);
+    logRephraseCheck(sanitized);
+    return { rawText: result.response, readerText: sanitized.text, attempts: result.requestCount, isFallback: false };
   };
 
   return { keyCount: Math.max(requestedModelPool.freeKeys.length, 1), rephraseChunk };
@@ -202,7 +221,7 @@ export function createGeminiRephraser(model: string, createPool: () => KeyPool):
 async function rephraseChunkWithClaude(chunk: string, model: string): Promise<ChunkOutput> {
   const rephrased = await rephraseWithClaude(splitParagraphs(stripRubyTags(chunk)), model).catch((error: unknown) => {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`${reason}\nProgress is saved. Run the same command again to resume from this chunk.`, { cause: error });
+    throw new Error(`${reason}\n${RESUME_HINT}`, { cause: error });
   });
   const skippedCount = rephrased.skippedParagraphs.length;
   rephrased.skippedParagraphs.forEach((paragraph) => console.log(`    ? kept original: ${paragraph.slice(0, 60)}`));
@@ -210,6 +229,7 @@ async function rephraseChunkWithClaude(chunk: string, model: string): Promise<Ch
     rawText: rephrased.text,
     readerText: rephrased.text,
     attempts: rephrased.attempts,
+    isFallback: false,
     error: skippedCount > 0 ? `${skippedCount} paragraph(s) kept their original text` : undefined,
   };
 }

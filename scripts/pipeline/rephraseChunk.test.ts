@@ -1,5 +1,6 @@
 import { ApiError, type GoogleGenAI } from '@google/genai';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { VN_RETRY_CONFIG } from '../../lib/constants';
 import { createKeyPool } from '../shared/geminiKeyPool';
 import { createGeminiRephraser } from './rephraseChunk';
 
@@ -52,7 +53,7 @@ describe('createGeminiRephraser', () => {
   it('Test_createGeminiRephraser_ValidReplyIsAlignedToSource', async () => {
     const { rephraser } = createFakeRephraser(FREE_AND_PAID_KEYS, () => `以下が要約です。\n${VALID_RESPONSE}`);
     const output = await rephraser.rephraseChunk(SOURCE, 0);
-    expect(output).toEqual({ rawText: `以下が要約です。\n${VALID_RESPONSE}`, readerText: VALID_RESPONSE, attempts: 1 });
+    expect(output).toEqual({ rawText: `以下が要約です。\n${VALID_RESPONSE}`, readerText: VALID_RESPONSE, attempts: 1, isFallback: false });
   });
 
   it('Test_createGeminiRephraser_DailyQuotaRetiresKeyWithoutUsingAnAttempt', async () => {
@@ -100,12 +101,80 @@ describe('createGeminiRephraser', () => {
     expect(output.attempts).toBe(2);
   });
 
-  it('Test_createGeminiRephraser_NoUsableKeyKeepsOriginalText', async () => {
-    const { rephraser } = createFakeRephraser({ GEMINI_API_KEY: 'free1' }, () => {
+  it('Test_createGeminiRephraser_NoKeyWithQuotaLeftStopsTheRun', async () => {
+    const { rephraser, calls } = createFakeRephraser({ GEMINI_API_KEY: 'free1' }, () => {
       throw DAILY_QUOTA_ERROR;
     });
-    const output = await rephraser.rephraseChunk(SOURCE, 0);
+    await expect(rephraser.rephraseChunk(SOURCE, 0)).rejects.toThrow('No Gemini key has quota left for gemini-3.5-flash');
+    expect(calls.map((call) => call.model)).toEqual(['gemini-3.5-flash']);
+  });
+
+  it('Test_createGeminiRephraser_PaidKeyOutOfQuotaStopsTheRunWithoutModelFallback', async () => {
+    const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, () => {
+      throw DAILY_QUOTA_ERROR;
+    });
+    await expect(rephraser.rephraseChunk(SOURCE, 0)).rejects.toThrow('No Gemini key has quota left');
+    expect(new Set(calls.map((call) => call.model))).toEqual(new Set(['gemini-3.5-flash']));
+  });
+
+  it('Test_createGeminiRephraser_SuccessIsNotAFallback', async () => {
+    const { rephraser } = createFakeRephraser(FREE_AND_PAID_KEYS, () => VALID_RESPONSE);
+    expect((await rephraser.rephraseChunk(SOURCE, 0)).isFallback).toBe(false);
+  });
+
+  it('Test_createGeminiRephraser_UnknownModelEverywhereStopsTheRun', async () => {
+    const { rephraser } = createFakeRephraser(FREE_AND_PAID_KEYS, () => {
+      throw new ApiError({ status: 404, message: 'model not found' });
+    });
+    await expect(rephraser.rephraseChunk(SOURCE, 0)).rejects.toThrow('No Gemini model could be reached');
+  });
+});
+
+describe('createGeminiRephraser when attempts fail', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function rephraseWithTimers(replyToCall: ReplyToCall) {
+    const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, replyToCall);
+    const pendingOutput = rephraser.rephraseChunk(SOURCE, 0);
+    await vi.runAllTimersAsync();
+    return { output: await pendingOutput, calls };
+  }
+
+  it('Test_createGeminiRephraser_ServerErrorsKeepOriginalTextAsFallback', async () => {
+    const { output } = await rephraseWithTimers(() => {
+      throw new ApiError({ status: 503, message: 'overloaded' });
+    });
     expect(output.readerText).toBe(`< ${SOURCE}\n>> ${SOURCE}`);
-    expect(output.error).toBe('Used original text (rephrase failed)');
+    expect(output.isFallback).toBe(true);
+  });
+
+  it('Test_createGeminiRephraser_ServerErrorsStayOnTheRequestedModel', async () => {
+    const { calls } = await rephraseWithTimers(() => {
+      throw new ApiError({ status: 503, message: 'overloaded' });
+    });
+    expect(calls.map((call) => call.model)).toEqual(Array(VN_RETRY_CONFIG.MAX_ATTEMPTS).fill('gemini-3.5-flash'));
+  });
+
+  it('Test_createGeminiRephraser_PerMinuteLimitBacksOffOnTheSameModel', async () => {
+    const { output, calls } = await rephraseWithTimers((_, callIndex) => {
+      if (callIndex === 0) throw new ApiError({ status: 429, message: 'GenerateRequestsPerMinutePerProjectPerModel' });
+      return VALID_RESPONSE;
+    });
+    expect(calls.map((call) => call.model)).toEqual(['gemini-3.5-flash', 'gemini-3.5-flash']);
+    expect(output.isFallback).toBe(false);
+  });
+
+  it('Test_createGeminiRephraser_InvalidFormatEveryTimeStaysOnTheRequestedModel', async () => {
+    const { output, calls } = await rephraseWithTimers(() => 'no pairs here');
+    expect(new Set(calls.map((call) => call.model))).toEqual(new Set(['gemini-3.5-flash']));
+    expect(output.isFallback).toBe(true);
   });
 });
