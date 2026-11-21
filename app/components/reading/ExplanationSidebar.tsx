@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { COLORS, EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG, THEME } from '@/lib/constants';
+import { EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG, THEME } from '@/lib/constants';
 import { useExplanationCache } from '@/app/hooks/useExplanationCache';
 import { parseFurigana, segmentsToHTML, stripAiFurigana } from '@/lib/utils/furiganaParser';
 import { renderSafeMarkdown } from '@/lib/utils/safeMarkdown';
@@ -371,9 +371,9 @@ export default function ExplanationSidebar({
               <div
                 className="p-4"
                 style={{
-                  backgroundColor: toTint(COLORS.DANGER, 6),
-                  border: `1px solid ${COLORS.DANGER}`,
-                  color: COLORS.DANGER,
+                  backgroundColor: toTint(THEME.DANGER, 6),
+                  border: `1px solid ${THEME.DANGER}`,
+                  color: THEME.DANGER,
                 }}
               >
                 <p className="text-sm font-bold mb-1">Error</p>

@@ -22,6 +22,7 @@
   --color-on-primary: #FFFFFF;
   --color-secondary: #5B6270;
   --color-secondary-dark: #3A3F4A;
+  --color-danger: #B3311D;
   --color-progress-track: #EEF0F3;
   --color-toggle-thumb: #FFFFFF;
   --color-hover: color-mix(in srgb, #15171C 4%, transparent);
@@ -48,6 +49,7 @@
   --color-on-primary: #15171C;
   --color-secondary: #A3AAB8;
   --color-secondary-dark: #A3AAB8;
+  --color-danger: #E5806F;
   --color-progress-track: #343943;
   --color-toggle-thumb: #ECEAE4;
   --color-hover: color-mix(in srgb, #ECEAE4 6%, transparent);

@@ -236,6 +236,7 @@ export const DARK_COLORS = {
   SECONDARY: '#48484A',
   TEXT: '#ECEAE4',
   TEXT_MUTED: '#A3AAB8',
+  DANGER: '#E5806F',
 };
 
 // Minimal Reader Theme
@@ -266,6 +267,7 @@ export const THEME = {
   ON_PRIMARY: 'var(--color-on-primary)',
   SECONDARY: 'var(--color-secondary)',
   SECONDARY_DARK: 'var(--color-secondary-dark)',
+  DANGER: 'var(--color-danger)',
   PROGRESS_TRACK: 'var(--color-progress-track)',
   HOVER: 'var(--color-hover)',
   SCRIM_SOFT: 'var(--color-scrim-soft)',

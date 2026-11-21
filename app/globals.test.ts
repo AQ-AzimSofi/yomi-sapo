@@ -38,6 +38,7 @@ describe('reader theme tokens in globals.css', () => {
       '--color-on-primary': COLORS.SURFACE,
       '--color-secondary': COLORS.SECONDARY,
       '--color-secondary-dark': COLORS.SECONDARY_DARK,
+      '--color-danger': COLORS.DANGER,
       '--color-progress-track': READER_THEME.PROGRESS_TRACK,
       '--color-toggle-thumb': COLORS.SURFACE,
     });
@@ -58,6 +59,7 @@ describe('reader theme tokens in globals.css', () => {
       '--color-on-primary': DARK_COLORS.BASE,
       '--color-secondary': DARK_COLORS.TEXT_MUTED,
       '--color-secondary-dark': DARK_COLORS.TEXT_MUTED,
+      '--color-danger': DARK_COLORS.DANGER,
       '--color-progress-track': DARK_COLORS.NEUTRAL,
       '--color-toggle-thumb': DARK_COLORS.TEXT,
     });
