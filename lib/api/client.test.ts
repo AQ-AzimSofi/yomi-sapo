@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_ROUTES, GUEST_KEY_HEADERS, STORAGE_KEYS } from '@/lib/constants';
 import { GUEST_KEY_REQUIRED_EVENT } from '@/lib/guestKeys';
 import { bookQuery } from '@/lib/books/bookRef';
-import { ApiError, fetchBookmark, request, saveBookmark } from './client';
+import { ApiError, fetchBookmark, request, saveBookmark, translate } from './client';
 
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 let storedValues: Map<string, string>;
@@ -21,6 +21,10 @@ const BOOK = { directory: 'bookv2-furigana/本', fileName: '本-rephrase-furigan
 
 function storeGeminiKey(key: string): void {
   storedValues.set(STORAGE_KEYS.GUEST_GEMINI_KEY, key);
+}
+
+function guestKeyRequired(kind: string): Response {
+  return jsonResponse({ error: { code: 'guest_key_required', message: 'Sign in or add your own key.' }, requiresGuestKey: kind }, 401);
 }
 
 beforeEach(() => {
@@ -183,9 +187,6 @@ describe('the guest key prompt', () => {
       guestKey: { kind: 'gemini', promptOn },
     }).catch((caught: unknown) => caught);
 
-  const guestKeyRequired = (kind: string) =>
-    jsonResponse({ error: { code: 'guest_key_required', message: 'Sign in or add your own key.' }, requiresGuestKey: kind }, 401);
-
   it('opens when the server asks a guest for their key', async () => {
     fetchMock.mockResolvedValue(guestKeyRequired('gemini'));
 
@@ -281,5 +282,27 @@ describe('saveBookmark', () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'invalid_request', message: '無効なファイル名です' } }, 400));
 
     await expect(saveBookmark({ ...BOOK, content: '一文' })).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('translate', () => {
+  it("posts the text with the guest's translate key", async () => {
+    storedValues.set(STORAGE_KEYS.GUEST_TRANSLATE_KEY, 'guest-translate-key');
+    fetchMock.mockResolvedValue(jsonResponse({ translatedText: 'A book' }));
+
+    expect(await translate('本')).toEqual({ translatedText: 'A book' });
+    expect(lastCall().url).toBe('/api/translate');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [GUEST_KEY_HEADERS.TRANSLATE]: 'guest-translate-key' },
+      body: '{"text":"本"}',
+    });
+  });
+
+  it('opens the key prompt when a guest has no translate key', async () => {
+    fetchMock.mockResolvedValue(guestKeyRequired('translate'));
+
+    await expect(translate('本')).rejects.toMatchObject({ promptedGuestKey: true });
+    expect(promptedKinds).toEqual(['translate']);
   });
 });

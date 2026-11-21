@@ -7,7 +7,14 @@ import { API_ROUTES } from '@/lib/constants';
 import { guestKeyHeaders, promptGuestKeyOnFailure, type GuestKeyKind } from '@/lib/guestKeys';
 import { isRecord } from '@/lib/utils/typeGuards';
 import type { BookRef } from '@/lib/books/bookRef';
-import type { ApiErrorResponse, BookmarkResponse, SaveBookmarkRequest, WriteResponse } from './contracts';
+import type {
+  ApiErrorResponse,
+  BookmarkResponse,
+  SaveBookmarkRequest,
+  TranslateRequest,
+  TranslateResponse,
+  WriteResponse,
+} from './contracts';
 
 export type ApiRoute = (typeof API_ROUTES)[keyof typeof API_ROUTES];
 
@@ -131,4 +138,13 @@ export async function fetchBookmark(book: BookRef, signal?: AbortSignal): Promis
 
 export async function saveBookmark(bookmark: SaveBookmarkRequest): Promise<WriteResponse> {
   return request<WriteResponse>(API_ROUTES.WRITE_BOOKMARK, { method: 'POST', body: bookmark });
+}
+
+export async function translate(text: string): Promise<TranslateResponse> {
+  const body: TranslateRequest = { text };
+  return request<TranslateResponse>(API_ROUTES.TRANSLATE, {
+    method: 'POST',
+    body,
+    guestKey: { kind: 'translate', promptOn: 'any-failure' },
+  });
 }

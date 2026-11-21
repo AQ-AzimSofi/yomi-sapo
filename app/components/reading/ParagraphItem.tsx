@@ -11,8 +11,7 @@ import { parseFurigana, segmentsToHTML } from "@/lib/utils/furiganaParser";
 import { toTint } from "@/lib/utils/colorTint";
 import { bookImagePath } from "@/lib/utils/bookAssetPath";
 import { toBookKey, type BookRef } from "@/lib/books/bookRef";
-import { guestKeyHeaders, promptGuestKeyOnFailure } from "@/lib/guestKeys";
-import { saveBookmark } from "@/lib/api/client";
+import { saveBookmark, translate } from "@/lib/api/client";
 
 const IMAGE_PATTERN = /\[IMAGE:([^\]]+)\]/;
 
@@ -83,22 +82,8 @@ const ParagraphItem: React.FC<ParagraphItemProps> = ({
 
     try {
       setTranslating(true);
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...guestKeyHeaders("translate"),
-        },
-        body: JSON.stringify({ text }),
-      });
-
-      if (!response.ok) {
-        await promptGuestKeyOnFailure("translate", response);
-        throw new Error("Translation failed");
-      }
-
-      const data = await response.json();
-      setTranslatedText(data.translatedText);
+      const { translatedText } = await translate(text);
+      setTranslatedText(translatedText);
       setShowTranslation(true);
     } catch (error) {
       console.error("Translation error:", error);
