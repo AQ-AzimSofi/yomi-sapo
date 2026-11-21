@@ -1,6 +1,7 @@
 import { sql } from './connection';
 import type { Bookmark, TextEntry } from './schema';
 import { runWriteTransaction } from './writeTransaction';
+import { assertBookTextFits } from './bookTextSize';
 import { normalizeNewlines } from '@/lib/content/bookModel';
 
 export interface SavedBookmark {
@@ -124,13 +125,15 @@ export async function getTextEntry(
 }
 
 // Every write path stores LF text, so the reader, the library and narration
-// split a book into the same units.
+// split a book into the same units. Text that might not fit in one Aurora DSQL
+// value throws BookTextTooLargeError before anything is written.
 export async function upsertTextEntry(
   fileName: string,
   rawContent: string,
   directory: string = 'public'
 ): Promise<void> {
   const content = normalizeNewlines(rawContent);
+  assertBookTextFits(content);
   try {
     await runWriteTransaction(sql, async (tx) => {
       await tx`

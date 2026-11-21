@@ -1,6 +1,8 @@
+import { randomBytes } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from '@/lib/db/connection';
 import { getBookmark, getTextEntryVersion, initializeBookmarksForFiles, upsertBookmark, upsertTextEntry } from './queries';
+import { BookTextTooLargeError, MAX_STORED_TEXT_BYTES } from './bookTextSize';
 
 vi.mock('@/lib/db/connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }) }));
 
@@ -76,6 +78,13 @@ describe('upsertTextEntry', () => {
 
     expect(transactionWrite(transaction)).toContain('< 本文\n>> やさしい文\n');
     expect(transactionWrite(transaction).some((value) => typeof value === 'string' && value.includes('\r'))).toBe(false);
+  });
+
+  it('refuses text too large for one database value without writing it', async () => {
+    const incompressible = Array.from(randomBytes(MAX_STORED_TEXT_BYTES + 1), (byte) => String.fromCharCode(33 + (byte % 94))).join('');
+
+    await expect(upsertTextEntry('ほん', incompressible, 'd')).rejects.toBeInstanceOf(BookTextTooLargeError);
+    expect(sql.begin).not.toHaveBeenCalled();
   });
 
   it('writes inside a transaction, so a commit-time conflict reaches the caller', async () => {
