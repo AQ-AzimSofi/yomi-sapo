@@ -72,10 +72,11 @@ export default function FloatingStickyNotes({
 
   const justDraggedRef = useRef(false);
 
+  // The registry only supplies readings for starred words, so skip it until one exists.
   const { registry } = useRubyRegistry({
     directory,
     bookName,
-    enabled: !!directory && !!bookName,
+    enabled: !!directory && !!bookName && starredWords.size > 0,
   });
 
   useEffect(() => {
