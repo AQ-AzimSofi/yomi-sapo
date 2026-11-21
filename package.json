@@ -18,7 +18,6 @@
     "db:init": "curl http://localhost:3333/api/init-db",
     "db:migrate": "tsx scripts/db/migrate.ts",
     "db:sync": "npx tsx scripts/db/sync.ts",
-    "batch-rephrase": "npx tsx scripts/batch-rephrase.ts",
     "sst:dev": "sst dev",
     "sst:deploy": "sst deploy --stage production",
     "sst:remove": "sst remove",
