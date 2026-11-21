@@ -11,6 +11,7 @@ import { getNarration } from '@/lib/db/narrationQueries.sql';
 import { withAuth } from '@/lib/auth/guards';
 import { apiError } from '@/lib/api/respond';
 import { presignGet } from '@/lib/storage/s3';
+import { bookRefFromParams, isSafeBookRef } from '@/lib/books/bookRef';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,10 @@ export const GET = withAuth('owner', async (request) => {
   if (!fileName || !directory) {
     return apiError(400, 'invalid_request', 'fileName and directory are required');
   }
+  const book = bookRefFromParams(directory, fileName);
+  if (!isSafeBookRef(book)) {
+    return apiError(400, 'invalid_request', 'fileName and directory must stay inside the book folders');
+  }
 
   const bucket = process.env.NARRATION_AUDIO_BUCKET;
   if (!bucket) {
@@ -32,7 +37,7 @@ export const GET = withAuth('owner', async (request) => {
     return apiError(500, 'not_configured', 'Narration storage is not configured');
   }
 
-  const narration = await getNarration(fileName, directory);
+  const narration = await getNarration(book.fileName, book.directory);
   if (!narration) {
     return apiError(404, 'not_found', 'No narration for this text');
   }

@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/guards';
 import { apiError } from '@/lib/api/respond';
 import { readObjectBytes } from '@/lib/storage/s3';
+import { bookRefFromParams, isSafeBookRef, toBookKey } from '@/lib/books/bookRef';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,10 @@ export const GET = withAuth('public', async (request) => {
   if (!fileName || !directory) {
     return apiError(400, 'invalid_request', 'fileName and directory are required');
   }
+  const book = bookRefFromParams(directory, fileName);
+  if (!isSafeBookRef(book)) {
+    return apiError(400, 'invalid_request', 'fileName and directory must stay inside the book folders');
+  }
 
   const bucket = process.env.BOOK_COVERS_BUCKET;
   if (!bucket) {
@@ -31,7 +36,7 @@ export const GET = withAuth('public', async (request) => {
     return apiError(500, 'not_configured', 'Cover storage is not configured');
   }
 
-  const coverBytes = await readObjectBytes(bucket, `covers/${directory}/${fileName}.jpg`);
+  const coverBytes = await readObjectBytes(bucket, `covers/${toBookKey(book)}.jpg`);
   if (!coverBytes) {
     return apiError(404, 'not_found', 'No cover for this book');
   }

@@ -55,6 +55,16 @@ describe('GET /api/covers', () => {
     expect(s3Send).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['a .. directory segment', 'directory=bookv2-furigana%2F..&fileName=secret'],
+    ['a leading slash', 'directory=%2Fbookv2-furigana&fileName=%E3%81%BB%E3%82%93'],
+  ])('answers 400 without reading storage for %s', async (_case, query) => {
+    const response = await GET(new Request(`http://localhost/api/covers?${query}`));
+
+    expect(response.status).toBe(400);
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
   it('answers a generic 500 when storage fails', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     s3Send.mockRejectedValue(new Error('AccessDenied: arn:aws:s3:::book-covers'));

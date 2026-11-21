@@ -53,6 +53,16 @@ describe('GET /api/narration', () => {
     expect(options).toStrictEqual({ expiresIn: 12 * 60 * 60 });
   });
 
+  it.each([
+    ['a .. directory segment', { directory: 'bookv2-furigana/..', fileName: 'secret' }],
+    ['a leading slash', { directory: '/bookv2-furigana', fileName: BOOK.fileName }],
+  ])('answers 400 without a lookup for %s', async (_case, book) => {
+    const response = await GET(narrationRequest(new URLSearchParams(book).toString()));
+
+    expect(response.status).toBe(400);
+    expect(getNarration).not.toHaveBeenCalled();
+  });
+
   it('answers 400 without a lookup when the book is missing a param', async () => {
     const response = await GET(narrationRequest(`fileName=${encodeURIComponent(BOOK.fileName)}`));
 
