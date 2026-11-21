@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { initializeBookmarksForFiles, upsertTextEntry } from '@/lib/db/queries';
+import { initializeBookmarksForFiles, upsertBookmark, upsertTextEntry } from '@/lib/db/queries';
 import { ownerSessionHeaders, TEST_SESSION_SECRET } from '@/lib/auth/testSession';
 import { POST } from './route';
 
@@ -57,6 +57,18 @@ describe('POST /api/admin', () => {
     const response = await POST(adminRequest('text-entries', { fileName: 'ほん' }));
 
     expect(response.status).toBe(400);
+    expect(upsertTextEntry).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['bookmarks', { fileName: 'ほん', bookmarkText: 5 }],
+    ['bulk-seed', { entries: [] }],
+  ])('answers 400 without saving a bad %s body', async (action, body) => {
+    const response = await POST(adminRequest(action, body));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe('invalid_body');
+    expect(upsertBookmark).not.toHaveBeenCalled();
     expect(upsertTextEntry).not.toHaveBeenCalled();
   });
 
