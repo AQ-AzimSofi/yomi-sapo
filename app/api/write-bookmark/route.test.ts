@@ -47,10 +47,14 @@ describe('POST /api/write-bookmark', () => {
     warn.mockRestore();
   });
 
-  it('saves a bookmark sent without a page', async () => {
+  it('saves a bookmark sent without a page, without a warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
     await POST(bookmarkRequest({ target: TARGET, content: '一文目', page: null }));
 
     expect(upsertBookmark).toHaveBeenCalledWith(expect.objectContaining({ bookmarkPage: undefined }));
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('rejects a guest without saving', async () => {
