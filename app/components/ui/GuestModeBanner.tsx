@@ -1,11 +1,35 @@
 'use client';
 
+import { Suspense } from 'react';
 import Link from 'next/link';
-import { THEME } from '@/lib/constants';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { PAGE_ROUTES, THEME } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
+import { loginPathReturningTo } from '@/lib/auth/loginPath';
 
 interface GuestModeBannerProps {
   message?: string;
+}
+
+function SignInLink({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className="text-sm font-bold whitespace-nowrap underline underline-offset-4 interactive-link"
+      style={{ color: THEME.PRIMARY }}
+    >
+      Sign in
+    </Link>
+  );
+}
+
+// The reader turns pages with history.pushState, which Next feeds back into
+// useSearchParams, so the link keeps naming the page the guest is on.
+function SignInLinkReturningHere() {
+  const pathname = usePathname();
+  const query = useSearchParams().toString();
+  const search = query ? `?${query}` : '';
+  return <SignInLink href={loginPathReturningTo({ pathname, search })} />;
 }
 
 export default function GuestModeBanner({ message }: GuestModeBannerProps) {
@@ -23,13 +47,11 @@ export default function GuestModeBanner({ message }: GuestModeBannerProps) {
             {message || 'You are reading a free preview. Sign in for the full library.'}
           </span>
         </div>
-        <Link
-          href="/login"
-          className="text-sm font-bold whitespace-nowrap underline underline-offset-4 interactive-link"
-          style={{ color: THEME.PRIMARY }}
-        >
-          Sign in
-        </Link>
+        {/* A statically prerendered page such as /library needs a Suspense boundary
+            around useSearchParams; the plain login link stands in until it resolves. */}
+        <Suspense fallback={<SignInLink href={PAGE_ROUTES.LOGIN} />}>
+          <SignInLinkReturningHere />
+        </Suspense>
       </div>
     </div>
   );
