@@ -84,10 +84,6 @@ export interface BookmarkRequest {
   page?: number;    // 現在のページ番号
 }
 
-export interface TextRequest {
-  text: string;
-}
-
 export interface GeminiRequest {
   text?: string;
   image?: File;

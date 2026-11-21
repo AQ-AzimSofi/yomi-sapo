@@ -1,13 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { COLORS, PAGE_ROUTES } from '@/lib/constants';
+import { COLORS } from '@/lib/constants';
 import { useGuestMode } from '@/app/hooks/useGuestMode';
 import GuestModeBanner from '@/app/components/ui/GuestModeBanner';
 import AppHeader, { NAV_ITEM_CLASS } from '@/app/components/ui/AppHeader';
 import LibraryGrid from './components/LibraryGrid';
 import DbSyncModal from './components/DbSyncModal';
-import Link from 'next/link';
 
 export default function LibraryPage() {
   const [showSync, setShowSync] = useState(false);
@@ -27,14 +26,9 @@ export default function LibraryPage() {
           currentPage="library"
           isGuest={isGuest}
           extraActions={
-            <>
-              <Link href={PAGE_ROUTES.TEXT_INPUT_AI} className={NAV_ITEM_CLASS}>
-                テキスト追加
-              </Link>
-              <button onClick={() => setShowSync(true)} className={NAV_ITEM_CLASS}>
-                同期
-              </button>
-            </>
+            <button onClick={() => setShowSync(true)} className={NAV_ITEM_CLASS}>
+              同期
+            </button>
           }
         />
 
