@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import { buildPlayableUnits } from '@/lib/content/bookModel';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
 import type { NarrationCue } from '@/lib/types';
+import { isEntryPoint } from '../shared/entryPoint';
 
 /** What this script emits: cue positions only. The audio location is attached
  *  later by scripts/db/sync-narration.ts, which is what the reader reads. */
@@ -67,18 +68,15 @@ function similarity(left: string, right: string): number {
 function parseTimings(raw: string, path: string): TimingCue[] {
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    console.error(`${path} is not a non-empty array of cues.`);
-    process.exit(1);
+    throw new Error(`${path} is not a non-empty array of cues.`);
   }
   return parsed.map((entry, index) => {
     const { start, end, text } = (entry ?? {}) as Record<string, unknown>;
     if (typeof start !== 'number' || typeof end !== 'number' || !isFinite(start) || !isFinite(end)) {
-      console.error(`${path} cue ${index} has no finite start/end.`);
-      process.exit(1);
+      throw new Error(`${path} cue ${index} has no finite start/end.`);
     }
     if (typeof text !== 'string') {
-      console.error(`${path} cue ${index} has no text.`);
-      process.exit(1);
+      throw new Error(`${path} cue ${index} has no text.`);
     }
     return { start, end, text };
   });
@@ -91,8 +89,7 @@ function readArg(name: string): string | null {
   // Swallowing the next flag as a value turns a missing argument into a plausible
   // wrong one, e.g. --audio-url --out x yielding an audioUrl of "--out".
   if (value.startsWith('--')) {
-    console.error(`--${name} needs a value, found "${value}".`);
-    process.exit(1);
+    throw new Error(`--${name} needs a value, found "${value}".`);
   }
   return value;
 }
@@ -148,8 +145,7 @@ function main(): void {
   const outPath = readArg('out');
 
   if (!timingsPath || !textPath || !outPath) {
-    console.error('Usage: --timings <file> --text <file> --out <file> [--min-coverage <0-1>]');
-    process.exit(1);
+    throw new Error('Usage: --timings <file> --text <file> --out <file> [--min-coverage <0-1>]');
   }
 
   const cues = parseTimings(fs.readFileSync(timingsPath, 'utf8'), timingsPath);
@@ -159,8 +155,7 @@ function main(): void {
   const content = fs.readFileSync(textPath, 'utf8').replace(/\r\n/g, '\n');
   const units = buildPlayableUnits(content);
   if (units.length === 0) {
-    console.error(`No reader units parsed from ${textPath}; refusing to write a manifest.`);
-    process.exit(1);
+    throw new Error(`No reader units parsed from ${textPath}; refusing to write a manifest.`);
   }
 
   const matched = matchCues(units.map((unit) => normalize(unit.main)), cues);
@@ -176,16 +171,14 @@ function main(): void {
   // NaN would make every comparison false and silently disable the gate this flag
   // exists to tune, so a typo has to fail rather than wave the manifest through.
   if (!isFinite(minCoverage) || minCoverage < 0 || minCoverage > 1) {
-    console.error(`--min-coverage must be a number between 0 and 1, got "${minCoverageArg}".`);
-    process.exit(1);
+    throw new Error(`--min-coverage must be a number between 0 and 1, got "${minCoverageArg}".`);
   }
   if (coverage < minCoverage) {
-    console.error(
+    throw new Error(
       `Coverage ${(coverage * 100).toFixed(1)}% is below ${(minCoverage * 100).toFixed(1)}%. ` +
       'This usually means --text is not the text the transcript was aligned against. ' +
       'Pass --min-coverage to accept it anyway.'
     );
-    process.exit(1);
   }
 
   const manifest: NarrationBuild = { unitCount: units.length, cues: matched };
@@ -193,4 +186,11 @@ function main(): void {
   console.log(`wrote     ${outPath}`);
 }
 
-main();
+if (isEntryPoint(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
+}
