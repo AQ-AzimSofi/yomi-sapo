@@ -9,8 +9,10 @@ import { renderSafeMarkdown } from '@/lib/utils/safeMarkdown';
 import { toTint } from '@/lib/utils/colorTint';
 import { GUEST_KEY_UPDATED_EVENT } from '@/lib/guestKeys';
 import { ApiError, explainSentence } from '@/lib/api/client';
+import { shareRequest } from '@/lib/utils/shareRequest';
 import type { ExplanationRequest } from '@/lib/api/contracts';
 import type { ExplanationMode } from '@/lib/constants';
+import { IDLE_EXPLANATION, nextExplanationDisplay } from './explanationDisplay';
 
 interface ExplanationSidebarProps {
   isOpen: boolean;
@@ -20,6 +22,10 @@ interface ExplanationSidebarProps {
   fileName: string;
   showFurigana?: boolean;
 }
+
+// Shared across mounts, so a sidebar that is closed and reopened, or mounted
+// twice in development, joins the request already out instead of paying again.
+const pendingExplanations = new Map<string, Promise<string>>();
 
 function describeExplanationFailure(error: unknown): string {
   if (error instanceof ApiError && error.promptedGuestKey) {
@@ -38,12 +44,8 @@ export default function ExplanationSidebar({
   fileName,
   showFurigana = true,
 }: ExplanationSidebarProps) {
-  const [explanation, setExplanation] = React.useState<string>('');
-  const [isLoading, setIsLoading] = React.useState<boolean>(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [isCached, setIsCached] = React.useState<boolean>(false);
-  const [cacheTimestamp, setCacheTimestamp] = React.useState<number | null>(null);
-  const [forceRegenerate, setForceRegenerate] = React.useState<boolean>(false);
+  const [display, dispatchDisplay] = React.useReducer(nextExplanationDisplay, IDLE_EXPLANATION);
+  const requestCountRef = React.useRef(0);
 
   const [touchStart, setTouchStart] = React.useState<number>(0);
   const [touchEnd, setTouchEnd] = React.useState<number>(0);
@@ -63,14 +65,50 @@ export default function ExplanationSidebar({
 
   useEscapeKey(isOpen, onClose);
 
-  // After a guest saves their API key, retry the explanation automatically.
+  // Every request gets its own id, and the display only takes the answer or
+  // failure of the latest one. A late answer for an earlier sentence, mode or
+  // context size is still cached under its own key; the request is never
+  // aborted, because the server would pay for the AI call anyway.
+  const showExplanation = React.useCallback(
+    ({ bypassCache }: { bypassCache: boolean }) => {
+      const cached = bypassCache ? null : getCache({ fileName, sentence, mode, contextSize });
+      if (cached) {
+        dispatchDisplay({ type: 'cacheHit', text: cached.explanation, cachedAt: cached.timestamp });
+        return;
+      }
+
+      requestCountRef.current += 1;
+      const requestId = requestCountRef.current;
+      dispatchDisplay({ type: 'requested', requestId });
+
+      const request: ExplanationRequest = { sentence, context, fileName, contextSize, mode };
+      const answer = shareRequest(pendingExplanations, JSON.stringify(request), async () => {
+        const requestedAt = Date.now();
+        const { explanation } = await explainSentence(request);
+        setCache({ fileName, sentence, mode, contextSize, explanation, requestedAt });
+        return explanation;
+      });
+      answer.then(
+        (text) => dispatchDisplay({ type: 'answered', requestId, text }),
+        (error: unknown) => dispatchDisplay({ type: 'failed', requestId, message: describeExplanationFailure(error) })
+      );
+    },
+    [sentence, context, fileName, contextSize, mode, getCache, setCache]
+  );
+
   React.useEffect(() => {
-    const handleKeyUpdated = () => {
-      if (isOpen) setForceRegenerate(true);
-    };
-    window.addEventListener(GUEST_KEY_UPDATED_EVENT, handleKeyUpdated);
-    return () => window.removeEventListener(GUEST_KEY_UPDATED_EVENT, handleKeyUpdated);
-  }, [isOpen]);
+    if (!isOpen || !sentence) return;
+    showExplanation({ bypassCache: false });
+  }, [isOpen, sentence, showExplanation]);
+
+  // After a guest saves their API key, retry the explanation automatically. A
+  // failure is never cached, so the retry asks the AI only when nothing is saved.
+  React.useEffect(() => {
+    if (!isOpen || !sentence) return;
+    const retryExplanation = () => showExplanation({ bypassCache: false });
+    window.addEventListener(GUEST_KEY_UPDATED_EVENT, retryExplanation);
+    return () => window.removeEventListener(GUEST_KEY_UPDATED_EVENT, retryExplanation);
+  }, [isOpen, sentence, showExplanation]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.targetTouches[0].clientX);
@@ -103,59 +141,6 @@ export default function ExplanationSidebar({
       setIsDragging(false);
     }
   }, [isOpen]);
-
-  React.useEffect(() => {
-    if (!isOpen || !sentence) {
-      return;
-    }
-
-    const fetchExplanation = async () => {
-      if (!forceRegenerate) {
-        const cached = getCache({ fileName, sentence, mode, contextSize });
-        if (cached) {
-          setExplanation(cached.explanation);
-          setIsCached(true);
-          setCacheTimestamp(cached.timestamp);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      setIsLoading(true);
-      setError(null);
-      setIsCached(false);
-      setCacheTimestamp(null);
-
-      try {
-        const requestData: ExplanationRequest = {
-          sentence,
-          context,
-          fileName,
-          contextSize,
-          mode,
-        };
-
-        const requestedAt = Date.now();
-        const data = await explainSentence(requestData);
-        setExplanation(data.explanation);
-        setCache({ fileName, sentence, mode, contextSize, explanation: data.explanation, requestedAt });
-
-        if (forceRegenerate) {
-          setForceRegenerate(false);
-        }
-      } catch (err) {
-        setError(describeExplanationFailure(err));
-
-        if (forceRegenerate) {
-          setForceRegenerate(false);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchExplanation();
-  }, [isOpen, sentence, context, fileName, contextSize, mode, forceRegenerate, getCache, setCache]);
 
   const renderTextWithFurigana = (text: string) => (
     <span dangerouslySetInnerHTML={{ __html: segmentsToHTML(parseFurigana(text), showFurigana) }} />
@@ -224,13 +209,15 @@ export default function ExplanationSidebar({
               <h2 className="text-lg font-mincho font-bold" style={{ color: THEME.INK }}>
                 AI Explanation
               </h2>
-              {isCached && cacheTimestamp && (
+              {display.status === 'ready' && (
                 <div className="flex items-center gap-3 mt-1">
-                  <span className="text-xs" style={{ color: THEME.SECONDARY }}>
-                    Cached {getTimeAgo(cacheTimestamp)}
-                  </span>
+                  {display.cachedAt !== undefined && (
+                    <span className="text-xs" style={{ color: THEME.SECONDARY }}>
+                      Cached {getTimeAgo(display.cachedAt)}
+                    </span>
+                  )}
                   <button
-                    onClick={() => setForceRegenerate(true)}
+                    onClick={() => showExplanation({ bypassCache: true })}
                     className="text-xs font-bold cursor-pointer interactive-link"
                     style={{ color: THEME.PRIMARY }}
                   >
@@ -341,7 +328,7 @@ export default function ExplanationSidebar({
               border: `1px solid ${THEME.NEUTRAL}`,
             }}
           >
-            {isLoading && (
+            {display.status === 'loading' && (
               <div className="flex flex-col items-center justify-center py-10">
                 <div
                   className="animate-spin rounded-full h-8 w-8 border-2 border-transparent"
@@ -353,7 +340,7 @@ export default function ExplanationSidebar({
               </div>
             )}
 
-            {error && !isLoading && (
+            {display.status === 'error' && (
               <div
                 className="p-4"
                 style={{
@@ -363,15 +350,15 @@ export default function ExplanationSidebar({
                 }}
               >
                 <p className="text-sm font-bold mb-1">Error</p>
-                <p className="text-sm">{error}</p>
+                <p className="text-sm">{display.message}</p>
               </div>
             )}
 
-            {explanation && !isLoading && !error && (
+            {display.status === 'ready' && (
               <div
                 className="text-sm leading-relaxed"
                 style={{ color: THEME.INK }}
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(explanation) }}
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(display.text) }}
               />
             )}
           </div>
