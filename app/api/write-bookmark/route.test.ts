@@ -25,20 +25,30 @@ afterEach(() => {
 });
 
 describe('POST /api/write-bookmark', () => {
-  it('saves the bookmark with the reader page it sits on', async () => {
-    const response = await POST(bookmarkRequest({ target: TARGET, content: '一文目', page: 7 }));
+  it.each([1, 7])('saves the bookmark with the reader page it sits on (%s)', async (page) => {
+    const response = await POST(bookmarkRequest({ target: TARGET, content: '一文目', page }));
 
     expect(response.status).toBe(200);
     expect(upsertBookmark).toHaveBeenCalledWith({
       fileName: 'ほん-rephrase-furigana',
       directory: 'bookv2-furigana/ほん',
       bookmarkText: '一文目',
-      bookmarkPage: 7,
+      bookmarkPage: page,
     });
   });
 
-  it.each([0, -2, 2.5, '3', null])('drops an invalid page (%s) so the library recounts it', async (page) => {
+  it.each([0, -2, 2.5, '3'])('drops an invalid page (%s) so the library recounts it, and warns', async (page) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
     await POST(bookmarkRequest({ target: TARGET, content: '一文目', page }));
+
+    expect(upsertBookmark).toHaveBeenCalledWith(expect.objectContaining({ bookmarkPage: undefined }));
+    expect(warn).toHaveBeenCalledWith('Ignoring an invalid bookmark page:', { target: TARGET, page });
+    warn.mockRestore();
+  });
+
+  it('saves a bookmark sent without a page', async () => {
+    await POST(bookmarkRequest({ target: TARGET, content: '一文目', page: null }));
 
     expect(upsertBookmark).toHaveBeenCalledWith(expect.objectContaining({ bookmarkPage: undefined }));
   });

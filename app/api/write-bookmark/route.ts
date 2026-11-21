@@ -51,7 +51,11 @@ export async function POST(request: Request): Promise<NextResponse<WriteResponse
     const directory = parts.length > 1 ? parts.slice(0, -1).join('/') : 'public';
     const file = parts[parts.length - 1];
 
-    await upsertBookmark({ fileName: file, directory, bookmarkText: content, bookmarkPage: validPage(page) });
+    const bookmarkPage = validPage(page);
+    if (page != null && bookmarkPage === undefined) {
+      console.warn('Ignoring an invalid bookmark page:', { target, page });
+    }
+    await upsertBookmark({ fileName: file, directory, bookmarkText: content, bookmarkPage });
 
     return NextResponse.json({ success: true, message: 'ブックマークを更新しました' });
   } catch (error) {
