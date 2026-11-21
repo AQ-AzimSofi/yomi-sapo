@@ -33,6 +33,7 @@ import * as dotenv from 'dotenv';
 import sharp from 'sharp';
 import { CONTINUATION_MARKER, findStrayMarker } from './page-markers';
 import { isEntryPoint } from '../shared/entryPoint';
+import { AI_MODELS } from '../../lib/constants';
 import {
   PAID_API_KEY_ENV_NAME,
   createKeyPool,
@@ -44,7 +45,7 @@ import {
   type KeyPool,
 } from '../shared/geminiKeyPool';
 
-const DEFAULT_MODEL = 'gemini-3.5-flash';
+const DEFAULT_MODEL = AI_MODELS.GEMINI_3_5_FLASH;
 const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
