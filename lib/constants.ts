@@ -249,3 +249,30 @@ export const READER_THEME = {
   TRANSITION_FAST: '150ms',
   TRANSITION_NORMAL: '300ms',
 } as const;
+
+// Theme-aware colors for inline styles: CSS variables from app/globals.css, which hold the
+// palettes above and switch to DARK_COLORS when the reader sets data-theme="dark".
+export const THEME = {
+  BASE: 'var(--color-base)',
+  SURFACE: 'var(--color-surface)',
+  SURFACE_MUTED: 'var(--color-surface-muted)',
+  READER_BG: 'var(--color-reader-bg)',
+  FIELD: 'var(--color-field)',
+  INK: 'var(--color-ink)',
+  ON_INK: 'var(--color-on-ink)',
+  NEUTRAL: 'var(--color-neutral)',
+  NEUTRAL_SOFT: 'var(--color-neutral-soft)',
+  PRIMARY: 'var(--color-primary)',
+  ON_PRIMARY: 'var(--color-on-primary)',
+  SECONDARY: 'var(--color-secondary)',
+  SECONDARY_DARK: 'var(--color-secondary-dark)',
+  PROGRESS_TRACK: 'var(--color-progress-track)',
+  HOVER: 'var(--color-hover)',
+  SCRIM_SOFT: 'var(--color-scrim-soft)',
+  SCRIM: 'var(--color-scrim)',
+  SCRIM_STRONG: 'var(--color-scrim-strong)',
+  FAB_SCRIM: 'var(--color-fab-scrim)',
+  SHADOW_FAB: 'var(--shadow-fab)',
+  SHADOW_FAB_LIFTED: 'var(--shadow-fab-lifted)',
+  SHADOW_MENU: 'var(--shadow-menu)',
+} as const;

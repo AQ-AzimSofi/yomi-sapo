@@ -1,15 +1,62 @@
 @import "tailwindcss";
 
+/* Theme tokens. The light values come from COLORS and READER_THEME, the dark ones from
+   DARK_COLORS (lib/constants.ts); app/globals.test.ts keeps them in step. The reader sets
+   data-theme on the document element, so everything it renders follows one theme. */
 :root {
   --background: #F6F7F9;
   --foreground: #15171C;
 
   --color-base: #F6F7F9;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F6F7F9;
+  --color-reader-bg: #FFFFFF;
+  --color-field: #FFFFFF;
+  --color-ink: #15171C;
+  --color-on-ink: #FFFFFF;
   --color-neutral: #D5D8DE;
+  --color-neutral-soft: #EEF0F3;
   --color-primary: #2F4BA0;
   --color-primary-dark: #243B80;
+  --color-on-primary: #FFFFFF;
   --color-secondary: #5B6270;
   --color-secondary-dark: #3A3F4A;
+  --color-progress-track: #EEF0F3;
+  --color-toggle-thumb: #FFFFFF;
+  --color-hover: color-mix(in srgb, #15171C 4%, transparent);
+  --color-scrim-soft: color-mix(in srgb, #15171C 20%, transparent);
+  --color-scrim: color-mix(in srgb, #15171C 30%, transparent);
+  --color-scrim-strong: color-mix(in srgb, #15171C 40%, transparent);
+  --color-fab-scrim: rgba(0, 0, 0, 0.2);
+  --shadow-fab: 0 2px 16px rgba(0, 0, 0, 0.1);
+  --shadow-fab-lifted: 0 8px 32px rgba(0, 0, 0, 0.18);
+  --shadow-menu: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme='dark'] {
+  --color-base: #15171C;
+  --color-surface: #1E2128;
+  --color-surface-muted: #1E2128;
+  --color-reader-bg: #15171C;
+  --color-field: #15171C;
+  --color-ink: #ECEAE4;
+  --color-on-ink: #15171C;
+  --color-neutral: #343943;
+  --color-neutral-soft: #1E2128;
+  --color-primary: #9DB0EC;
+  --color-on-primary: #15171C;
+  --color-secondary: #A3AAB8;
+  --color-secondary-dark: #A3AAB8;
+  --color-progress-track: #343943;
+  --color-toggle-thumb: #ECEAE4;
+  --color-hover: color-mix(in srgb, #ECEAE4 6%, transparent);
+  --color-scrim-soft: color-mix(in srgb, #15171C 40%, transparent);
+  --color-scrim: color-mix(in srgb, #15171C 60%, transparent);
+  --color-scrim-strong: color-mix(in srgb, #15171C 60%, transparent);
+  --color-fab-scrim: rgba(0, 0, 0, 0.4);
+  --shadow-fab: 0 2px 16px rgba(0, 0, 0, 0.4);
+  --shadow-fab-lifted: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-menu: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 @theme inline {
