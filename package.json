@@ -16,7 +16,7 @@
     "db:logs": "docker-compose logs -f db",
     "db:reset": "docker-compose down -v && docker-compose up -d",
     "db:init": "curl http://localhost:3333/api/init-db",
-    "db:migrate": "curl http://localhost:3333/api/migrate-text-files",
+    "db:migrate": "tsx scripts/db/migrate.ts",
     "db:sync": "npx tsx scripts/db/sync.ts",
     "batch-rephrase": "npx tsx scripts/batch-rephrase.ts",
     "sst:dev": "sst dev",
