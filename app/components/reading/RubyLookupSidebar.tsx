@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { STORAGE_KEYS, THEME } from '@/lib/constants';
+import { THEME } from '@/lib/constants';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
+import { useStarredWords } from '@/app/hooks/useStarredWords';
 import type { RubyEntry } from '@/lib/types';
 import Link from 'next/link';
 
@@ -13,10 +14,6 @@ interface RubyLookupSidebarProps {
   bookName: string;
 }
 
-function getStarredStorageKey(directory: string, bookName: string): string {
-  return `${STORAGE_KEYS.STARRED_WORDS}_${directory}_${bookName}`;
-}
-
 export default function RubyLookupSidebar({
   isOpen,
   onClose,
@@ -24,7 +21,7 @@ export default function RubyLookupSidebar({
   bookName,
 }: RubyLookupSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [starredWords, setStarredWords] = useState<Set<string>>(new Set());
+  const { starredWords, toggleStar } = useStarredWords(directory, bookName);
   const [showStarredOnly, setShowStarredOnly] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -33,36 +30,6 @@ export default function RubyLookupSidebar({
     bookName,
     enabled: isOpen && !!directory && !!bookName,
   });
-
-  useEffect(() => {
-    if (!directory || !bookName) return;
-    const key = getStarredStorageKey(directory, bookName);
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      try {
-        setStarredWords(new Set(JSON.parse(stored)));
-      } catch {
-        setStarredWords(new Set());
-      }
-    } else {
-      setStarredWords(new Set());
-    }
-  }, [directory, bookName, isOpen]);
-
-  const toggleStar = useCallback((kanji: string) => {
-    setStarredWords(prev => {
-      const next = new Set(prev);
-      if (next.has(kanji)) {
-        next.delete(kanji);
-      } else {
-        next.add(kanji);
-      }
-      const key = getStarredStorageKey(directory, bookName);
-      localStorage.setItem(key, JSON.stringify([...next]));
-      window.dispatchEvent(new CustomEvent('starredWordsChanged'));
-      return next;
-    });
-  }, [directory, bookName]);
 
   const sortedEntries = useMemo(() => {
     let entries = searchQuery ? searchEntries(searchQuery) : (registry?.entries || []);

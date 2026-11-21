@@ -1,15 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import {
-  COLORS,
-  READER_CONFIG,
-  STORAGE_KEYS,
-  THEME,
-  type PriorityScore,
-} from '@/lib/constants';
+import { COLORS, THEME, type PriorityScore } from '@/lib/constants';
 import ProgressBar from './components/ProgressBar';
 import ReaderFAB from './components/ReaderFAB';
 import CopyRangeModal from './components/CopyRangeModal';
@@ -33,11 +27,14 @@ import {
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
+import { usePreference } from '@/app/hooks/usePreference';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import { describeLoadFailure } from './loadFailure';
-import { applyReaderTheme, readerThemeFrom, storedDarkModeFor, type ReaderTheme } from './readerTheme';
-import type { AudioBookContentMode } from '@/lib/types';
+import { applyReaderTheme } from './readerTheme';
+import { READER_PREFERENCES } from './readerPreferences';
+import { acceptsAudioShortcut, closePanel, togglePanel, type ActivePanel } from './readerPanels';
+import { readerMenuActions } from './readerMenuActions';
 
 const ExplanationSidebar = dynamic(
   () => import('@/app/components/reading/ExplanationSidebar'),
@@ -99,27 +96,26 @@ function ReaderContent({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [showFurigana, setShowFurigana] = useState(false);
-  const [fontSize, setFontSize] = useState<number>(READER_CONFIG.DEFAULT_FONT_SIZE);
-  const [lineHeight, setLineHeight] = useState<number>(READER_CONFIG.DEFAULT_LINE_HEIGHT);
-  const [displayMode, setDisplayMode] = useState<'collapsed' | 'expanded'>('collapsed');
-  const [showRephrase, setShowRephrase] = useState(false);
-  const [aiExplanationEnabled, setAiExplanationEnabled] = useState(false);
-  const [readerTheme, setReaderTheme] = useState<ReaderTheme>('light');
+  const [showFurigana, setShowFurigana] = usePreference(READER_PREFERENCES.showFurigana);
+  const [fontSize] = usePreference(READER_PREFERENCES.fontSize);
+  const [lineHeight] = usePreference(READER_PREFERENCES.lineHeight);
+  const [displayMode, setDisplayMode] = usePreference(READER_PREFERENCES.displayMode);
+  const showRephrase = displayMode === 'expanded';
+  const [aiExplanationEnabled] = usePreference(READER_PREFERENCES.aiExplanationEnabled);
+  const [readerTheme, setReaderTheme] = usePreference(READER_PREFERENCES.readerTheme);
   const isDarkMode = readerTheme === 'dark';
 
-  const [audiobookEnabled, setAudiobookEnabled] = useState(false);
+  const [audiobookEnabled, setAudiobookEnabled] = usePreference(READER_PREFERENCES.audiobookEnabled);
   const [keyboardMode, setKeyboardMode] = useState(false);
-  const [contentMode, setContentMode] = useState<AudioBookContentMode>('main');
+  const [contentMode, setContentMode] = usePreference(READER_PREFERENCES.audiobookContentMode);
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [explanationOpen, setExplanationOpen] = useState(false);
-  const [rubyLookupOpen, setRubyLookupOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  // Not a panel: the key prompt opens over whichever panel asked for the key.
+  const [isGuestKeyPromptOpen, setIsGuestKeyPromptOpen] = useState(false);
   const [selectedSentence, setSelectedSentence] = useState('');
   const [sentenceContext, setSentenceContext] = useState('');
 
   const [copyFeedback, setCopyFeedback] = useState(false);
-  const [copyRangeOpen, setCopyRangeOpen] = useState(false);
   const [copyRangeFeedback, setCopyRangeFeedback] = useState(false);
 
   const [priorityScores, setPriorityScores] = useState<Record<number, PriorityScore>>({});
@@ -132,41 +128,8 @@ function ReaderContent({
   );
   const { imageMap } = useBookMetadata(book);
   const { isGuest } = useGuestMode();
-  const hasOpenedExplanation = useOpenedOnce(explanationOpen);
-  const hasOpenedRubyLookup = useOpenedOnce(rubyLookupOpen);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const storedFurigana = localStorage.getItem(STORAGE_KEYS.FURIGANA_ENABLED);
-    if (storedFurigana) setShowFurigana(storedFurigana === 'true');
-
-    const storedFontSize = localStorage.getItem(STORAGE_KEYS.READER_FONT_SIZE);
-    if (storedFontSize) setFontSize(parseInt(storedFontSize, 10));
-
-    const storedLineHeight = localStorage.getItem(STORAGE_KEYS.READER_LINE_HEIGHT);
-    if (storedLineHeight) setLineHeight(parseFloat(storedLineHeight));
-
-    const storedAiExplanation = localStorage.getItem(STORAGE_KEYS.AI_EXPLANATION_ENABLED);
-    if (storedAiExplanation) setAiExplanationEnabled(storedAiExplanation === 'true');
-
-    const storedShowRephrase = localStorage.getItem(STORAGE_KEYS.SHOW_REPHRASE);
-    if (storedShowRephrase) {
-      const isExpanded = storedShowRephrase === 'true';
-      setShowRephrase(isExpanded);
-      setDisplayMode(isExpanded ? 'expanded' : 'collapsed');
-    }
-
-    setReaderTheme(readerThemeFrom(localStorage.getItem(STORAGE_KEYS.READER_DARK_MODE)));
-
-    const storedAudiobook = localStorage.getItem(STORAGE_KEYS.AUDIOBOOK_ENABLED);
-    if (storedAudiobook) setAudiobookEnabled(storedAudiobook === 'true');
-
-    const storedContentMode = localStorage.getItem(STORAGE_KEYS.AUDIOBOOK_CONTENT_MODE);
-    if (storedContentMode === 'main' || storedContentMode === 'sub' || storedContentMode === 'both') {
-      setContentMode(storedContentMode);
-    }
-  }, []);
+  const hasOpenedExplanation = useOpenedOnce(activePanel === 'explanation');
+  const hasOpenedRubyLookup = useOpenedOnce(activePanel === 'ruby');
 
   useEffect(() => applyReaderTheme(document, readerTheme), [readerTheme]);
 
@@ -174,7 +137,7 @@ function ReaderContent({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        setRubyLookupOpen(prev => !prev);
+        setActivePanel(active => togglePanel(active, 'ruby'));
       }
     };
 
@@ -354,9 +317,16 @@ function ReaderContent({
     }
   }, [isLoading, hasExplicitPage, bookmarkPage, currentPage, navigateToPage, didAutoNavigate]);
 
+  // Read through a ref so that playback stopping is not itself a reason to scroll
+  // back to the bookmark; only a page or bookmark change is.
+  const isAudioFollowingRef = useRef(false);
+  useEffect(() => {
+    isAudioFollowingRef.current = audiobookEnabled && audioStatus !== 'idle';
+  }, [audiobookEnabled, audioStatus]);
+
   useEffect(() => {
     if (isLoading) return;
-    if (audiobookEnabled && audioStatus !== 'idle') return;
+    if (isAudioFollowingRef.current) return;
 
     const scrollToBookmark = () => {
       const bookmarkElement = document.getElementById('bookmark');
@@ -367,7 +337,7 @@ function ReaderContent({
 
     const timer = setTimeout(scrollToBookmark, 100);
     return () => clearTimeout(timer);
-  }, [currentPage, isLoading, bookmarkText, audiobookEnabled, audioStatus]);
+  }, [currentPage, isLoading, bookmarkText]);
 
   useEffect(() => {
     if (!audiobookEnabled || audioIndex < 0) return;
@@ -429,8 +399,7 @@ function ReaderContent({
 
     const handleAudioKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-      if (settingsOpen || explanationOpen || rubyLookupOpen) return;
+      if (!acceptsAudioShortcut({ activePanel, isKeyPromptOpen: isGuestKeyPromptOpen, target })) return;
       if (e.key === 'Escape') {
         setKeyboardMode(false);
         return;
@@ -443,7 +412,7 @@ function ReaderContent({
 
     window.addEventListener('keydown', handleAudioKey);
     return () => window.removeEventListener('keydown', handleAudioKey);
-  }, [audiobookEnabled, keyboardMode, settingsOpen, explanationOpen, rubyLookupOpen, togglePlayPause, audioNext, audioPrev, audioReplay, audioPlaySub, bookmarkPlayingSentence]);
+  }, [audiobookEnabled, keyboardMode, activePanel, isGuestKeyPromptOpen, togglePlayPause, audioNext, audioPrev, audioReplay, audioPlaySub, bookmarkPlayingSentence]);
 
   const handlePageChange = useCallback(
     (newPage: number) => {
@@ -455,59 +424,12 @@ function ReaderContent({
     [totalPages, navigateToPage, stopAudioBook]
   );
 
-  const handleToggleFurigana = () => {
-    const newValue = !showFurigana;
-    setShowFurigana(newValue);
-    localStorage.setItem(STORAGE_KEYS.FURIGANA_ENABLED, newValue.toString());
-  };
-
-  const handleFontSizeChange = (size: number) => {
-    setFontSize(size);
-    localStorage.setItem(STORAGE_KEYS.READER_FONT_SIZE, size.toString());
-  };
-
-  const handleLineHeightChange = (height: number) => {
-    setLineHeight(height);
-    localStorage.setItem(STORAGE_KEYS.READER_LINE_HEIGHT, height.toString());
-  };
-
-  const handleDisplayModeChange = (mode: 'collapsed' | 'expanded') => {
-    setDisplayMode(mode);
-    setShowRephrase(mode === 'expanded');
-    localStorage.setItem(STORAGE_KEYS.SHOW_REPHRASE, (mode === 'expanded').toString());
-  };
-
-  const handleToggleRephrase = () => {
-    const newShowRephrase = !showRephrase;
-    setShowRephrase(newShowRephrase);
-    setDisplayMode(newShowRephrase ? 'expanded' : 'collapsed');
-    localStorage.setItem(STORAGE_KEYS.SHOW_REPHRASE, newShowRephrase.toString());
-  };
-
-  const handleAiExplanationChange = (enabled: boolean) => {
-    setAiExplanationEnabled(enabled);
-    localStorage.setItem(STORAGE_KEYS.AI_EXPLANATION_ENABLED, enabled.toString());
-  };
-
-  const handleToggleDarkMode = () => {
-    const nextTheme = isDarkMode ? 'light' : 'dark';
-    setReaderTheme(nextTheme);
-    localStorage.setItem(STORAGE_KEYS.READER_DARK_MODE, storedDarkModeFor(nextTheme));
-  };
-
-  const handleAudiobookChange = (enabled: boolean) => {
-    setAudiobookEnabled(enabled);
-    localStorage.setItem(STORAGE_KEYS.AUDIOBOOK_ENABLED, enabled.toString());
-    if (!enabled) {
-      stopAudioBook();
-      setKeyboardMode(false);
-    }
-  };
-
-  const handleContentModeChange = (mode: AudioBookContentMode) => {
-    setContentMode(mode);
-    localStorage.setItem(STORAGE_KEYS.AUDIOBOOK_CONTENT_MODE, mode);
-  };
+  // Following the stored switch, not the click, also stops playback when another tab turns the audiobook off.
+  useEffect(() => {
+    if (audiobookEnabled) return;
+    stopAudioBook();
+    setKeyboardMode(false);
+  }, [audiobookEnabled, stopAudioBook]);
 
   const handleToggleKeyboardMode = () => {
     setKeyboardMode(prev => !prev);
@@ -519,7 +441,7 @@ function ReaderContent({
     const cleanSentence = stripFurigana(sentence).trim();
     setSelectedSentence(sentence);
     setSentenceContext(cleanSentence);
-    setExplanationOpen(true);
+    setActivePanel('explanation');
   };
 
 
@@ -560,7 +482,7 @@ function ReaderContent({
       setCopyRangeFeedback(true);
       setTimeout(() => {
         setCopyRangeFeedback(false);
-        setCopyRangeOpen(false);
+        setActivePanel(active => closePanel(active, 'copyRange'));
       }, 1000);
     } catch (error) {
       console.error('Failed to copy:', error);
@@ -618,8 +540,30 @@ function ReaderContent({
     );
   }
 
-  const hasBookmark = bookmarkPage != null && bookmarkPage > 0;
   const registryKey = rubyRegistryKey(book);
+  const menuActions = readerMenuActions(
+    {
+      bookmarkPage,
+      currentPage,
+      copyFeedback,
+      isPrioritizing,
+      hasPriority: Object.keys(priorityScores).length > 0,
+      showRephrase,
+      showFurigana,
+      isDarkMode,
+    },
+    {
+      goToBookmark: handleGoToBookmark,
+      copyPage: handleCopyPageText,
+      openCopyRange: () => setActivePanel('copyRange'),
+      prioritize: handlePrioritize,
+      toggleRephrase: () => setDisplayMode(showRephrase ? 'collapsed' : 'expanded'),
+      toggleFurigana: () => setShowFurigana(!showFurigana),
+      toggleRubyLookup: () => setActivePanel(active => togglePanel(active, 'ruby')),
+      toggleDarkMode: () => setReaderTheme(isDarkMode ? 'light' : 'dark'),
+      openSettings: () => setActivePanel('settings'),
+    }
+  );
 
   return (
     <div
@@ -774,55 +718,29 @@ function ReaderContent({
         )}
       </main>
 
-      <ReaderFAB
-        onToggleFurigana={handleToggleFurigana}
-        onToggleRephrase={handleToggleRephrase}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onGoToBookmark={handleGoToBookmark}
-        onCopyPageText={handleCopyPageText}
-        onCopyPageRange={() => setCopyRangeOpen(true)}
-        onToggleDarkMode={handleToggleDarkMode}
-        onToggleRubyLookup={() => setRubyLookupOpen(prev => !prev)}
-        onPrioritize={handlePrioritize}
-        isPrioritizing={isPrioritizing}
-        hasPriority={Object.keys(priorityScores).length > 0}
-        isFuriganaEnabled={showFurigana}
-        showRephrase={showRephrase}
-        isDarkMode={isDarkMode}
-        hasBookmark={hasBookmark}
-        bookmarkPage={bookmarkPage}
-        currentPage={currentPage}
-        copyFeedback={copyFeedback}
-      />
+      <ReaderFAB actions={menuActions} />
 
       <CopyRangeModal
-        isOpen={copyRangeOpen}
-        onClose={() => setCopyRangeOpen(false)}
+        isOpen={activePanel === 'copyRange'}
+        onClose={() => setActivePanel(active => closePanel(active, 'copyRange'))}
         onCopy={handleCopyPageRange}
         currentPage={currentPage}
         totalPages={totalPages}
         copyFeedback={copyRangeFeedback}
       />
 
-      <BottomSheet isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Display">
-        <ReaderSettings
-          fontSize={fontSize}
-          lineHeight={lineHeight}
-          displayMode={displayMode}
-          aiExplanationEnabled={aiExplanationEnabled}
-          onFontSizeChange={handleFontSizeChange}
-          onLineHeightChange={handleLineHeightChange}
-          onDisplayModeChange={handleDisplayModeChange}
-          onAiExplanationChange={handleAiExplanationChange}
-          audiobookEnabled={audiobookEnabled}
-          onAudiobookChange={handleAudiobookChange}
-        />
+      <BottomSheet
+        isOpen={activePanel === 'settings'}
+        onClose={() => setActivePanel(active => closePanel(active, 'settings'))}
+        title="Display"
+      >
+        <ReaderSettings />
       </BottomSheet>
 
       {hasOpenedExplanation && (
         <ExplanationSidebar
-          isOpen={explanationOpen}
-          onClose={() => setExplanationOpen(false)}
+          isOpen={activePanel === 'explanation'}
+          onClose={() => setActivePanel(active => closePanel(active, 'explanation'))}
           sentence={selectedSentence}
           context={sentenceContext}
           fileName={toBookKey(book)}
@@ -832,8 +750,8 @@ function ReaderContent({
 
       {hasOpenedRubyLookup && (
         <RubyLookupSidebar
-          isOpen={rubyLookupOpen}
-          onClose={() => setRubyLookupOpen(false)}
+          isOpen={activePanel === 'ruby'}
+          onClose={() => setActivePanel(active => closePanel(active, 'ruby'))}
           directory={registryKey.directory}
           bookName={registryKey.bookName}
         />
@@ -855,15 +773,15 @@ function ReaderContent({
           onPrev={audioPrev}
           onNext={audioNext}
           onReplay={audioReplay}
-          onContentModeChange={handleContentModeChange}
+          onContentModeChange={setContentMode}
           onSpeedChange={setAudioSpeed}
           onToggleKeyboardMode={handleToggleKeyboardMode}
-          onClose={() => handleAudiobookChange(false)}
+          onClose={() => setAudiobookEnabled(false)}
         />
       )}
 
       {/* Always mounted: a failed session check reports a guest as signed in, and the key prompt must still reach them. */}
-      <GuestApiKeyModal />
+      <GuestApiKeyModal onOpenChange={setIsGuestKeyPromptOpen} />
     </div>
   );
 }
