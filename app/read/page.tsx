@@ -33,6 +33,7 @@ import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookR
 import { describeLoadFailure } from './loadFailure';
 import { applyReaderTheme } from './readerTheme';
 import { READER_PREFERENCES } from './readerPreferences';
+import { acceptsAudioShortcut, closePanel, togglePanel, type ActivePanel } from './readerPanels';
 
 const ExplanationSidebar = dynamic(
   () => import('@/app/components/reading/ExplanationSidebar'),
@@ -107,14 +108,11 @@ function ReaderContent({
   const [keyboardMode, setKeyboardMode] = useState(false);
   const [contentMode, setContentMode] = usePreference(READER_PREFERENCES.audiobookContentMode);
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [explanationOpen, setExplanationOpen] = useState(false);
-  const [rubyLookupOpen, setRubyLookupOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [selectedSentence, setSelectedSentence] = useState('');
   const [sentenceContext, setSentenceContext] = useState('');
 
   const [copyFeedback, setCopyFeedback] = useState(false);
-  const [copyRangeOpen, setCopyRangeOpen] = useState(false);
   const [copyRangeFeedback, setCopyRangeFeedback] = useState(false);
 
   const [priorityScores, setPriorityScores] = useState<Record<number, PriorityScore>>({});
@@ -127,8 +125,8 @@ function ReaderContent({
   );
   const { imageMap } = useBookMetadata(book);
   const { isGuest } = useGuestMode();
-  const hasOpenedExplanation = useOpenedOnce(explanationOpen);
-  const hasOpenedRubyLookup = useOpenedOnce(rubyLookupOpen);
+  const hasOpenedExplanation = useOpenedOnce(activePanel === 'explanation');
+  const hasOpenedRubyLookup = useOpenedOnce(activePanel === 'ruby');
 
   useEffect(() => applyReaderTheme(document, readerTheme), [readerTheme]);
 
@@ -136,7 +134,7 @@ function ReaderContent({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        setRubyLookupOpen(prev => !prev);
+        setActivePanel(active => togglePanel(active, 'ruby'));
       }
     };
 
@@ -390,9 +388,7 @@ function ReaderContent({
     };
 
     const handleAudioKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-      if (settingsOpen || explanationOpen || rubyLookupOpen) return;
+      if (!acceptsAudioShortcut(activePanel, e.target as HTMLElement | null)) return;
       if (e.key === 'Escape') {
         setKeyboardMode(false);
         return;
@@ -405,7 +401,7 @@ function ReaderContent({
 
     window.addEventListener('keydown', handleAudioKey);
     return () => window.removeEventListener('keydown', handleAudioKey);
-  }, [audiobookEnabled, keyboardMode, settingsOpen, explanationOpen, rubyLookupOpen, togglePlayPause, audioNext, audioPrev, audioReplay, audioPlaySub, bookmarkPlayingSentence]);
+  }, [audiobookEnabled, keyboardMode, activePanel, togglePlayPause, audioNext, audioPrev, audioReplay, audioPlaySub, bookmarkPlayingSentence]);
 
   const handlePageChange = useCallback(
     (newPage: number) => {
@@ -446,7 +442,7 @@ function ReaderContent({
     const cleanSentence = stripFurigana(sentence).trim();
     setSelectedSentence(sentence);
     setSentenceContext(cleanSentence);
-    setExplanationOpen(true);
+    setActivePanel('explanation');
   };
 
 
@@ -487,7 +483,7 @@ function ReaderContent({
       setCopyRangeFeedback(true);
       setTimeout(() => {
         setCopyRangeFeedback(false);
-        setCopyRangeOpen(false);
+        setActivePanel(active => closePanel(active, 'copyRange'));
       }, 1000);
     } catch (error) {
       console.error('Failed to copy:', error);
@@ -704,12 +700,12 @@ function ReaderContent({
       <ReaderFAB
         onToggleFurigana={handleToggleFurigana}
         onToggleRephrase={handleToggleRephrase}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => setActivePanel('settings')}
         onGoToBookmark={handleGoToBookmark}
         onCopyPageText={handleCopyPageText}
-        onCopyPageRange={() => setCopyRangeOpen(true)}
+        onCopyPageRange={() => setActivePanel('copyRange')}
         onToggleDarkMode={handleToggleDarkMode}
-        onToggleRubyLookup={() => setRubyLookupOpen(prev => !prev)}
+        onToggleRubyLookup={() => setActivePanel(active => togglePanel(active, 'ruby'))}
         onPrioritize={handlePrioritize}
         isPrioritizing={isPrioritizing}
         hasPriority={Object.keys(priorityScores).length > 0}
@@ -723,22 +719,26 @@ function ReaderContent({
       />
 
       <CopyRangeModal
-        isOpen={copyRangeOpen}
-        onClose={() => setCopyRangeOpen(false)}
+        isOpen={activePanel === 'copyRange'}
+        onClose={() => setActivePanel(active => closePanel(active, 'copyRange'))}
         onCopy={handleCopyPageRange}
         currentPage={currentPage}
         totalPages={totalPages}
         copyFeedback={copyRangeFeedback}
       />
 
-      <BottomSheet isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Display">
+      <BottomSheet
+        isOpen={activePanel === 'settings'}
+        onClose={() => setActivePanel(active => closePanel(active, 'settings'))}
+        title="Display"
+      >
         <ReaderSettings onAudiobookChange={handleAudiobookChange} />
       </BottomSheet>
 
       {hasOpenedExplanation && (
         <ExplanationSidebar
-          isOpen={explanationOpen}
-          onClose={() => setExplanationOpen(false)}
+          isOpen={activePanel === 'explanation'}
+          onClose={() => setActivePanel(active => closePanel(active, 'explanation'))}
           sentence={selectedSentence}
           context={sentenceContext}
           fileName={toBookKey(book)}
@@ -748,8 +748,8 @@ function ReaderContent({
 
       {hasOpenedRubyLookup && (
         <RubyLookupSidebar
-          isOpen={rubyLookupOpen}
-          onClose={() => setRubyLookupOpen(false)}
+          isOpen={activePanel === 'ruby'}
+          onClose={() => setActivePanel(active => closePanel(active, 'ruby'))}
           directory={registryKey.directory}
           bookName={registryKey.bookName}
         />
