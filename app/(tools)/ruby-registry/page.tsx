@@ -139,8 +139,7 @@ function RubyRegistryContent() {
       <div className="max-w-[1120px] mx-auto px-5 sm:px-8">
         <AppHeader />
       </div>
-      <div className="max-w-4xl mx-auto px-4 pt-10">
-        {/* Header */}
+      <div className="max-w-4xl mx-auto px-5 sm:px-8 pt-10">
         <div className="mb-8">
           <h1 className="font-mincho font-bold text-3xl mb-2">Ruby Registry</h1>
           <p className="text-sm" style={{ color: COLORS.SECONDARY }}>
