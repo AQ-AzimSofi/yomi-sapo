@@ -79,6 +79,17 @@ describe('fetchBookText', () => {
     await expect(fetchBookText(URL)).rejects.toThrow('Failed to load content');
   });
 
+  it('still returns the downloaded text when storing it fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const failingCache = { match: async () => undefined, put: async () => Promise.reject(new Error('QuotaExceededError')) };
+    vi.stubGlobal('caches', { open: async () => failingCache, delete: vi.fn() });
+    fetchMock.mockResolvedValue(bookResponse('本文', '"10-1-full"'));
+
+    expect(await fetchBookText(URL)).toBe('本文');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('reads from the network when Cache Storage is unavailable', async () => {
     vi.stubGlobal('caches', undefined);
     fetchMock.mockResolvedValue(bookResponse('本文', '"10-1-full"'));
@@ -88,6 +99,14 @@ describe('fetchBookText', () => {
 });
 
 describe('clearBookTextCache', () => {
+  it('does not throw when Cache Storage refuses the delete', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('caches', { open: vi.fn(), delete: async () => Promise.reject(new Error('SecurityError')) });
+
+    await expect(clearBookTextCache()).resolves.toBeUndefined();
+    warn.mockRestore();
+  });
+
   it('removes every stored book', async () => {
     fetchMock.mockResolvedValue(bookResponse('本文', '"10-1-full"'));
     await fetchBookText(URL);

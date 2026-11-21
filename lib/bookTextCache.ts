@@ -39,13 +39,28 @@ export async function fetchBookText(url: string, signal?: AbortSignal): Promise<
   }
   if (!response.ok) throw new Error('Failed to load content');
   if (cache && response.headers.get('etag')) {
-    await cache.put(url, response.clone());
+    await storeBestEffort(cache, url, response.clone());
   }
   return readText(response);
+}
+
+// The copy only saves bandwidth, so a full disk or a restricted storage context
+// must never stop a downloaded book from opening.
+async function storeBestEffort(cache: Cache, url: string, response: Response): Promise<void> {
+  try {
+    await cache.put(url, response);
+  } catch (error) {
+    console.warn('Could not store the book for next time:', error);
+  }
 }
 
 /** Removes every stored book, so a signed-out browser keeps no full text. */
 export async function clearBookTextCache(): Promise<void> {
   if (typeof caches === 'undefined') return;
-  await caches.delete(CACHE_NAME);
+  try {
+    await caches.delete(CACHE_NAME);
+  } catch (error) {
+    // Same private modes where opening the cache fails; nothing was stored there.
+    console.warn('Could not clear stored books:', error);
+  }
 }
