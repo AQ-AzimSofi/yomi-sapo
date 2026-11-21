@@ -815,7 +815,7 @@ function ReaderContent({
         copyFeedback={copyRangeFeedback}
       />
 
-      <BottomSheet isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Display" isDarkMode={isDarkMode}>
+      <BottomSheet isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Display">
         <ReaderSettings
           fontSize={fontSize}
           lineHeight={lineHeight}

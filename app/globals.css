@@ -163,10 +163,10 @@ rt {
 /* Range slider: a thin rule with an ink marker.
    The custom properties let a caller paint the filled part of the track. */
 input[type="range"] {
-  --range-fill: #2F4BA0;
-  --range-track: #D5D8DE;
-  --range-thumb: #FFFFFF;
-  --range-thumb-edge: #15171C;
+  --range-fill: var(--color-primary);
+  --range-track: var(--color-neutral);
+  --range-thumb: var(--color-surface);
+  --range-thumb-edge: var(--color-ink);
   -webkit-appearance: none;
   appearance: none;
   height: 2px;
@@ -304,16 +304,16 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .segmented-control button:not(.active):hover {
-  background: color-mix(in srgb, #15171C 6%, transparent);
+  background: color-mix(in srgb, var(--color-ink) 6%, transparent);
 }
 
 .segmented-control button:not(.active):active {
-  background: color-mix(in srgb, #15171C 12%, transparent);
+  background: color-mix(in srgb, var(--color-ink) 12%, transparent);
 }
 
 .segmented-control button.active {
-  background: #15171C;
-  color: #FFFFFF;
+  background: var(--color-ink);
+  color: var(--color-on-ink);
   font-weight: 700;
   box-shadow: none;
 }
@@ -325,7 +325,7 @@ input[type="range"]::-moz-range-thumb {
   width: 44px;
   height: 24px;
   border-radius: 0;
-  background: #D5D8DE;
+  background: var(--color-neutral);
   border: none;
   cursor: pointer;
   transition: background-color 0.15s ease;
@@ -333,7 +333,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .apple-toggle.on {
-  background: #2F4BA0;
+  background: var(--color-primary);
 }
 
 .apple-toggle .thumb {
@@ -343,18 +343,19 @@ input[type="range"]::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 0;
-  background: #FFFFFF;
+  background: var(--color-toggle-thumb);
   box-shadow: none;
   transition: transform 0.15s ease;
 }
 
 .apple-toggle.on .thumb {
+  background: var(--color-on-primary);
   transform: translateX(20px);
 }
 
 /* Grouped settings list */
 .settings-group {
-  background: #FFFFFF;
+  background: var(--color-surface);
   border: 1px solid var(--color-neutral);
   border-radius: 0;
   overflow: hidden;
@@ -376,73 +377,13 @@ input[type="range"]::-moz-range-thumb {
 
 .settings-label {
   font-size: 15px;
-  color: #15171C;
+  color: var(--color-ink);
 }
 
 .settings-sublabel {
   font-size: 12px;
   color: var(--color-secondary);
   margin-top: 1px;
-}
-
-/* Dark mode overrides for BottomSheet */
-.dark-sheet input[type="range"] {
-  --range-fill: #9DB0EC;
-  --range-track: #343943;
-  --range-thumb: #1E2128;
-  --range-thumb-edge: #ECEAE4;
-}
-
-.dark-sheet .segmented-control {
-  background: transparent;
-  border-color: #343943;
-}
-
-.dark-sheet .segmented-control button {
-  color: #A3AAB8;
-}
-
-.dark-sheet .segmented-control button.active {
-  background: #ECEAE4;
-  color: #15171C;
-  box-shadow: none;
-}
-
-.dark-sheet .segmented-control button:not(.active):hover {
-  background: color-mix(in srgb, #ECEAE4 8%, transparent);
-}
-
-.dark-sheet .apple-toggle {
-  background: #343943;
-}
-
-.dark-sheet .apple-toggle.on {
-  background: #9DB0EC;
-}
-
-.dark-sheet .apple-toggle .thumb {
-  background: #ECEAE4;
-}
-
-.dark-sheet .apple-toggle.on .thumb {
-  background: #15171C;
-}
-
-.dark-sheet .settings-group {
-  background: #1E2128;
-  border-color: #343943;
-}
-
-.dark-sheet .settings-row + .settings-row {
-  border-top-color: #343943;
-}
-
-.dark-sheet .settings-label {
-  color: #ECEAE4;
-}
-
-.dark-sheet .settings-sublabel {
-  color: #A3AAB8;
 }
 
 /* Interactive elements: feedback comes from opacity and ink tints, never from movement */

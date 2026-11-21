@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { COLORS, DARK_COLORS } from '@/lib/constants';
-import { toTint } from '@/lib/utils/colorTint';
+import { THEME } from '@/lib/constants';
 
 interface BottomSheetProps {
   isOpen: boolean;
@@ -10,7 +9,6 @@ interface BottomSheetProps {
   children: React.ReactNode;
   title?: string;
   height?: 'auto' | 'half' | 'full';
-  isDarkMode?: boolean;
 }
 
 export default function BottomSheet({
@@ -19,7 +17,6 @@ export default function BottomSheet({
   children,
   title,
   height = 'auto',
-  isDarkMode = false,
 }: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const [dragY, setDragY] = useState(0);
@@ -74,28 +71,23 @@ export default function BottomSheet({
     ? 'max-h-[50vh]'
     : 'max-h-[85vh]';
 
-  const surfaceColor = isDarkMode ? DARK_COLORS.SURFACE : COLORS.SURFACE;
-  const textColor = isDarkMode ? DARK_COLORS.TEXT : COLORS.INK;
-  const mutedColor = isDarkMode ? DARK_COLORS.TEXT_MUTED : COLORS.SECONDARY;
-  const ruleColor = isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL;
-
   return (
     <>
       <div
         className="fixed inset-0 z-[100] transition-colors duration-300"
         style={{
-          backgroundColor: animateIn ? toTint(COLORS.INK, 30) : 'transparent',
+          backgroundColor: animateIn ? THEME.SCRIM : 'transparent',
         }}
         onClick={onClose}
       />
 
       <div
         ref={sheetRef}
-        className={`fixed bottom-0 left-0 right-0 z-[101] ${heightClass} overflow-y-auto transition-transform duration-300${isDarkMode ? ' dark-sheet' : ''}`}
+        className={`fixed bottom-0 left-0 right-0 z-[101] ${heightClass} overflow-y-auto transition-transform duration-300`}
         style={{
-          backgroundColor: surfaceColor,
-          color: textColor,
-          borderTop: `1px solid ${textColor}`,
+          backgroundColor: THEME.SURFACE,
+          color: THEME.INK,
+          borderTop: `1px solid ${THEME.INK}`,
           transform: animateIn
             ? `translateY(${dragY}px)`
             : 'translateY(100%)',
@@ -107,18 +99,18 @@ export default function BottomSheet({
         onTouchEnd={handleTouchEnd}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 pt-2 pb-0" style={{ backgroundColor: surfaceColor }}>
+        <div className="sticky top-0 z-10 pt-2 pb-0" style={{ backgroundColor: THEME.SURFACE }}>
           <div className="flex justify-center mb-2">
-            <div className="w-9 h-0.5" style={{ backgroundColor: ruleColor }} />
+            <div className="w-9 h-0.5" style={{ backgroundColor: THEME.NEUTRAL }} />
           </div>
 
           {title && (
-            <div className="flex items-center justify-between px-5 pb-3" style={{ borderBottom: `1px solid ${ruleColor}` }}>
-              <h2 className="font-mincho font-bold text-lg tracking-[0.04em]" style={{ color: textColor }}>{title}</h2>
+            <div className="flex items-center justify-between px-5 pb-3" style={{ borderBottom: `1px solid ${THEME.NEUTRAL}` }}>
+              <h2 className="font-mincho font-bold text-lg tracking-[0.04em]" style={{ color: THEME.INK }}>{title}</h2>
               <button
                 onClick={onClose}
                 className="w-8 h-8 flex items-center justify-center interactive-close"
-                style={{ backgroundColor: 'transparent', color: mutedColor }}
+                style={{ backgroundColor: 'transparent', color: THEME.SECONDARY }}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
