@@ -20,10 +20,11 @@ export function normalizeNewlines(text: string): string {
 }
 
 // Both rephrase markers start a line: a ">>" sub item and a "<" or "＜" heading.
-// The "<" of a <ruby> or <rt> tag is not a heading, so furigana prose that
-// happens to contain ">>" is never read as rephrase (and rendered empty).
+// The "<" of a ruby tag (<ruby>, <rb>, <rt>, <rp> or a closing one) is not a
+// heading, so furigana prose that happens to contain ">>" is never read as
+// rephrase (and rendered empty).
 const REPHRASE_SUB_ITEM_LINE = /^>>/m;
-const REPHRASE_HEADING_LINE = /^[<＜](?!ruby>|rt>)/m;
+const REPHRASE_HEADING_LINE = /^[<＜](?!\/?(?:ruby|rb|rt|rp)>)/m;
 
 export function detectContentType(text: string): ContentType {
   if (REPHRASE_SUB_ITEM_LINE.test(text) && REPHRASE_HEADING_LINE.test(text)) {
@@ -74,14 +75,36 @@ function bookmarkMatchText(text: string): string {
 }
 
 /**
- * Bookmarks are stored as the unit's text. The first unit whose text matches
- * (ignoring furigana and line breaks) is the bookmarked one.
+ * Bookmarks are stored as the unit's text and the page it was saved on, and
+ * matched ignoring furigana and line breaks. The same text can appear more than
+ * once, so the first match on or after the saved page wins; without a saved
+ * page, or when the text moved earlier (a rebuilt book), the first match does.
  */
-export function findBookmarkIndex(mainTexts: readonly string[], bookmarkText: string): number | null {
+export function findBookmarkIndex(
+  mainTexts: readonly string[],
+  bookmarkText: string,
+  savedPage?: number | null
+): number | null {
   const target = bookmarkMatchText(bookmarkText);
   if (!target) return null;
-  const index = mainTexts.findIndex((text) => bookmarkMatchText(text) === target);
-  return index === -1 ? null : index;
+  const searchFrom = savedPage ? pageStartIndex(savedPage) : 0;
+  const isMatch = (text: string) => bookmarkMatchText(text) === target;
+  const fromSavedPage = mainTexts.findIndex((text, unitIndex) => unitIndex >= searchFrom && isMatch(text));
+  if (fromSavedPage !== -1) return fromSavedPage;
+  const anywhere = mainTexts.findIndex(isMatch);
+  return anywhere === -1 ? null : anywhere;
+}
+
+/** The page a bookmark opens on, shared by the reader and the library. */
+export function bookmarkPageFor(
+  mainTexts: readonly string[],
+  bookmarkText: string,
+  savedPage?: number | null
+): number | null {
+  const legacyPage = legacyPageBookmark(bookmarkText);
+  if (legacyPage !== null) return legacyPage;
+  const unitIndex = findBookmarkIndex(mainTexts, bookmarkText, savedPage);
+  return unitIndex === null ? null : pageOfIndex(unitIndex);
 }
 
 /** Bookmarks saved before text bookmarks existed were stored as "page:N". */

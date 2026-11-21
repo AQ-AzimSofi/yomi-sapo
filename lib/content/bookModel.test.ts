@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  bookmarkPageFor,
   buildPlayableUnits,
   detectContentType,
   findBookmarkIndex,
@@ -33,13 +34,20 @@ describe('detectContentType', () => {
     expect(detectContentType('今日は晴れ。')).toBe('plain');
   });
 
-  it('treats text with < but no >> as plain', () => {
-    expect(detectContentType('一 < 二')).toBe('plain');
+  it('treats text with a < heading line but no >> line as plain', () => {
+    expect(detectContentType('<原文\n本文')).toBe('plain');
   });
 
-  it('treats text with >> but no < as plain', () => {
-    expect(detectContentType('一 >> 二')).toBe('plain');
+  it('treats text with a >> line but no < heading line as plain', () => {
+    expect(detectContentType('>>要約\n本文')).toBe('plain');
   });
+
+  it.each(['<rt>かん</rt>', '<rb>漢</rb>', '</ruby>字', '</rt>', '<rp>(</rp>'])(
+    'does not read a line starting with the ruby tag %j as a heading',
+    (line) => {
+      expect(detectContentType(`<ruby>漢\n${line}\n>>やさしい`)).toBe('furigana');
+    }
+  );
 
   it('treats a bracket with no text before it as plain', () => {
     expect(detectContentType('[注]')).toBe('plain');
@@ -198,8 +206,45 @@ describe('findBookmarkIndex', () => {
     expect(findBookmarkIndex(mainTexts, '四つ目。')).toBeNull();
   });
 
-  it('returns null for an empty bookmark', () => {
-    expect(findBookmarkIndex(mainTexts, '  ')).toBeNull();
+  it.each(['', '  '])('returns null for the blank bookmark %j, even when a unit is blank', (bookmark) => {
+    expect(findBookmarkIndex(['', ' ', '一つ目。'], bookmark)).toBeNull();
+  });
+
+  it('matches a bookmark saved with carriage returns', () => {
+    expect(findBookmarkIndex(['一続き'], '一\r続き\r')).toBe(0);
+    expect(findBookmarkIndex(['一。\n二。'], '一。\r\n二。')).toBe(0);
+  });
+
+  describe('with the page the bookmark was saved on', () => {
+    const repeated = Array.from({ length: 120 }, (_, unit_i) => (unit_i % 50 === 0 ? '同じ文。' : `文${unit_i}。`));
+
+    it('picks the match on the saved page over an earlier one', () => {
+      expect(findBookmarkIndex(repeated, '同じ文。', 3)).toBe(100);
+    });
+
+    it('picks the first match when no page was saved', () => {
+      expect(findBookmarkIndex(repeated, '同じ文。', null)).toBe(0);
+    });
+
+    it('falls back to the first match when the text moved before the saved page', () => {
+      expect(findBookmarkIndex(['同じ文。', '他。'], '同じ文。', 9)).toBe(0);
+    });
+  });
+});
+
+describe('bookmarkPageFor', () => {
+  const units = Array.from({ length: 120 }, (_, unit_i) => (unit_i === 70 ? '印の文。' : `文${unit_i}。`));
+
+  it('opens an old page:N bookmark on its page', () => {
+    expect(bookmarkPageFor(units, 'page:2')).toBe(2);
+  });
+
+  it('opens a text bookmark on the page of its unit', () => {
+    expect(bookmarkPageFor(units, '印の文。')).toBe(2);
+  });
+
+  it.each(['見つからない文。', '  '])('returns null for the bookmark %j', (bookmark) => {
+    expect(bookmarkPageFor(units, bookmark)).toBeNull();
   });
 });
 
@@ -208,8 +253,8 @@ describe('legacyPageBookmark', () => {
     expect(legacyPageBookmark('page:12')).toBe(12);
   });
 
-  it('returns null for a text bookmark', () => {
-    expect(legacyPageBookmark('page:12 の話')).toBeNull();
+  it.each(['page:12 の話', '第page:3', 'page:'])('returns null for the text bookmark %j', (bookmark) => {
+    expect(legacyPageBookmark(bookmark)).toBeNull();
   });
 });
 
