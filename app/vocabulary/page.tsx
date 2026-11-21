@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { PAGE_ROUTES } from '@/lib/constants';
 import AppHeader from '@/app/components/ui/AppHeader';
 import { COLORS, STORAGE_KEYS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
@@ -117,8 +118,7 @@ export default function VocabularyPage() {
       <div className="max-w-[1120px] mx-auto px-5 sm:px-8">
         <AppHeader currentPage="vocabulary" />
       </div>
-      <div className="max-w-7xl mx-auto px-4 pt-10">
-        {/* Header */}
+      <div className="max-w-[1120px] mx-auto px-5 sm:px-8 pt-10">
         <div className="mb-8">
           <h1 className="font-mincho font-bold text-3xl mb-2">単語帳</h1>
           <p className="text-sm" style={{ color: COLORS.SECONDARY }}>
@@ -172,17 +172,17 @@ export default function VocabularyPage() {
               まだ単語を保存していません
             </p>
             <p className="text-sm mb-6" style={{ color: COLORS.SECONDARY }}>
-              単語帳モードをONにして、テキストを選択してください
+              読書中に保存した単語がここに表示されます
             </p>
             <Link
-              href="/"
+              href={PAGE_ROUTES.LIBRARY}
               className="inline-flex items-center min-h-11 px-5 text-sm font-bold interactive-btn"
               style={{
                 backgroundColor: COLORS.PRIMARY,
                 color: COLORS.SURFACE,
               }}
             >
-              読書ページへ
+              本棚へ
             </Link>
           </div>
         )}
