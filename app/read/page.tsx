@@ -642,7 +642,7 @@ function ReaderContent({
         <div
           style={{
             position: 'fixed',
-            bottom: audiobookEnabled ? 150 : 24,
+            bottom: audiobookEnabled ? AUDIO_BAR_INSET_PX : 24,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 60,
@@ -671,7 +671,7 @@ function ReaderContent({
           role="alert"
           style={{
             position: 'fixed',
-            bottom: audiobookEnabled ? 150 : 24,
+            bottom: audiobookEnabled ? AUDIO_BAR_INSET_PX : 24,
             left: '50%',
             transform: 'translateX(-50%)',
             // Above the open menu and the copy dialog, where a copy can fail.
