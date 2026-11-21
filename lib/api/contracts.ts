@@ -195,6 +195,12 @@ export interface VocabularyEntryResponse {
   entry: VocabularyEntry;
 }
 
+// /api/vocabulary POST
+export interface SaveVocabularyResponse extends VocabularyEntryResponse {
+  /** False when the same word from the same sentence was already saved; `entry` is then the stored one. */
+  created: boolean;
+}
+
 export interface DeleteVocabularyResponse {
   success: true;
   message: string;

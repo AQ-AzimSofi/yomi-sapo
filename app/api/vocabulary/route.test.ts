@@ -102,7 +102,17 @@ describe('POST /api/vocabulary', () => {
     notes: 'メモ',
   };
 
+  // The duplicate lookup runs the real list query on the mocked driver.
+  function storeRows(rows: object[]): void {
+    vi.mocked(sql).mockResolvedValue(rows as never);
+  }
+
+  function sentQueryValues(): unknown[] {
+    return vi.mocked(sql).mock.calls.flatMap(([, ...values]) => values);
+  }
+
   it('saves the camelCase body and returns the created entry', async () => {
+    storeRows([]);
     vi.mocked(createVocabularyEntry).mockResolvedValue(ENTRY);
 
     const response = await POST(createRequest(CREATE_BODY));
@@ -112,7 +122,42 @@ describe('POST /api/vocabulary', () => {
       success: true,
       message: 'Vocabulary entry created',
       entry: ENTRY,
+      created: true,
     });
+  });
+
+  it('looks for the word among the entries saved from the same book', async () => {
+    storeRows([]);
+    vi.mocked(createVocabularyEntry).mockResolvedValue(ENTRY);
+
+    await POST(createRequest(CREATE_BODY));
+
+    expect(sentQueryValues()).toEqual(expect.arrayContaining([`%${ENTRY.word}%`, ENTRY.fileName, ENTRY.directory]));
+  });
+
+  it('returns the stored entry instead of saving the same word from the same sentence again', async () => {
+    storeRows([ROW]);
+
+    const response = await POST(createRequest(CREATE_BODY));
+
+    expect(createVocabularyEntry).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toStrictEqual({
+      success: true,
+      message: 'Vocabulary entry already saved',
+      entry: ENTRY,
+      created: false,
+    });
+  });
+
+  it('saves the same word again from another sentence', async () => {
+    storeRows([{ ...ROW, sentence: '言葉を探す。' }]);
+    vi.mocked(createVocabularyEntry).mockResolvedValue(ENTRY);
+
+    const response = await POST(createRequest(CREATE_BODY));
+
+    expect(createVocabularyEntry).toHaveBeenCalledWith(CREATE_BODY);
+    expect(await response.json()).toMatchObject({ created: true });
   });
 
   it('rejects a guest without saving', async () => {

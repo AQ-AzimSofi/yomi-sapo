@@ -3,7 +3,9 @@ import { getVocabularyEntries, createVocabularyEntry } from '@/lib/db/vocabulary
 import { withAuth } from '@/lib/auth/guards';
 import { errorBody, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
-import type { SaveVocabularyRequest, VocabularyEntryResponse, VocabularyListResponse } from '@/lib/api/contracts';
+import { isSameSavedWord } from '@/lib/vocabulary/duplicates';
+import type { VocabularyEntry } from '@/lib/types';
+import type { SaveVocabularyRequest, SaveVocabularyResponse, VocabularyListResponse } from '@/lib/api/contracts';
 
 function isSaveVocabularyRequest(body: unknown): body is SaveVocabularyRequest {
   return (
@@ -16,6 +18,12 @@ function isSaveVocabularyRequest(body: unknown): body is SaveVocabularyRequest {
     isOptionalString(body.paragraphText) &&
     isOptionalString(body.notes)
   );
+}
+
+// The list filter matches the word as a substring; the rule picks the exact entry.
+async function findSavedEntry(draft: SaveVocabularyRequest): Promise<VocabularyEntry | undefined> {
+  const savedFromBook = await getVocabularyEntries({ word: draft.word, fileName: draft.fileName, directory: draft.directory });
+  return savedFromBook.find((saved) => isSameSavedWord(saved, draft));
 }
 
 // Guests are never sent here: the vocabulary page is behind the login redirect.
@@ -54,6 +62,17 @@ export const POST = withAuth('owner', async (request) => {
     'Missing required fields: word, sentence, fileName, directory'
   );
   if (body instanceof Response) return body;
+
+  const savedEntry = await findSavedEntry(body);
+  if (savedEntry) {
+    return NextResponse.json<SaveVocabularyResponse>({
+      success: true,
+      message: 'Vocabulary entry already saved',
+      entry: savedEntry,
+      created: false,
+    });
+  }
+
   const { word, reading, sentence, fileName, directory, paragraphText, notes } = body;
 
   const entry = await createVocabularyEntry({
@@ -66,9 +85,10 @@ export const POST = withAuth('owner', async (request) => {
     notes,
   });
 
-  return NextResponse.json<VocabularyEntryResponse>({
+  return NextResponse.json<SaveVocabularyResponse>({
     success: true,
     message: 'Vocabulary entry created',
     entry,
+    created: true,
   });
 });
