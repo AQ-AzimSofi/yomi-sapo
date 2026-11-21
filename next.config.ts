@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Standalone output for Docker deployment
+  // OpenNext packages the standalone output into the Lambda function
   output: 'standalone',
 
   webpack: (config, { isServer }) => {
