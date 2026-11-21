@@ -58,7 +58,13 @@ describe('detectContentType', () => {
     expect(performance.now() - startedMs).toBeLessThan(100);
   });
 
-  it.todo('does not treat text whose only "<" is ruby markup as rephrase (bug)');
+  it('does not treat text whose only "<" is ruby markup as rephrase', () => {
+    expect(detectContentType('<ruby>漢字<rt>かんじ</rt></ruby>\n>>やさしい文')).toBe('furigana');
+  });
+
+  it('does not treat prose with ">>" in the middle of a line as rephrase', () => {
+    expect(detectContentType('<原文\n矢印>>のある行')).toBe('plain');
+  });
 });
 
 describe('parseReaderItems', () => {

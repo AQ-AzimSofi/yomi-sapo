@@ -19,8 +19,14 @@ export function normalizeNewlines(text: string): string {
   return text.replace(/\r\n?/g, '\n');
 }
 
+// Both rephrase markers start a line: a ">>" sub item and a "<" or "＜" heading.
+// The "<" of a <ruby> or <rt> tag is not a heading, so furigana prose that
+// happens to contain ">>" is never read as rephrase (and rendered empty).
+const REPHRASE_SUB_ITEM_LINE = /^>>/m;
+const REPHRASE_HEADING_LINE = /^[<＜](?!ruby>|rt>)/m;
+
 export function detectContentType(text: string): ContentType {
-  if (text.includes('>>') && /[<＜]/.test(text)) {
+  if (REPHRASE_SUB_ITEM_LINE.test(text) && REPHRASE_HEADING_LINE.test(text)) {
     return 'rephrase';
   }
   // The bracket pattern backtracks over long runs, so only try it when a bracket exists.
