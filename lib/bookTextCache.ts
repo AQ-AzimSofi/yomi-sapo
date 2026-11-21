@@ -1,15 +1,25 @@
 import { BOOK_VERSION_HEADER } from '@/lib/utils/etag';
 
-const CACHE_NAME = 'book-text-v1';
+// Bump the version when the stored URLs or bodies change. v1 was keyed by the
+// combined fileName=directory/file URL the reader no longer requests.
+const CACHE_NAME_PREFIX = 'book-text-';
+const CACHE_NAME = `${CACHE_NAME_PREFIX}v2`;
 
 // CloudFront drops If-None-Match before it reaches the app, so the browser's HTTP
 // cache can never revalidate a book. The reader keeps its own copy in Cache
 // Storage instead and sends the stored ETag in a custom header; the server
 // answers 204 when that version is still current.
 
+async function deleteBookTextCaches({ keep }: { keep: string | null }): Promise<void> {
+  const cacheNames = await caches.keys();
+  const staleNames = cacheNames.filter((name) => name.startsWith(CACHE_NAME_PREFIX) && name !== keep);
+  await Promise.all(staleNames.map((name) => caches.delete(name)));
+}
+
 async function openCache(): Promise<Cache | null> {
   if (typeof caches === 'undefined') return null;
   try {
+    await deleteBookTextCaches({ keep: CACHE_NAME });
     return await caches.open(CACHE_NAME);
   } catch {
     // Cache Storage is unavailable in some private modes; read from the network.
@@ -58,7 +68,7 @@ async function storeBestEffort(cache: Cache, url: string, response: Response): P
 export async function clearBookTextCache(): Promise<void> {
   if (typeof caches === 'undefined') return;
   try {
-    await caches.delete(CACHE_NAME);
+    await deleteBookTextCaches({ keep: null });
   } catch (error) {
     // Same private modes where opening the cache fails; nothing was stored there.
     console.warn('Could not clear stored books:', error);

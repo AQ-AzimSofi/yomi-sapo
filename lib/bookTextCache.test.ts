@@ -2,24 +2,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearBookTextCache, fetchBookText } from './bookTextCache';
 
 const URL = '/api/read-public-txt?fileName=ほん';
+const ORPHANED_CACHE = 'book-text-v1';
+const OTHER_APP_CACHE = 'other-app-cache';
 
 function bookResponse(text: string, etag: string): Response {
   return new Response(JSON.stringify({ text }), { status: 200, headers: { 'content-type': 'application/json', etag } });
 }
 
-function fakeCacheStorage() {
-  const entries = new Map<string, Response>();
-  const cache = {
-    match: async (key: string) => entries.get(key)?.clone(),
-    put: async (key: string, response: Response) => {
-      entries.set(key, response);
-    },
+function fakeCacheStorage(existingCacheNames: string[] = []) {
+  const cachesByName = new Map<string, Map<string, Response>>(existingCacheNames.map((name) => [name, new Map()]));
+  const openNamed = (name: string) => {
+    const entries = cachesByName.get(name) ?? new Map<string, Response>();
+    cachesByName.set(name, entries);
+    return {
+      match: async (key: string) => entries.get(key)?.clone(),
+      put: async (key: string, response: Response) => {
+        entries.set(key, response);
+      },
+    };
   };
+  const storedUrls = () => [...cachesByName.values()].flatMap((entries) => [...entries.keys()]);
   return {
-    entries,
+    cachesByName,
+    storedUrls,
     storage: {
-      open: async () => cache,
-      delete: vi.fn(async () => entries.clear()),
+      open: vi.fn(async (name: string) => openNamed(name)),
+      keys: async () => [...cachesByName.keys()],
+      delete: vi.fn(async (name: string) => cachesByName.delete(name)),
     },
   };
 }
@@ -27,9 +36,13 @@ function fakeCacheStorage() {
 let cacheStorage: ReturnType<typeof fakeCacheStorage>;
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 
-beforeEach(() => {
-  cacheStorage = fakeCacheStorage();
+function useCacheStorage(existingCacheNames: string[]): void {
+  cacheStorage = fakeCacheStorage(existingCacheNames);
   vi.stubGlobal('caches', cacheStorage.storage);
+}
+
+beforeEach(() => {
+  useCacheStorage([]);
   vi.stubGlobal('fetch', fetchMock);
 });
 
@@ -43,7 +56,7 @@ describe('fetchBookText', () => {
     fetchMock.mockResolvedValue(bookResponse('本文', 'W/"10-1-full"'));
 
     expect(await fetchBookText(URL)).toBe('本文');
-    expect(cacheStorage.entries.has(URL)).toBe(true);
+    expect(cacheStorage.storedUrls()).toEqual([URL]);
     expect(fetchMock.mock.calls[0][1]?.headers).toEqual({});
   });
 
@@ -70,7 +83,7 @@ describe('fetchBookText', () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ text: '' }), { status: 200 }));
 
     expect(await fetchBookText(URL)).toBe('');
-    expect(cacheStorage.entries.has(URL)).toBe(false);
+    expect(cacheStorage.storedUrls()).toEqual([]);
   });
 
   it('throws on a failed request', async () => {
@@ -82,7 +95,7 @@ describe('fetchBookText', () => {
   it('still returns the downloaded text when storing it fails', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const failingCache = { match: async () => undefined, put: async () => Promise.reject(new Error('QuotaExceededError')) };
-    vi.stubGlobal('caches', { open: async () => failingCache, delete: vi.fn() });
+    vi.stubGlobal('caches', { open: async () => failingCache, keys: async () => [], delete: vi.fn() });
     fetchMock.mockResolvedValue(bookResponse('本文', '"10-1-full"'));
 
     expect(await fetchBookText(URL)).toBe('本文');
@@ -96,12 +109,37 @@ describe('fetchBookText', () => {
 
     expect(await fetchBookText(URL)).toBe('本文');
   });
+
+  it('keeps books out of the cache that older readers filled under the combined-path URLs', async () => {
+    useCacheStorage([ORPHANED_CACHE]);
+    fetchMock.mockResolvedValue(bookResponse('本文', '"10-1-full"'));
+
+    await fetchBookText(URL);
+
+    expect(cacheStorage.storage.open).not.toHaveBeenCalledWith(ORPHANED_CACHE);
+  });
+
+  it('deletes older book text caches and leaves other caches alone', async () => {
+    useCacheStorage([ORPHANED_CACHE, OTHER_APP_CACHE]);
+    fetchMock.mockResolvedValue(bookResponse('本文', '"10-1-full"'));
+
+    await fetchBookText(URL);
+
+    const cacheNames = [...cacheStorage.cachesByName.keys()];
+    expect(cacheNames).not.toContain(ORPHANED_CACHE);
+    expect(cacheNames).toContain(OTHER_APP_CACHE);
+    expect(cacheStorage.storedUrls()).toEqual([URL]);
+  });
 });
 
 describe('clearBookTextCache', () => {
   it('does not throw when Cache Storage refuses the delete', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.stubGlobal('caches', { open: vi.fn(), delete: async () => Promise.reject(new Error('SecurityError')) });
+    vi.stubGlobal('caches', {
+      open: vi.fn(),
+      keys: async () => [ORPHANED_CACHE],
+      delete: async () => Promise.reject(new Error('SecurityError')),
+    });
 
     await expect(clearBookTextCache()).resolves.toBeUndefined();
     warn.mockRestore();
@@ -113,6 +151,14 @@ describe('clearBookTextCache', () => {
 
     await clearBookTextCache();
 
-    expect(cacheStorage.entries.size).toBe(0);
+    expect(cacheStorage.storedUrls()).toEqual([]);
+  });
+
+  it('removes books stored under an older cache name and leaves other caches alone', async () => {
+    useCacheStorage([ORPHANED_CACHE, OTHER_APP_CACHE]);
+
+    await clearBookTextCache();
+
+    expect([...cacheStorage.cachesByName.keys()]).toEqual([OTHER_APP_CACHE]);
   });
 });
