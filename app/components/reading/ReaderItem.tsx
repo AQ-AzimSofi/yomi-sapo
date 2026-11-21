@@ -12,6 +12,7 @@ import TTSButton from "@/app/components/reading/TTSButton";
 import { useItemActions } from "@/app/hooks/useItemActions";
 import { COLORS, THEME } from "@/lib/constants";
 import { hasIllustration, splitUnitParts, type UnitPart } from "@/lib/content/unitParts";
+import { toMatchText } from "@/lib/content/bookModel";
 import type { SentenceLocation } from "@/lib/content/explanationContext";
 import type { ReadAloudStatus } from "@/lib/audio/readAloudPlayer";
 import { toTint } from "@/lib/utils/colorTint";
@@ -37,7 +38,7 @@ interface ReaderItemProps {
   isExpanded: boolean;
   /** Each sentence is its own span that asks for an explanation when clicked. */
   areSentencesClickable: boolean;
-  /** A word to flash the item for when its text holds it. */
+  /** A word to flash the item for when its text, read without furigana, holds it. */
   highlightWord: string | null;
   isBookmarked: boolean;
   isStartCursor: boolean;
@@ -76,7 +77,7 @@ function cardStyle({ isPlaying, isHighlighted, isStartCursor, isBookmarked }: Ca
 function useHighlight(text: string, highlightWord: string | null): boolean {
   const [isHighlighted, setIsHighlighted] = useState(false);
   useEffect(() => {
-    if (!highlightWord || !text.includes(highlightWord)) return;
+    if (!highlightWord || !toMatchText(text).includes(highlightWord)) return;
     setIsHighlighted(true);
     const timer = setTimeout(() => setIsHighlighted(false), HIGHLIGHT_MS);
     return () => clearTimeout(timer);
