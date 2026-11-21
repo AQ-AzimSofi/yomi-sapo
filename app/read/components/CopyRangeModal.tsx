@@ -52,7 +52,7 @@ export default function CopyRangeModal({
           className="font-mincho font-bold text-[17px] tracking-[0.04em] mb-4"
           style={{ color: THEME.INK }}
         >
-          Copy Page Range
+          範囲をコピー
         </h3>
 
         <div className="flex items-center gap-3 mb-4">
@@ -61,7 +61,7 @@ export default function CopyRangeModal({
               className="text-[11px] font-medium mb-1 block"
               style={{ color: THEME.SECONDARY }}
             >
-              From
+              開始ページ
             </label>
             <input
               type="number"
@@ -82,14 +82,14 @@ export default function CopyRangeModal({
             className="text-[13px] mt-4"
             style={{ color: THEME.SECONDARY }}
           >
-            -
+            〜
           </span>
           <div className="flex-1">
             <label
               className="text-[11px] font-medium mb-1 block"
               style={{ color: THEME.SECONDARY }}
             >
-              To
+              終了ページ
             </label>
             <input
               type="number"
@@ -112,7 +112,7 @@ export default function CopyRangeModal({
           className="text-[11px] mb-4"
           style={{ color: THEME.SECONDARY }}
         >
-          {isValid ? `${toPage - fromPage + 1} page(s)` : 'Invalid range'}
+          {isValid ? `${toPage - fromPage + 1}ページ` : 'ページの範囲が正しくありません'}
         </p>
 
         <div className="flex gap-2">
@@ -125,7 +125,7 @@ export default function CopyRangeModal({
               color: THEME.INK,
             }}
           >
-            Cancel
+            キャンセル
           </button>
           <button
             onClick={() => isValid && onCopy(fromPage, toPage)}
@@ -136,7 +136,7 @@ export default function CopyRangeModal({
               color: copyFeedback ? COLORS.SURFACE : THEME.ON_PRIMARY,
             }}
           >
-            {copyFeedback ? 'Copied!' : 'Copy'}
+            {copyFeedback ? 'コピーしました' : 'コピー'}
           </button>
         </div>
       </div>
