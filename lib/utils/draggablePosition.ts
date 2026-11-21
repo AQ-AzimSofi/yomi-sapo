@@ -10,6 +10,13 @@ export interface Size {
   height: number;
 }
 
+/** A press on a drag handle: where it started, and whether it has become a drag yet. */
+export interface DragGesture {
+  pointerStart: Point;
+  positionStart: Point;
+  hasMoved: boolean;
+}
+
 /** How far the pointer travels before a press counts as a drag rather than a click. */
 export const DRAG_THRESHOLD_PX = 5;
 
@@ -37,4 +44,30 @@ export function parseStoredPosition(stored: string | null): Point | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The gesture and box position after the pointer moves, or null while the press is
+ * still a click. Once a press becomes a drag it stays one, even back inside the threshold.
+ */
+export function dragStep({ gesture, pointer, size, viewport }: {
+  gesture: DragGesture;
+  pointer: Point;
+  size: Size;
+  viewport: Size;
+}): { gesture: DragGesture; position: Point } | null {
+  const offset = { x: pointer.x - gesture.pointerStart.x, y: pointer.y - gesture.pointerStart.y };
+  if (!gesture.hasMoved && !passesDragThreshold(offset)) return null;
+  const target = { x: gesture.positionStart.x + offset.x, y: gesture.positionStart.y + offset.y };
+  return { gesture: { ...gesture, hasMoved: true }, position: clampToViewport(target, size, viewport) };
+}
+
+/** The saved position, or the default one when nothing usable is saved, kept inside the viewport. */
+export function restoredPosition({ stored, size, viewport, defaultPosition }: {
+  stored: string | null;
+  size: Size;
+  viewport: Size;
+  defaultPosition: Point;
+}): Point {
+  return clampToViewport(parseStoredPosition(stored) ?? defaultPosition, size, viewport);
 }

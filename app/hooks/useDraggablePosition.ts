@@ -1,13 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  clampToViewport,
-  parseStoredPosition,
-  passesDragThreshold,
-  type Point,
-  type Size,
-} from '@/lib/utils/draggablePosition';
+import { dragStep, restoredPosition, type DragGesture, type Point, type Size } from '@/lib/utils/draggablePosition';
 
 interface DraggablePositionOptions {
   storageKey: string;
@@ -15,12 +9,6 @@ interface DraggablePositionOptions {
   size: Size;
   /** Where the element sits until it is first moved. Pass a module-level function for the same reason. */
   defaultPosition: (viewport: Size) => Point;
-}
-
-interface DragGesture {
-  pointerStart: Point;
-  positionStart: Point;
-  hasMoved: boolean;
 }
 
 // A drag ends with a click on the handle; clicks this soon after it are part of the drag.
@@ -48,8 +36,12 @@ export function useDraggablePosition({ storageKey, size, defaultPosition }: Drag
 
   useEffect(() => {
     const viewport = viewportSize();
-    const saved = parseStoredPosition(localStorage.getItem(storageKey)) ?? defaultPosition(viewport);
-    const restored = clampToViewport(saved, size, viewport);
+    const restored = restoredPosition({
+      stored: localStorage.getItem(storageKey),
+      size,
+      viewport,
+      defaultPosition: defaultPosition(viewport),
+    });
     setPosition((current) => current ?? restored);
   }, [storageKey, size, defaultPosition]);
 
@@ -70,11 +62,10 @@ export function useDraggablePosition({ storageKey, size, defaultPosition }: Drag
   const moveDrag = useCallback((pointer: Point) => {
     const gesture = gestureRef.current;
     if (!gesture) return;
-    const offset = { x: pointer.x - gesture.pointerStart.x, y: pointer.y - gesture.pointerStart.y };
-    if (!gesture.hasMoved && !passesDragThreshold(offset)) return;
-    gestureRef.current = { ...gesture, hasMoved: true };
-    const target = { x: gesture.positionStart.x + offset.x, y: gesture.positionStart.y + offset.y };
-    setPosition(clampToViewport(target, size, viewportSize()));
+    const step = dragStep({ gesture, pointer, size, viewport: viewportSize() });
+    if (!step) return;
+    gestureRef.current = step.gesture;
+    setPosition(step.position);
   }, [size]);
 
   const endDrag = useCallback(() => {
