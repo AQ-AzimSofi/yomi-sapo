@@ -70,7 +70,8 @@ export type ImageMap = Record<string, string>;
 export interface CachedExplanation {
   sentence: string;
   // The passage sent with the request. Missing on entries saved before it was
-  // stored, which were made from the sentence alone.
+  // stored: /read sent the sentence alone, the removed /book-reader sent nearby
+  // sentences.
   context?: string;
   explanation: string;
   contextSize: number;

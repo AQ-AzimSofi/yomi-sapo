@@ -65,8 +65,8 @@ export function explanationCacheKey({ fileName, sentence, mode }: ExplanationCac
 /**
  * A saved answer only counts when it was made for this very sentence, context
  * size and passage, so a line repeated elsewhere in the book gets its own answer.
- * Entries saved before the passage was stored were made from the sentence alone,
- * so they still count wherever it appears.
+ * Entries saved before the passage was stored have no passage to compare, so
+ * they still count wherever the sentence appears rather than being thrown away.
  */
 export function findCachedExplanation(cache: ExplanationCache, query: ExplanationCacheQuery): CachedExplanation | null {
   const entry = cache[explanationCacheKey(query)];
