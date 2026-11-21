@@ -1,13 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { API_ROUTES, COLORS, EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG } from '@/lib/constants';
+import { COLORS, EXPLANATION_CONFIG, EXPLANATION_MODE_CONFIG } from '@/lib/constants';
 import { useExplanationCache } from '@/app/hooks/useExplanationCache';
 import { parseFurigana, segmentsToHTML, stripAiFurigana } from '@/lib/utils/furiganaParser';
 import { renderSafeMarkdown } from '@/lib/utils/safeMarkdown';
 import { toTint } from '@/lib/utils/colorTint';
-import { guestKeyHeaders, promptGuestKeyOnFailure, GUEST_KEY_UPDATED_EVENT } from '@/lib/guestKeys';
-import type { ExplanationRequest, ExplanationResponse } from '@/lib/api/contracts';
+import { GUEST_KEY_UPDATED_EVENT } from '@/lib/guestKeys';
+import { ApiError, explainSentence } from '@/lib/api/client';
+import type { ExplanationRequest } from '@/lib/api/contracts';
 import type { ExplanationMode } from '@/lib/constants';
 
 interface ExplanationSidebarProps {
@@ -17,6 +18,15 @@ interface ExplanationSidebarProps {
   context: string;
   fileName: string;
   showFurigana?: boolean;
+}
+
+function describeExplanationFailure(error: unknown): string {
+  if (error instanceof ApiError && error.promptedGuestKey) {
+    return 'Guest mode: add or update your Gemini API key to use AI explanations.';
+  }
+  if (error instanceof ApiError) return `Failed to fetch explanation: ${error.statusText}`;
+  if (error instanceof Error) return error.message;
+  return 'An unknown error occurred';
 }
 
 export default function ExplanationSidebar({
@@ -135,22 +145,7 @@ export default function ExplanationSidebar({
           mode,
         };
 
-        const response = await fetch(API_ROUTES.EXPLAIN_SENTENCE, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...guestKeyHeaders('gemini') },
-          body: JSON.stringify(requestData),
-        });
-
-        if (!response.ok) {
-          const prompted = await promptGuestKeyOnFailure('gemini', response);
-          throw new Error(
-            prompted
-              ? 'Guest mode: add or update your Gemini API key to use AI explanations.'
-              : `Failed to fetch explanation: ${response.statusText}`
-          );
-        }
-
-        const data: ExplanationResponse = await response.json();
+        const data = await explainSentence(requestData);
         setExplanation(data.explanation);
         setCache(fileName, sentence, data.explanation, contextSize, mode);
 
@@ -158,8 +153,7 @@ export default function ExplanationSidebar({
           setForceRegenerate(false);
         }
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-        setError(errorMessage);
+        setError(describeExplanationFailure(err));
 
         if (forceRegenerate) {
           setForceRegenerate(false);

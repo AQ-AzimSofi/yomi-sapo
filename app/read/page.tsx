@@ -32,12 +32,11 @@ import {
   toPlayableUnits,
   totalPagesFor,
 } from '@/lib/content/bookModel';
-import { guestKeyHeaders, promptGuestKeyOnFailure } from '@/lib/guestKeys';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { fetchBookText } from '@/lib/bookTextCache';
-import { fetchBookmark, saveBookmark } from '@/lib/api/client';
+import { ApiError, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookQuery, bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
 import type { AudioBookContentMode } from '@/lib/types';
 
@@ -271,28 +270,16 @@ function ReaderContent({
     setPrioritizeError(null);
     setIsPrioritizing(true);
     try {
-      const res = await fetch(API_ROUTES.PRIORITIZE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...guestKeyHeaders('gemini') },
-        body: JSON.stringify({ sentences: currentPageHeaders }),
-      });
-      if (!res.ok) {
-        // Missing/invalid guest key opens the key modal; anything else is a real
-        // failure the reader should see rather than a silent empty result.
-        if (res.status === 401) {
-          await promptGuestKeyOnFailure('gemini', res);
-        } else {
-          setPrioritizeError(PRIORITIZE_ERROR_MESSAGE);
-        }
-        return;
-      }
-      const data = await res.json();
-      const scores = (Array.isArray(data.scores) ? data.scores : []) as PriorityScore[];
+      const data = await prioritize(currentPageHeaders);
+      const scores = Array.isArray(data.scores) ? data.scores : [];
       const start = pageStartIndex(currentPage);
       setPriorityScores(
         Object.fromEntries(scores.map((score, index) => [start + index, score] as const))
       );
-    } catch {
+    } catch (err) {
+      // A 401 is a guest without a key, and it opened the key modal; anything else
+      // is a real failure the reader should see rather than a silent empty result.
+      if (err instanceof ApiError && err.status === 401) return;
       setPrioritizeError(PRIORITIZE_ERROR_MESSAGE);
     } finally {
       setIsPrioritizing(false);

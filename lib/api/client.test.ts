@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_ROUTES, GUEST_KEY_HEADERS, STORAGE_KEYS } from '@/lib/constants';
 import { GUEST_KEY_REQUIRED_EVENT } from '@/lib/guestKeys';
 import { bookQuery } from '@/lib/books/bookRef';
-import { ApiError, fetchBookmark, request, saveBookmark, translate } from './client';
+import { ApiError, explainSentence, fetchBookmark, prioritize, request, saveBookmark, translate } from './client';
 
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 let storedValues: Map<string, string>;
@@ -304,5 +304,61 @@ describe('translate', () => {
 
     await expect(translate('本')).rejects.toMatchObject({ promptedGuestKey: true });
     expect(promptedKinds).toEqual(['translate']);
+  });
+});
+
+describe('explainSentence', () => {
+  it("posts the sentence and its context with the guest's Gemini key", async () => {
+    storeGeminiKey('guest-gemini-key');
+    fetchMock.mockResolvedValue(jsonResponse({ explanation: '説明', message: '説明を取得しました' }));
+    const explanation = { sentence: '本を読む。', context: '前の文。', fileName: 'dir/本', contextSize: 50, mode: 'quick' } as const;
+
+    expect(await explainSentence(explanation)).toEqual({ explanation: '説明', message: '説明を取得しました' });
+    expect(lastCall().url).toBe('/api/explain-sentence');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [GUEST_KEY_HEADERS.GEMINI]: 'guest-gemini-key' },
+      body: JSON.stringify(explanation),
+    });
+  });
+
+  it('opens the key prompt after a failure while a guest key is stored', async () => {
+    storeGeminiKey('rejected-key');
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'internal_error', message: 'Internal server error' } }, 500));
+
+    await expect(
+      explainSentence({ sentence: '本', context: '', fileName: 'dir/本', contextSize: 50, mode: 'quick' })
+    ).rejects.toMatchObject({ promptedGuestKey: true });
+    expect(promptedKinds).toEqual(['gemini']);
+  });
+});
+
+describe('prioritize', () => {
+  it("posts the page's sentences with the guest's Gemini key", async () => {
+    storeGeminiKey('guest-gemini-key');
+    fetchMock.mockResolvedValue(jsonResponse({ scores: [5, 1] }));
+
+    expect(await prioritize(['一文。', '二文。'])).toEqual({ scores: [5, 1] });
+    expect(lastCall().url).toBe('/api/prioritize');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [GUEST_KEY_HEADERS.GEMINI]: 'guest-gemini-key' },
+      body: '{"sentences":["一文。","二文。"]}',
+    });
+  });
+
+  it('leaves the key prompt closed when the model fails while a key is stored', async () => {
+    storeGeminiKey('stored-key');
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 'upstream_failed', message: 'No scores' } }, 502));
+
+    await expect(prioritize(['一文。'])).rejects.toMatchObject({ status: 502, promptedGuestKey: false });
+    expect(promptedKinds).toEqual([]);
+  });
+
+  it('opens the key prompt for a guest without a key', async () => {
+    fetchMock.mockResolvedValue(guestKeyRequired('gemini'));
+
+    await expect(prioritize(['一文。'])).rejects.toMatchObject({ status: 401, promptedGuestKey: true });
+    expect(promptedKinds).toEqual(['gemini']);
   });
 });

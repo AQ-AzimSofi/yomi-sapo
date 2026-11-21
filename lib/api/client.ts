@@ -10,6 +10,10 @@ import type { BookRef } from '@/lib/books/bookRef';
 import type {
   ApiErrorResponse,
   BookmarkResponse,
+  ExplanationRequest,
+  ExplanationResponse,
+  PrioritizeRequest,
+  PrioritizeResponse,
   SaveBookmarkRequest,
   TranslateRequest,
   TranslateResponse,
@@ -146,5 +150,23 @@ export async function translate(text: string): Promise<TranslateResponse> {
     method: 'POST',
     body,
     guestKey: { kind: 'translate', promptOn: 'any-failure' },
+  });
+}
+
+export async function explainSentence(explanation: ExplanationRequest): Promise<ExplanationResponse> {
+  return request<ExplanationResponse>(API_ROUTES.EXPLAIN_SENTENCE, {
+    method: 'POST',
+    body: explanation,
+    guestKey: { kind: 'gemini', promptOn: 'any-failure' },
+  });
+}
+
+// Only a 401 opens the key prompt: the reader shows any other failure as a page it could not analyse.
+export async function prioritize(sentences: string[]): Promise<PrioritizeResponse> {
+  const body: PrioritizeRequest = { sentences };
+  return request<PrioritizeResponse>(API_ROUTES.PRIORITIZE, {
+    method: 'POST',
+    body,
+    guestKey: { kind: 'gemini', promptOn: 'unauthorized' },
   });
 }
