@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint --dir app --dir lib --file middleware.ts --file middleware.test.ts --file next.config.ts --file vitest.config.ts",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "db:start": "docker-compose up -d",
     "db:stop": "docker-compose down",
     "db:restart": "docker-compose restart",
