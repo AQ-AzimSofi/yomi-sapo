@@ -5,7 +5,7 @@ import { BOOKMARK_FILE } from '@/lib/constants';
 import type { BookmarkData, RubyRegistry, RubyEntry } from '@/lib/types';
 
 // A literal 'public' lets Next's file tracer scope this module to public/;
-// an imported constant made it trace the whole repo into every route.
+// an imported constant made it trace the whole repo into every route that loads this module.
 const PUBLIC_ROOT = path.join(process.cwd(), 'public');
 
 function removeControlCharacters(text: string): string {

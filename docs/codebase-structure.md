@@ -150,7 +150,6 @@ db/
 ├── connection.ts           # PostgreSQL connection pool
 ├── schema.ts               # TypeScript interfaces & CREATE TABLE SQL
 ├── queries.ts              # Bookmark & text entry queries
-├── bookQueries.sql.ts      # Book/image queries (replaced Prisma)
 └── vocabularyQueries.sql.ts # Vocabulary queries (replaced Prisma)
 ```
 
