@@ -32,9 +32,6 @@ yomi-sapo/
 
 | Route | Methods | Description |
 |-------|---------|-------------|
-| `/api/books` | GET, POST | List/create books |
-| `/api/books/[id]` | GET, PUT, DELETE | Single book operations |
-| `/api/books/[id]/images` | GET, POST | Book images |
 | `/api/vocabulary` | GET, POST | Vocabulary entries |
 | `/api/vocabulary/[id]` | GET, PUT, DELETE | Single vocabulary entry |
 | `/api/read-public-txt` | GET | Read text file content |
@@ -44,7 +41,6 @@ yomi-sapo/
 | `/api/write-bookmark` | POST | Update bookmark |
 | `/api/list-text-files` | GET | List available text files |
 | `/api/text-entries` | GET, DELETE, PUT | Database text entries |
-| `/api/text-entries/sync` | POST | Sync DB with filesystem |
 | `/api/text-entries/reset` | POST | Reset text entries |
 | `/api/gemini-api` | POST | Direct Gemini API |
 | `/api/explain-sentence` | POST | Sentence explanations |
