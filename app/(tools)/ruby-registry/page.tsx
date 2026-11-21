@@ -4,11 +4,11 @@ import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AppHeader from '@/app/components/ui/AppHeader';
-import { COLORS, API_ROUTES } from '@/lib/constants';
+import { COLORS } from '@/lib/constants';
 import { toTint } from '@/lib/utils/colorTint';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
 import type { RubyEntry } from '@/lib/types';
-import type { TextFileListResponse } from '@/lib/api/contracts';
+import { listTextFiles } from '@/lib/api/client';
 
 interface BookOption {
   directory: string;
@@ -58,8 +58,7 @@ function RubyRegistryContent() {
 
   const fetchBooks = async () => {
     try {
-      const response = await fetch(API_ROUTES.LIST_TEXT_FILES);
-      const data: TextFileListResponse = await response.json();
+      const data = await listTextFiles();
 
       const options: BookOption[] = [];
       for (const [dir, files] of Object.entries(data.filesByDirectory)) {

@@ -15,6 +15,7 @@ import type {
   BookmarkResponse,
   ExplanationRequest,
   ExplanationResponse,
+  LibraryProgressResponse,
   PrioritizeRequest,
   PrioritizeResponse,
   RubyRegistryItemType,
@@ -22,6 +23,7 @@ import type {
   RubyRegistryResponse,
   SaveBookmarkRequest,
   SaveRubyEntryRequest,
+  TextFileListResponse,
   TranslateRequest,
   TranslateResponse,
   TTSRequest,
@@ -142,6 +144,14 @@ function bookParams(book: BookRef): Record<string, string> {
 function nullOnApiError(error: unknown): null {
   if (error instanceof ApiError) return null;
   throw error;
+}
+
+export async function listTextFiles(): Promise<TextFileListResponse> {
+  return request<TextFileListResponse>(API_ROUTES.LIST_TEXT_FILES);
+}
+
+export async function fetchLibraryProgress(): Promise<LibraryProgressResponse> {
+  return request<LibraryProgressResponse>(API_ROUTES.LIBRARY_PROGRESS);
 }
 
 /** A book's text. The reader's stored copy is reused when the server says it is still current. */

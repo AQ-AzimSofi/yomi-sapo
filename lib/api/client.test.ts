@@ -9,8 +9,10 @@ import {
   fetchBookMetadata,
   fetchBookText,
   fetchBookmark,
+  fetchLibraryProgress,
   fetchNarration,
   fetchRubyRegistry,
+  listTextFiles,
   prioritize,
   removeRubyRegistryItem,
   request,
@@ -527,5 +529,24 @@ describe('ruby registry calls', () => {
       `/api/ruby-registry?directory=bookv2-furigana&bookName=${encodedBookName}&kanji=${encodeURIComponent('本')}&type=${type}`
     );
     expect(lastCall().init).toMatchObject({ method: 'DELETE', headers: {}, body: undefined });
+  });
+});
+
+describe('library calls', () => {
+  it('lists the text files', async () => {
+    const listing = { directories: ['d'], filesByDirectory: { d: ['本'] }, files: ['d/本'] };
+    fetchMock.mockResolvedValue(jsonResponse(listing));
+
+    expect(await listTextFiles()).toEqual(listing);
+    expect(lastCall().url).toBe('/api/list-text-files');
+    expect(lastCall().init).toMatchObject({ method: 'GET', headers: {} });
+  });
+
+  it("reads every book's progress", async () => {
+    const progress = { 'd/本': { progress: 50, totalCharacters: 10, bookmarkPage: 2, totalPages: 4, bookmarkUpdatedAt: null, createdAt: null } };
+    fetchMock.mockResolvedValue(jsonResponse(progress));
+
+    expect(await fetchLibraryProgress()).toEqual(progress);
+    expect(lastCall().url).toBe('/api/library-progress');
   });
 });
