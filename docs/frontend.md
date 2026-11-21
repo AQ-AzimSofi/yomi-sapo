@@ -406,12 +406,10 @@ style={{
 
 ### Custom Events (Cross-Component Sync)
 
-\`\`\`typescript
-// Furigana toggle
-window.dispatchEvent(new CustomEvent('furiganaChanged', {
-  detail: { enabled: boolean }
-}));
-\`\`\`
+| Event | Sent by | Purpose |
+|-------|---------|---------|
+| \`starredWordsChanged\` | \`RubyLookupSidebar\` | Starred ruby words changed; sticky notes reload |
+| \`guestKeyRequired\` / \`guestKeyUpdated\` | \`lib/guestKeys.ts\` | A guest needs, or just saved, their own API key |
 
 ---
 
