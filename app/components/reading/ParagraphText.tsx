@@ -31,6 +31,12 @@ function clearSentenceTint(e: MouseEvent<HTMLSpanElement>) {
   e.currentTarget.style.backgroundColor = "transparent";
 }
 
+// A drag or double click that selected text inside a sentence also ends in a click on it.
+function endsTextSelection(): boolean {
+  const selection = window.getSelection();
+  return selection !== null && !selection.isCollapsed;
+}
+
 /** Book text with its furigana, either as one span or as one clickable span per sentence. */
 function ParagraphText({ text, showFurigana, sentences, onSentenceClick }: ParagraphTextProps) {
   const clickableSentences = onSentenceClick ? sentences : undefined;
@@ -54,6 +60,7 @@ function ParagraphText({ text, showFurigana, sentences, onSentenceClick }: Parag
           dangerouslySetInnerHTML={{ __html: htmlPieces[index] }}
           onClick={(e) => {
             e.stopPropagation();
+            if (endsTextSelection()) return;
             onSentenceClick(sentence.text, sentence.occurrence);
           }}
           className="cursor-pointer transition-colors px-1"
