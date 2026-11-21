@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { COLORS, THEME, type PriorityScore } from '@/lib/constants';
@@ -315,9 +315,16 @@ function ReaderContent({
     }
   }, [isLoading, hasExplicitPage, bookmarkPage, currentPage, navigateToPage, didAutoNavigate]);
 
+  // Read through a ref so that playback stopping is not itself a reason to scroll
+  // back to the bookmark; only a page or bookmark change is.
+  const isAudioFollowingRef = useRef(false);
+  useEffect(() => {
+    isAudioFollowingRef.current = audiobookEnabled && audioStatus !== 'idle';
+  }, [audiobookEnabled, audioStatus]);
+
   useEffect(() => {
     if (isLoading) return;
-    if (audiobookEnabled && audioStatus !== 'idle') return;
+    if (isAudioFollowingRef.current) return;
 
     const scrollToBookmark = () => {
       const bookmarkElement = document.getElementById('bookmark');
@@ -328,7 +335,7 @@ function ReaderContent({
 
     const timer = setTimeout(scrollToBookmark, 100);
     return () => clearTimeout(timer);
-  }, [currentPage, isLoading, bookmarkText, audiobookEnabled, audioStatus]);
+  }, [currentPage, isLoading, bookmarkText]);
 
   useEffect(() => {
     if (!audiobookEnabled || audioIndex < 0) return;
