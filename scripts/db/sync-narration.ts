@@ -1,9 +1,12 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S npx tsx --conditions=react-server
 /**
  * Loads a narration build into the narration table, pairing it with the S3 key
  * of the recording. See scripts/README.md for the full workflow.
  *
- *   npx tsx scripts/db/sync-narration.ts \
+ * The react-server condition is the one Next.js resolves server code with; without
+ * it the server-only guard in lib/db/connection.ts throws.
+ *
+ *   npx tsx --conditions=react-server scripts/db/sync-narration.ts \
  *     --manifest "<book>.narration.json" \
  *     --audio-key "<book>.m4a" \
  *     --directory "bookv2-furigana" \
