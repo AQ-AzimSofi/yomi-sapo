@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { COLORS, DARK_COLORS, READER_THEME, TTS_CONFIG } from '@/lib/constants';
+import { COLORS, THEME, TTS_CONFIG } from '@/lib/constants';
 import type { AudioBookContentMode } from '@/lib/types';
 import type { AudioBookStatus } from '@/app/hooks/useAudioBook';
 
@@ -17,7 +17,6 @@ interface AudioPlayerBarProps {
   total: number;
   contentMode: AudioBookContentMode;
   speed: number;
-  isDarkMode: boolean;
   keyboardMode: boolean;
   hasNarration: boolean;
   playbackError: string | null;
@@ -89,7 +88,6 @@ export default function AudioPlayerBar({
   total,
   contentMode,
   speed,
-  isDarkMode,
   keyboardMode,
   hasNarration,
   playbackError,
@@ -102,14 +100,6 @@ export default function AudioPlayerBar({
   onToggleKeyboardMode,
   onClose,
 }: AudioPlayerBarProps) {
-  const surface = isDarkMode ? DARK_COLORS.SURFACE : READER_THEME.SURFACE;
-  const textColor = isDarkMode ? DARK_COLORS.TEXT : COLORS.INK;
-  const subtle = isDarkMode ? DARK_COLORS.TEXT_MUTED : COLORS.SECONDARY;
-  const accent = isDarkMode ? DARK_COLORS.PRIMARY : READER_THEME.PROGRESS_FILL;
-  const trackColor = isDarkMode ? DARK_COLORS.NEUTRAL : READER_THEME.PROGRESS_TRACK;
-  const ruleColor = isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL;
-  const onInkColor = isDarkMode ? DARK_COLORS.BASE : COLORS.SURFACE;
-
   const position = total > 0 ? Math.min(total, Math.max(0, index + 1)) : 0;
   const progressPercent = total > 0 ? (position / total) * 100 : 0;
   const isPlaying = status === 'playing';
@@ -135,7 +125,7 @@ export default function AudioPlayerBar({
     border: 'none',
     background: 'none',
     cursor: 'pointer',
-    color: textColor,
+    color: THEME.INK,
     borderRadius: 2,
     width: 40,
     height: 40,
@@ -150,11 +140,11 @@ export default function AudioPlayerBar({
         right: 0,
         bottom: 0,
         zIndex: 40,
-        backgroundColor: surface,
-        borderTop: `1px solid ${textColor}`,
+        backgroundColor: THEME.SURFACE,
+        borderTop: `1px solid ${THEME.INK}`,
       }}
     >
-      <div style={{ position: 'relative', height: 2, backgroundColor: trackColor }}>
+      <div style={{ position: 'relative', height: 2, backgroundColor: THEME.PROGRESS_TRACK }}>
         <div
           style={{
             position: 'absolute',
@@ -162,7 +152,7 @@ export default function AudioPlayerBar({
             top: 0,
             bottom: 0,
             width: `${progressPercent}%`,
-            backgroundColor: accent,
+            backgroundColor: THEME.PRIMARY,
             transition: 'width 200ms ease',
           }}
         />
@@ -190,8 +180,8 @@ export default function AudioPlayerBar({
               ...ghostButtonStyle,
               width: 48,
               height: 48,
-              backgroundColor: textColor,
-              color: onInkColor,
+              backgroundColor: THEME.INK,
+              color: THEME.ON_INK,
             }}
           >
             {isLoading ? (
@@ -203,8 +193,8 @@ export default function AudioPlayerBar({
                   borderRadius: '50%',
                   borderWidth: 2,
                   borderStyle: 'solid',
-                  borderColor: subtle,
-                  borderTopColor: onInkColor,
+                  borderColor: THEME.SECONDARY,
+                  borderTopColor: THEME.ON_INK,
                 }}
               />
             ) : isPlaying ? (
@@ -224,7 +214,7 @@ export default function AudioPlayerBar({
         <div
           style={{
             display: 'inline-flex',
-            border: `1px solid ${ruleColor}`,
+            border: `1px solid ${THEME.NEUTRAL}`,
           }}
         >
           {CONTENT_MODES.map((mode) => {
@@ -239,8 +229,8 @@ export default function AudioPlayerBar({
                   cursor: 'pointer',
                   fontSize: 13,
                   fontWeight: active ? 700 : 400,
-                  backgroundColor: active ? textColor : 'transparent',
-                  color: active ? onInkColor : subtle,
+                  backgroundColor: active ? THEME.INK : 'transparent',
+                  color: active ? THEME.ON_INK : THEME.SECONDARY,
                 }}
               >
                 {mode.label}
@@ -269,8 +259,8 @@ export default function AudioPlayerBar({
               fontSize: 12,
               fontWeight: 700,
               padding: '3px 9px',
-              color: accent,
-              border: `1px solid ${accent}`,
+              color: THEME.PRIMARY,
+              border: `1px solid ${THEME.PRIMARY}`,
             }}
           >
             朗読
@@ -278,7 +268,7 @@ export default function AudioPlayerBar({
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 13, color: subtle, fontVariantNumeric: 'tabular-nums', minWidth: 64, textAlign: 'right' }}>
+          <span style={{ fontSize: 13, color: THEME.SECONDARY, fontVariantNumeric: 'tabular-nums', minWidth: 64, textAlign: 'right' }}>
             {position} / {total}
           </span>
           <div ref={speedRef} style={{ position: 'relative', display: 'flex' }}>
@@ -288,9 +278,9 @@ export default function AudioPlayerBar({
               aria-expanded={speedOpen}
               style={{
                 border: 'none',
-                background: speedOpen ? trackColor : 'none',
+                background: speedOpen ? THEME.PROGRESS_TRACK : 'none',
                 cursor: 'pointer',
-                color: textColor,
+                color: THEME.INK,
                 fontSize: 13,
                 fontWeight: 600,
                 fontVariantNumeric: 'tabular-nums',
@@ -308,8 +298,8 @@ export default function AudioPlayerBar({
                   right: 0,
                   marginBottom: 10,
                   padding: '12px 14px',
-                  backgroundColor: surface,
-                  border: `1px solid ${textColor}`,
+                  backgroundColor: THEME.SURFACE,
+                  border: `1px solid ${THEME.INK}`,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -324,9 +314,9 @@ export default function AudioPlayerBar({
                   value={speed}
                   onChange={(e) => onSpeedChange(parseFloat(e.target.value))}
                   aria-label="再生速度"
-                  style={{ width: 140, accentColor: accent, cursor: 'pointer' }}
+                  style={{ width: 140, accentColor: THEME.PRIMARY, cursor: 'pointer' }}
                 />
-                <span style={{ fontSize: 13, fontWeight: 600, color: textColor, fontVariantNumeric: 'tabular-nums' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: THEME.INK, fontVariantNumeric: 'tabular-nums' }}>
                   {speed.toFixed(2)}x
                 </span>
               </div>
@@ -340,8 +330,8 @@ export default function AudioPlayerBar({
               ...ghostButtonStyle,
               width: 36,
               height: 36,
-              color: keyboardMode ? onInkColor : subtle,
-              backgroundColor: keyboardMode ? textColor : 'transparent',
+              color: keyboardMode ? THEME.ON_INK : THEME.SECONDARY,
+              backgroundColor: keyboardMode ? THEME.INK : 'transparent',
             }}
           >
             <KeyboardGlyph />
@@ -349,7 +339,7 @@ export default function AudioPlayerBar({
           <button
             onClick={onClose}
             aria-label="プレーヤーを閉じる"
-            style={{ ...ghostButtonStyle, width: 36, height: 36, color: subtle }}
+            style={{ ...ghostButtonStyle, width: 36, height: 36, color: THEME.SECONDARY }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />

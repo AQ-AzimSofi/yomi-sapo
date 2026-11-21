@@ -859,7 +859,6 @@ function ReaderContent({
           total={audioTotal}
           contentMode={contentMode}
           speed={audioSpeed}
-          isDarkMode={isDarkMode}
           keyboardMode={keyboardMode}
           hasNarration={hasNarration}
           playbackError={playbackError ?? narrationLoadError}
