@@ -1,6 +1,6 @@
 import { ApiError, type GoogleGenAI } from '@google/genai';
 import { describe, expect, it, vi } from 'vitest';
-import { createKeyPool, describeUnusableKey, isRetryable, listFreeKeyEnvNames, pickKey, retireKey } from './geminiKeyPool';
+import { createKeyPool, describeUnusableKey, isRetryable, isUnknownModel, listFreeKeyEnvNames, pickKey, retireKey } from './geminiKeyPool';
 
 const createFakeClient = (apiKey: string) => ({ apiKey }) as unknown as GoogleGenAI;
 
@@ -91,5 +91,15 @@ describe('isRetryable', () => {
 
   it('Test_isRetryable_NetworkFailure', () => {
     expect(isRetryable(new Error('fetch failed'))).toBe(true);
+  });
+});
+
+describe('isUnknownModel', () => {
+  it('Test_isUnknownModel_NotFound', () => {
+    expect(isUnknownModel(new ApiError({ status: 404, message: 'models/gemini-x is not found' }))).toBe(true);
+  });
+
+  it('Test_isUnknownModel_RateLimitIsNot', () => {
+    expect(isUnknownModel(new ApiError({ status: 429, message: '' }))).toBe(false);
   });
 });
