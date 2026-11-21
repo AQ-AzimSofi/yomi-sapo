@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from '@/lib/db/connection';
-import { getBookmark, getTextEntryVersion, upsertBookmark } from './queries';
+import { getBookmark, getTextEntryVersion, upsertBookmark, upsertTextEntry } from './queries';
 
 vi.mock('@/lib/db/connection', () => ({ sql: vi.fn() }));
 
@@ -47,6 +47,17 @@ describe('getTextEntryVersion', () => {
 
     expect(first).toBe('10-100');
     expect(second).toBe('10-200');
+  });
+});
+
+describe('upsertTextEntry', () => {
+  it('stores Windows (CRLF) text with LF line endings', async () => {
+    vi.mocked(sql).mockResolvedValue([] as never);
+
+    await upsertTextEntry('ほん', '< 本文\r\n>> やさしい文\r\n', 'd');
+
+    expect(queryValues()).toContain('< 本文\n>> やさしい文\n');
+    expect(queryValues().some((value) => typeof value === 'string' && value.includes('\r'))).toBe(false);
   });
 });
 

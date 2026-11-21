@@ -1,5 +1,6 @@
 import { sql } from './connection';
 import type { Bookmark, TextEntry, QueryResult } from './schema';
+import { normalizeNewlines } from '@/lib/content/bookModel';
 
 function normalizeResult<T>(result: QueryResult<T>): T[] {
   if (result && 'rows' in result && Array.isArray(result.rows)) {
@@ -131,11 +132,14 @@ export async function getTextEntry(
   }
 }
 
+// Every write path stores LF text, so the reader, the library and narration
+// split a book into the same units.
 export async function upsertTextEntry(
   fileName: string,
-  content: string,
+  rawContent: string,
   directory: string = 'public'
 ): Promise<void> {
+  const content = normalizeNewlines(rawContent);
   try {
     await sql`
       INSERT INTO text_entries (file_name, directory, content, created_at, updated_at)

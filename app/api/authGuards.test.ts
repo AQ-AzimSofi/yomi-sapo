@@ -169,13 +169,4 @@ describe('PUT /api/text-entries', () => {
     expect(response.status).toBe(200);
     expect(upsertTextEntry).toHaveBeenCalledWith(BOOK.fileName, '< 本文\n>> やさしい文', BOOK.directory);
   });
-
-  it('stores a Windows (CRLF) book file with LF line endings', async () => {
-    vi.stubEnv('NODE_ENV', 'development');
-    vi.mocked(readTextFile).mockResolvedValue('< 本文\r\n>> やさしい文\r\n');
-
-    await putTextEntry(jsonRequest('PUT', BOOK));
-
-    expect(upsertTextEntry).toHaveBeenCalledWith(BOOK.fileName, '< 本文\n>> やさしい文\n', BOOK.directory);
-  });
 });
