@@ -16,8 +16,8 @@ yomi-sapo/
 │   ├── db/                 # Database layer
 │   ├── services/           # Business services
 │   ├── utils/              # Utility functions
-│   ├── auth/               # Authentication
-│   └── middleware/         # Request middleware
+│   ├── auth/               # Authentication and API route guards
+│   └── api/                # API response and request-body helpers
 ├── scripts/                # Utility scripts (Python/JS/TS)
 ├── public/                 # Static assets & text files
 └── docs/                   # Documentation
@@ -44,6 +44,15 @@ yomi-sapo/
 | `/api/init-db` | GET | Initialize database tables |
 | `/api/health` | GET | Health check |
 | `/api/auth` | POST | Authentication |
+
+Every handler is declared as `export const GET = withAuth(policy, handler)` (`lib/auth/guards.ts`) with one of four policies:
+
+- `owner`: needs a valid session; anyone else gets 401.
+- `viewer`: the handler receives `'owner' | 'guest'` and decides (guest previews answer 403 outside the allowlist; the AI and speech routes answer 401 with `requiresGuestKey` when a guest sends no key).
+- `admin-key`: needs `x-api-key` to equal `ADMIN_API_KEY`.
+- `public`: no check. `app/api/routeInventory.test.ts` keeps an allowlist of these and fails on a handler with no policy.
+
+Errors are `{ error: { code, message } }` from `apiError()` (`lib/api/respond.ts`), plus any field a client reads (`requiresGuestKey`, the login page's `message`). `parseJsonBody(request, check, requirement)` answers 400 for a body that is not JSON or fails `check`. An error a handler does not handle is logged and answered with a generic 500.
 
 ### Components (`/app/components`)
 
@@ -198,11 +207,12 @@ import { parseMarkdown } from '@/lib/utils/markdownParser';
 lib/
 ├── constants.ts        # App configuration (AI_MODELS, API_ROUTES, etc.)
 ├── types.ts            # TypeScript type definitions
+├── api/
+│   └── respond.ts      # apiError, parseJsonBody, the generic 500
 ├── auth/
+│   ├── guards.ts       # getViewer and withAuth (owner, viewer, admin-key, public)
 │   ├── password.ts     # Password hashing
 │   └── session.ts      # Session management
-├── middleware/
-│   └── auth.ts         # Auth middleware
 └── storage/
     └── blobStorage.ts  # Blob storage operations
 ```
