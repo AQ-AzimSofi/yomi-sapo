@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { COLORS, DARK_COLORS } from '@/lib/constants';
-import { toTint } from '@/lib/utils/colorTint';
+import { COLORS, THEME } from '@/lib/constants';
 
 interface CopyRangeModalProps {
   isOpen: boolean;
@@ -10,7 +9,6 @@ interface CopyRangeModalProps {
   onCopy: (fromPage: number, toPage: number) => void;
   currentPage: number;
   totalPages: number;
-  isDarkMode: boolean;
   copyFeedback: boolean;
 }
 
@@ -20,7 +18,6 @@ export default function CopyRangeModal({
   onCopy,
   currentPage,
   totalPages,
-  isDarkMode,
   copyFeedback,
 }: CopyRangeModalProps) {
   const [fromPage, setFromPage] = useState(currentPage);
@@ -37,31 +34,23 @@ export default function CopyRangeModal({
 
   if (!isOpen) return null;
 
-  const surfaceBg = isDarkMode ? DARK_COLORS.SURFACE : COLORS.SURFACE;
-  const textColor = isDarkMode ? DARK_COLORS.TEXT : COLORS.INK;
-  const mutedColor = isDarkMode ? DARK_COLORS.TEXT_MUTED : COLORS.SECONDARY;
-  const inputBg = isDarkMode ? DARK_COLORS.BASE : COLORS.SURFACE;
-  const borderColor = isDarkMode ? DARK_COLORS.NEUTRAL : COLORS.NEUTRAL;
-  const accentColor = isDarkMode ? DARK_COLORS.PRIMARY : COLORS.PRIMARY;
-  const onAccentColor = isDarkMode ? DARK_COLORS.BASE : COLORS.SURFACE;
-
   return (
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center"
       onClick={onClose}
-      style={{ backgroundColor: toTint(COLORS.INK, isDarkMode ? 60 : 30) }}
+      style={{ backgroundColor: THEME.SCRIM }}
     >
       <div
         className="p-5 w-[280px]"
         onClick={(e) => e.stopPropagation()}
         style={{
-          backgroundColor: surfaceBg,
-          border: `1px solid ${textColor}`,
+          backgroundColor: THEME.SURFACE,
+          border: `1px solid ${THEME.INK}`,
         }}
       >
         <h3
           className="font-mincho font-bold text-[17px] tracking-[0.04em] mb-4"
-          style={{ color: textColor }}
+          style={{ color: THEME.INK }}
         >
           Copy Page Range
         </h3>
@@ -70,7 +59,7 @@ export default function CopyRangeModal({
           <div className="flex-1">
             <label
               className="text-[11px] font-medium mb-1 block"
-              style={{ color: mutedColor }}
+              style={{ color: THEME.SECONDARY }}
             >
               From
             </label>
@@ -82,23 +71,23 @@ export default function CopyRangeModal({
               onChange={(e) => setFromPage(Math.max(1, parseInt(e.target.value) || 1))}
               className="w-full px-3 py-2 text-[14px] text-center focus:outline-2"
               style={{
-                backgroundColor: inputBg,
-                color: textColor,
-                border: `1px solid ${borderColor}`,
-                outlineColor: accentColor,
+                backgroundColor: THEME.FIELD,
+                color: THEME.INK,
+                border: `1px solid ${THEME.NEUTRAL}`,
+                outlineColor: THEME.PRIMARY,
               }}
             />
           </div>
           <span
             className="text-[13px] mt-4"
-            style={{ color: mutedColor }}
+            style={{ color: THEME.SECONDARY }}
           >
             -
           </span>
           <div className="flex-1">
             <label
               className="text-[11px] font-medium mb-1 block"
-              style={{ color: mutedColor }}
+              style={{ color: THEME.SECONDARY }}
             >
               To
             </label>
@@ -110,10 +99,10 @@ export default function CopyRangeModal({
               onChange={(e) => setToPage(Math.min(totalPages, parseInt(e.target.value) || 1))}
               className="w-full px-3 py-2 text-[14px] text-center focus:outline-2"
               style={{
-                backgroundColor: inputBg,
-                color: textColor,
-                border: `1px solid ${borderColor}`,
-                outlineColor: accentColor,
+                backgroundColor: THEME.FIELD,
+                color: THEME.INK,
+                border: `1px solid ${THEME.NEUTRAL}`,
+                outlineColor: THEME.PRIMARY,
               }}
             />
           </div>
@@ -121,7 +110,7 @@ export default function CopyRangeModal({
 
         <p
           className="text-[11px] mb-4"
-          style={{ color: mutedColor }}
+          style={{ color: THEME.SECONDARY }}
         >
           {isValid ? `${toPage - fromPage + 1} page(s)` : 'Invalid range'}
         </p>
@@ -132,8 +121,8 @@ export default function CopyRangeModal({
             className="flex-1 min-h-11 px-3 text-sm font-bold interactive-page-btn"
             style={{
               backgroundColor: 'transparent',
-              border: `1px solid ${borderColor}`,
-              color: textColor,
+              border: `1px solid ${THEME.NEUTRAL}`,
+              color: THEME.INK,
             }}
           >
             Cancel
@@ -143,8 +132,8 @@ export default function CopyRangeModal({
             disabled={!isValid}
             className="flex-1 min-h-11 px-3 text-sm font-bold disabled:opacity-30 interactive-btn"
             style={{
-              backgroundColor: copyFeedback ? COLORS.SUCCESS : accentColor,
-              color: copyFeedback ? COLORS.SURFACE : onAccentColor,
+              backgroundColor: copyFeedback ? COLORS.SUCCESS : THEME.PRIMARY,
+              color: copyFeedback ? COLORS.SURFACE : THEME.ON_PRIMARY,
             }}
           >
             {copyFeedback ? 'Copied!' : 'Copy'}

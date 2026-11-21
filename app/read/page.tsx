@@ -812,7 +812,6 @@ function ReaderContent({
         onCopy={handleCopyPageRange}
         currentPage={currentPage}
         totalPages={totalPages}
-        isDarkMode={isDarkMode}
         copyFeedback={copyRangeFeedback}
       />
 
