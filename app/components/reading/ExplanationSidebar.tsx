@@ -38,6 +38,7 @@ export default function ExplanationSidebar({
 }: ExplanationSidebarProps) {
   const [display, dispatchDisplay] = React.useReducer(nextExplanationDisplay, IDLE_EXPLANATION);
   const requestCountRef = React.useRef(0);
+  const lastAskBypassedCacheRef = React.useRef(false);
   const [draftContextSize, setDraftContextSize] = React.useState<number | null>(null);
 
   const [touchStart, setTouchStart] = React.useState<number>(0);
@@ -60,6 +61,7 @@ export default function ExplanationSidebar({
 
   const showExplanation = React.useCallback(
     ({ bypassCache }: { bypassCache: boolean }) => {
+      lastAskBypassedCacheRef.current = bypassCache;
       const nextRequestId = () => {
         requestCountRef.current += 1;
         return requestCountRef.current;
@@ -78,11 +80,12 @@ export default function ExplanationSidebar({
     showExplanation({ bypassCache: false });
   }, [isOpen, sentence, showExplanation]);
 
-  // After a guest saves their API key, retry the explanation automatically. A
-  // failure is never cached, so the retry asks the AI only when nothing is saved.
+  // After a guest saves their API key, repeat the last ask. A failed Regenerate
+  // asks the AI again instead of falling back to the saved answer; any other ask
+  // reaches the AI only when nothing is saved, since a failure is never cached.
   React.useEffect(() => {
     if (!isOpen || !sentence) return;
-    const retryExplanation = () => showExplanation({ bypassCache: false });
+    const retryExplanation = () => showExplanation({ bypassCache: lastAskBypassedCacheRef.current });
     window.addEventListener(GUEST_KEY_UPDATED_EVENT, retryExplanation);
     return () => window.removeEventListener(GUEST_KEY_UPDATED_EVENT, retryExplanation);
   }, [isOpen, sentence, showExplanation]);
