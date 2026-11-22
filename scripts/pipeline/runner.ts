@@ -13,7 +13,8 @@ export interface PipelineOptions {
   filter: KanjiFilter;
   reset: boolean;
   dryRun: boolean;
-  apiUrl: string;
+  /** Where each chunk is synced; unset means the DATABASE_URL the app uses. Only a local database is accepted. */
+  databaseUrl?: string;
 }
 
 export interface PreparedBook {

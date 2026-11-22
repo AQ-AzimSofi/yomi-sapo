@@ -76,7 +76,6 @@ export function parseCliOptions(args: string[]): PipelineOptions {
     filter: 'all',
     reset: false,
     dryRun: false,
-    apiUrl: 'http://localhost:3333',
   };
 
   // Parse options
@@ -112,8 +111,11 @@ export function parseCliOptions(args: string[]): PipelineOptions {
       case '--dry-run':
         options.dryRun = true;
         break;
+      case '--database-url':
+        options.databaseUrl = args[++i];
+        break;
       case '--api-url':
-        options.apiUrl = args[++i];
+        console.warn(`--api-url ${args[++i]} is ignored: chunks are synced straight to the database now (see --database-url).`);
         break;
     }
   }
