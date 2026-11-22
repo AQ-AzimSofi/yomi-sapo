@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 // with lib/db/schema.ts applied. Unset (as in CI), the database tests are skipped.
 const TEST_DATABASE_URL = process.env.PIPELINE_TEST_DATABASE_URL;
 const TEST_DIRECTORY = 'pipeline-test/本';
+const SYNC_SCRIPT = path.join(import.meta.dirname, 'sync-text-entry.ts');
 
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yomi-sync-'));
 
@@ -46,6 +48,18 @@ describe('syncTextEntryFile', () => {
     const target = { directory: TEST_DIRECTORY, fileName: '本', filePath: writeBookFile('none', '本文') };
     await expect(syncTextEntryFile(target)).rejects.toThrow(/No DATABASE_URL/);
   });
+});
+
+describe('sync-text-entry command line', () => {
+  const CHILD_TIMEOUT_MS = 30_000;
+
+  it('Test_syncTextEntryCli_HelpPrintsTheUsage', () => {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', '--conditions=react-server', SYNC_SCRIPT, '--help'], {
+      encoding: 'utf8',
+      env: { ...process.env, DATABASE_URL: 'postgresql://user:pass@ep-x.neon.tech/yomi_sapo' },
+    });
+    expect({ status: result.status, stdout: result.stdout }).toEqual({ status: 0, stdout: expect.stringContaining('--directory <dir>') });
+  }, CHILD_TIMEOUT_MS);
 });
 
 describe.skipIf(!TEST_DATABASE_URL)('syncTextEntryFile against the test database', () => {
