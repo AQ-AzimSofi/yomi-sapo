@@ -131,7 +131,7 @@ Sources, in order: an override in `scripts/covers/overrides.json`, the cover dec
 
 Illustrations inside a book (`[IMAGE:...]` markers in the text) and the book's image metadata JSON are copyrighted too, so they live in the private `BookImages` S3 bucket with the same layout they have under `public/`, for example `bookv2-furigana/<book>/images/illustration-001.jpg`. The reader loads them through `/api/book-assets?path=...`, which serves any book to a signed-in reader and only the preview books to guests, with `Cache-Control: private` so CloudFront never shares them between users. An illustration that fails to load is skipped.
 
-`scripts/epub-to-book.ts` uploads a new book's illustrations automatically (step 3) when `BOOK_IMAGES_BUCKET` is set in `.env.local`. To upload everything already on disk:
+`scripts/epub-to-book.ts` uploads a new book's illustrations automatically (its illustration upload step) when `BOOK_IMAGES_BUCKET` is set in `.env.local`. To upload everything already on disk:
 
 ```bash
 BUCKET=$(aws s3api list-buckets --query "Buckets[?starts_with(Name, 'yomi-sapo-production-bookimagesbucket')].Name" --output text)

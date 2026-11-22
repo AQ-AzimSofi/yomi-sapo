@@ -6,10 +6,10 @@ Offline tools for preparing books, narration and the database. None of them run 
 
 | Path | What it does |
 |------|--------------|
-| `epub-to-book.ts` | The book pipeline, see [Book Pipeline](#book-pipeline-epub-to-bookts) |
-| `core/epub-to-text-furigana.py` | Pipeline step 1: EPUB to text with furigana, plus the images and a metadata JSON. It also runs on its own, see [README-epub-converter.md](./README-epub-converter.md) |
-| `core/extract-ruby-smart.py` | Pipeline step 2: the ruby registry (vocabulary index). `extract-ruby-smart.py <book.epub> --out <book folder>/ruby-registry.json`; the folder name becomes the registry's `bookTitle`, and it exits non-zero without writing when the EPUB cannot be read |
-| `core/add-furigana-to-text.py` | Pipeline step 5: furigana for the rephrased text |
+| `epub-to-book.ts`, `pipeline/` | The book pipeline, see [Book Pipeline](#book-pipeline-epub-to-bookts) |
+| `core/epub-to-text-furigana.py` | The pipeline's EPUB source: EPUB to text with furigana, plus the images and a metadata JSON. It also runs on its own, see [README-epub-converter.md](./README-epub-converter.md) |
+| `core/extract-ruby-smart.py` | Pipeline step 1: the ruby registry (vocabulary index). `extract-ruby-smart.py <book.epub> --out <book folder>/ruby-registry.json`; the folder name becomes the registry's `bookTitle`, and it exits non-zero without writing when the EPUB cannot be read |
+| `core/add-furigana-to-text.py` | Furigana for the rephrased text (pipeline step 3) and for OCR text |
 | `core/furigana_helper.py` | MeCab furigana generation shared by the three scripts above |
 | `utils/claude-rephrase.ts`, `prompts/claude-rephrase.md` | The Claude rephraser: runs `claude -p` with the prompt file as its system prompt |
 | `utils/rephrase-output.ts` | Parses a Gemini reply and aligns it with the source chunk |
@@ -26,17 +26,22 @@ Offline tools for preparing books, narration and the database. None of them run 
 
 ```bash
 npx tsx scripts/epub-to-book.ts "path/to/book.epub"
-npx tsx scripts/epub-to-book.ts --help    # every listed option and its default
+npx tsx scripts/epub-to-book.ts --help    # every option and its default
 ```
 
-Steps:
+`epub-to-book.ts` only parses the arguments, picks a book source and runs the steps (`pipeline/runner.ts`). A new kind of input is one more source in `pipeline/bookSources.ts`; a new step is one more entry in `PIPELINE_STEPS` in `pipeline/pipelineSteps.ts`, with its `shouldRun` and `run`. A step that throws stops the run.
 
-1. Extract the text, images and metadata from the EPUB into `public/bookv2-furigana/<book>/` (`core/epub-to-text-furigana.py`).
-2. Build `ruby-registry.json` from the EPUB's ruby (`core/extract-ruby-smart.py`).
-3. Upload `images/` and the metadata JSON to the BookImages bucket when `BOOK_IMAGES_BUCKET` is set in `.env.local` (see "Book Illustrations" in the root README).
-4. Rephrase the text chunk by chunk.
-5. Add furigana to each rephrased chunk (`core/add-furigana-to-text.py`). Each chunk is saved to its own files in `chunks/`, and `<book>-rephrase.txt` and `<book>-rephrase-furigana.txt` (the text the reader shows) are rebuilt from them in chunk order.
-6. After each chunk, call `PUT /api/text-entries` on the local dev server, which copies that file into the local database, so the book can be read while it is still being processed.
+The source prepares `public/bookv2-furigana/<book>/<book>.txt`:
+
+- An EPUB: the text, images and metadata are extracted into the book folder (`core/epub-to-text-furigana.py`, which prints the book it wrote as a JSON line).
+- An `ocr/ocr-pages.ts` output folder (see [Text That Is Not an EPUB](#text-that-is-not-an-epub)).
+- `--skip-extract`: the text already in the book folder.
+
+Then the steps:
+
+1. Build `ruby-registry.json` from the EPUB's ruby (`core/extract-ruby-smart.py`), for an EPUB only. A failure here is reported and the run goes on, since the reader works without it.
+2. Upload `images/` and the metadata JSON to the BookImages bucket when `BOOK_IMAGES_BUCKET` is set in `.env.local` (see "Book Illustrations" in the root README).
+3. Rephrase the text chunk by chunk and add furigana to each rephrased chunk (`core/add-furigana-to-text.py`). Each chunk is saved to its own files in `chunks/`, and `<book>-rephrase.txt` and `<book>-rephrase-furigana.txt` (the text the reader shows) are rebuilt from them in chunk order. After each chunk the reader's file is upserted into `text_entries` on the local database (`db/sync-text-entry.ts`), so the book can be read while it is still being processed.
 
 ```
 public/bookv2-furigana/<book>/
@@ -70,7 +75,15 @@ A progress file from before chunk files (version 1) is moved over on the first r
 
 ### Text That Is Not an EPUB
 
-For OCR output or a corrected source text, put the text at `public/bookv2-furigana/<book>/<book>.txt` and pass the folder with `--skip-extract`. Steps 1 and 2 are skipped, and the folder name is the book name:
+Pass the folder `ocr/ocr-pages.ts` wrote (`<image-dir>-ocr`, holding `pages/`, the joined `<book>.txt` and maybe `images/`). The joined text's name is the book name. The source adds furigana to the joined text, writes it to `public/bookv2-furigana/<book>/<book>.txt` under a `Title:`/`Author: Unknown` header, and copies the cropped figures to the book's `images/`, which step 2 uploads:
+
+```bash
+npx tsx scripts/epub-to-book.ts "temp/books/<book>-ocr"
+```
+
+Every run rebuilds `<book>.txt` from the OCR text, so OCR pages added later change the source, and the rephrase step then refuses to resume until `--reset`.
+
+For any other text, such as a corrected source, put it at `public/bookv2-furigana/<book>/<book>.txt` yourself and pass any path whose name is the book name with `--skip-extract`. The ruby registry is skipped:
 
 ```bash
 npx tsx scripts/epub-to-book.ts "public/bookv2-furigana/<book>" --skip-extract
@@ -78,11 +91,13 @@ npx tsx scripts/epub-to-book.ts "public/bookv2-furigana/<book>" --skip-extract
 
 ### Before a Run
 
-- Start the local database and the dev server on port 3333 (`npm run db:start`, then `npm run dev` or `npm run dev:nosync`). `--api-url <url>` points step 6 at another server. Without the dev server the files are still written, and each chunk logs a failed database sync
-- Install the Python dependencies (see [Python Setup](#python-setup)) into the Python the pipeline calls: the `PYTHON` environment variable if set, else `.venv` or `venv` in the project root, else `py -3` on Windows and `python3` elsewhere. The pipeline stops before step 1 when that Python cannot import MeCab
+- Start the local database (`npm run db:start`). The dev server is not needed. Chunks are synced to `DATABASE_URL` from `.env.local`, or to `--database-url <url>`; any host other than `localhost` or `127.0.0.1` stops the run before the first chunk. Without a database URL the files are still written and nothing is synced. `--api-url` is still accepted but ignored
+- Install the Python dependencies (see [Python Setup](#python-setup)) into the Python the pipeline calls: the `PYTHON` environment variable if set, else `.venv` or `venv` in the project root, else `py -3` on Windows and `python3` elsewhere. The pipeline stops before preparing the book when that Python cannot import MeCab
 - Claude rephrasing needs the `claude` CLI signed in; Gemini rephrasing needs at least one `GEMINI_API_KEY<n>` in `.env.local`, or `GEMINI_API_KEY_PAID`
 
-`--help` does not list `--skip-extract` or `--api-url`. It lists `--skip-images`, which has no effect: the extractor always writes the images.
+`--skip-images` has no effect: the extractor always writes the images.
+
+The tests of the Python steps run the real Python on a small generated EPUB (`pipeline/fixtures/make-tiny-epub.py`) and are skipped where that Python lacks the packages, as in CI. The database tests run only with `PIPELINE_TEST_DATABASE_URL` set to a throwaway local database whose name ends in `_test`, with the schema applied.
 
 ### After a Run
 

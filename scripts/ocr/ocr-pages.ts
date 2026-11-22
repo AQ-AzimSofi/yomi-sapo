@@ -18,9 +18,10 @@
  *
  * Output (the out dir defaults to "<image-dir>-ocr" next to the image folder):
  *   <out-dir>/pages/<image-stem>.txt   one per image (0001.png -> 0001.txt); delete one to transcribe that page again
- *   <out-dir>/images/<image-stem>-<n>.png  figures cropped from that page; copy the folder next to the book's text
- *                                      (public/bookv2-furigana/<book>/images) so epub-to-book.ts uploads it
+ *   <out-dir>/images/<image-stem>-<n>.png  figures cropped from that page
  *   <out-dir>/<image-dir-name>.txt     all pages joined
+ *
+ * Then `npx tsx scripts/epub-to-book.ts <out-dir>` makes the book from this folder, figures included.
  */
 
 import { parseArgs } from 'node:util';
