@@ -20,7 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { selectBookSource, type BookSource } from './pipeline/bookSources';
 import { PIPELINE_STEPS } from './pipeline/pipelineSteps';
-import { runSteps, type PipelineOptions, type PreparedBook } from './pipeline/runner';
+import { runBook, type PipelineOptions, type PreparedBook } from './pipeline/runner';
 import { assertPythonHasMeCab } from './shared/python';
 import { loadRepoEnv, REPO_ROOT } from './shared/repoPaths';
 import { isEntryPoint } from './shared/entryPoint';
@@ -47,7 +47,7 @@ export const BOOK_PIPELINE_FLAGS = {
   skipImages: switchFlag({ name: 'skip-images', description: 'Has no effect: the EPUB extractor always writes the images' }),
   filter: choiceFlag({ name: 'filter', valueName: 'level', choices: ['all', 'n3'], defaultValue: 'all', description: 'Kanji filter' }),
   reset: switchFlag({ name: 'reset', description: 'Start fresh, ignore existing progress' }),
-  dryRun: switchFlag({ name: 'dry-run', description: 'Show plan without processing' }),
+  dryRun: switchFlag({ name: 'dry-run', description: 'Show the plan and write nothing (an EPUB or OCR folder is prepared in a temp copy)' }),
   databaseUrl: textFlag({
     name: 'database-url',
     valueName: 'url',
@@ -100,6 +100,10 @@ function printBanner(options: PipelineOptions, source: BookSource): void {
 }
 
 function printSummary(options: PipelineOptions, { bookName }: PreparedBook): void {
+  if (options.dryRun) {
+    console.log(`\nDry run complete: nothing was written to public/${options.outputDir}/${bookName}/.`);
+    return;
+  }
   console.log(`
 ============================================================
   Processing Complete!
@@ -129,8 +133,7 @@ async function main(options: PipelineOptions) {
   printBanner(options, source);
 
   console.log(`\n=== Preparing the book: ${source.label} ===\n`);
-  const book = source.prepare({ libraryDir: path.join(REPO_ROOT, 'public', options.outputDir), filter: options.filter });
-  await runSteps(PIPELINE_STEPS, { options, book });
+  const book = await runBook(source, PIPELINE_STEPS, { options, libraryDir: path.join(REPO_ROOT, 'public', options.outputDir) });
   printSummary(options, book);
 }
 
