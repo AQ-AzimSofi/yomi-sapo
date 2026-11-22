@@ -12,6 +12,8 @@ It prints the target host and refuses any host other than `localhost` or `127.0.
 
 The statements are written for Aurora DSQL, and the runner drops `ASYNC` from `CREATE INDEX ASYNC` on PostgreSQL. A new database gets `INT` ids from `CACHE 1` sequences and one index per `UNIQUE (file_name, directory)`. A database an older schema created keeps its `SERIAL` ids and extra indexes, and `POSTGRES_UPGRADE_STATEMENTS` brings its columns up to date on PostgreSQL only. A new column must also work on DSQL: a bare `ADD COLUMN IF NOT EXISTS`, then `ALTER COLUMN ... SET DEFAULT`, then a backfill in batches, each its own statement. DSQL refuses `ADD COLUMN` with a `DEFAULT` or `NOT NULL`, any `ADD CONSTRAINT`, and two DDL statements (or DDL and DML) in one transaction.
 
+Run the DSQL integration tests one file at a time (`npx vitest run --no-file-parallelism lib/db scripts/db`): each creates and drops a scratch schema, and on DSQL a catalog change fails every other open session's next statement with OC001.
+
 `lib/db/schemaRunner.integration.test.ts` applies the schema twice into a scratch schema it drops afterwards. It runs only when `SCHEMA_TEST_DATABASE_URL` names a throwaway PostgreSQL database or `DSQL_TEST_ENDPOINT` names a DSQL test cluster.
 
 ---
