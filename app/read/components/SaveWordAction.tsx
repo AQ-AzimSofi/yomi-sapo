@@ -26,7 +26,7 @@ const GAP_PX = 8;
 const TOUCH_GAP_PX = 28;
 const ACTION_HEIGHT_PX = 48;
 const SIDE_MARGIN_PX = 16;
-const MAX_WIDTH_PX = 280;
+const MAX_WIDTH_PX = 320;
 
 interface SaveWordActionProps {
   unitTexts: readonly string[];
@@ -139,7 +139,8 @@ function SaveWordAction({ unitTexts, book, isEnabled, bottomInsetPx }: SaveWordA
         ...placeNear(shownSelection.box, bottomInsetPx),
       }}
     >
-      <span className="font-mincho font-bold text-[15px] truncate min-w-0">{word}</span>
+      {/* The reading gives way first when a long word and a message share the row. */}
+      <span className="font-mincho font-bold text-[15px] truncate shrink-0 max-w-[10em]">{word}</span>
       {reading && (
         <span className="text-[11px] truncate min-w-0" style={{ color: THEME.SECONDARY }}>
           {reading}
