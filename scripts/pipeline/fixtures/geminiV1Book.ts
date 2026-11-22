@@ -38,3 +38,24 @@ export const GEMINI_READER_CHUNKS = [
     + '<ruby>書か<rt>かか</rt></ruby>れていた。\r\n'
     + '>> やさしく:<ruby>中<rt>なか</rt></ruby>には<ruby>短い<rt>みじかい</rt></ruby><ruby>言葉<rt>ことば</rt></ruby>が',
 ];
+
+/**
+ * The same three chunks when Gemini reworded chunk 2's second head too far for alignRephrase to
+ * put the source back: main logged it as unmatched and kept Gemini's wording in the reader file
+ * (real alignRephrase and MeCab), so the < lines no longer hold the source text.
+ */
+export const GEMINI_REPLIES_WITH_UNMATCHED_HEAD = [
+  GEMINI_REPLIES[0],
+  '< 会社に着くと、机の上に手紙が置いてあった。\n>> やさしく: 会社に着くと、机\n\n< 手紙には誰の名前も書かれていなかった。\n>> やさしく: 差出人の名前はな',
+  GEMINI_REPLIES[2],
+];
+
+export const GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD = [
+  GEMINI_READER_CHUNKS[0],
+  '< <ruby>会社<rt>かいしゃ</rt></ruby>に<ruby>着く<rt>つく</rt></ruby>と、<ruby>机<rt>つくえ</rt></ruby>の<ruby>上<rt>うえ</rt></ruby>に'
+    + '<ruby>手紙<rt>てがみ</rt></ruby>が<ruby>置い<rt>おい</rt></ruby>てあった。\r\n'
+    + '>> やさしく:<ruby>会社<rt>かいしゃ</rt></ruby>に<ruby>着く<rt>つく</rt></ruby>と、<ruby>机<rt>つくえ</rt></ruby>\r\n\r\n'
+    + '< <ruby>手紙<rt>てがみ</rt></ruby>には<ruby>誰<rt>だれ</rt></ruby>の<ruby>名前<rt>なまえ</rt></ruby>も<ruby>書か<rt>かか</rt></ruby>れていなかった。\r\n'
+    + '>> やさしく:<ruby>差出<rt>さしだし</rt></ruby><ruby>人<rt>にん</rt></ruby>の<ruby>名前<rt>なまえ</rt></ruby>はな',
+  GEMINI_READER_CHUNKS[2],
+];
