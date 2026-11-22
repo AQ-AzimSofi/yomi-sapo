@@ -10,6 +10,9 @@ Converts EPUB files to plain text while:
 Usage:
     python epub-to-text-furigana.py book.epub
     python epub-to-text-furigana.py book.epub --filter n3
+
+Progress goes to stderr. The last line on stdout is the result as JSON:
+    {"bookName": ..., "textPath": ..., "metadataPath": ...}
 """
 
 import argparse
@@ -195,7 +198,7 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
         preserve_long_vowel: If True, keep ー in output. If False (default), convert to proper vowels.
 
     Returns:
-        Path to created text file
+        Dict with the book folder name (bookName) and the paths of the text and metadata files
     """
     log(f"Processing EPUB: {epub_path}")
     log(f"Filtering mode: {'N3+ only' if filter_n3_plus else 'All kanji'}")
@@ -384,7 +387,7 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
     log(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
     log(f"{'='*60}")
 
-    return output_path
+    return {'bookName': safe_title, 'textPath': str(output_path), 'metadataPath': str(metadata_path)}
 
 
 def main():
@@ -458,7 +461,8 @@ Note: Existing furigana in the EPUB will always be preserved.
     )
 
     log("\n[OK] Done! You can now use this file in your Japanese reading app.")
-    log(f"  File saved to: {result}")
+    log(f"  File saved to: {result['textPath']}")
+    print(json.dumps(result))
 
 
 if __name__ == '__main__':
