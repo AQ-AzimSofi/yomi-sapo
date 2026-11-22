@@ -120,6 +120,35 @@ describe('syncDirection', () => {
     expect(target.inserts).toHaveLength(1);
   });
 
+  it('sends a book too large to share a 1 MiB statement in a statement of its own', async () => {
+    const books = ['a', 'b', 'c'].map((fileName, bookI) => book(fileName, 'x'.repeat(600_000), { id: bookI + 1 }));
+    const source = fakeClient({ columns: BOOK_COLUMNS, rows: books, idDefault: SERIAL_ID });
+    const target = fakeClient(emptyTarget());
+
+    const result = await syncDirection(source.client, target.client, TEXT_ENTRIES, 'local -> prod');
+
+    expect(result.rows).toBe(3);
+    expect(target.inserts.map((statement) => insertedRows(statement).map((row) => row.file_name))).toEqual([['a'], ['b'], ['c']]);
+  });
+
+  it('still sends at most 25 small rows per statement', async () => {
+    const bookmarks = Array.from({ length: 30 }, (_, rowI) => ({
+      id: rowI + 1,
+      file_name: `book-${rowI}`,
+      directory: 'bookv2-furigana',
+      bookmark_text: 'しおり',
+      bookmark_page: 1,
+      updated_at: UPDATED_AT,
+    }));
+    const columns = Object.keys(bookmarks[0]);
+    const source = fakeClient({ columns, rows: bookmarks, idDefault: SERIAL_ID });
+    const target = fakeClient({ columns, rows: [], idDefault: SERIAL_ID });
+
+    await syncDirection(source.client, target.client, BOOKMARKS, 'local -> prod');
+
+    expect(target.inserts.map((statement) => insertedRows(statement).length)).toEqual([25, 5]);
+  });
+
   it('sends a statement again after a write conflict (40001), which committed nothing', async () => {
     const source = fakeClient({ columns: BOOK_COLUMNS, rows: [book('a', 'あ'), book('b', 'い', { id: 2 })], idDefault: SERIAL_ID });
     const target = fakeClient(emptyTarget(), [databaseError('40001', 'change conflicts with another transaction (OC000)')]);
