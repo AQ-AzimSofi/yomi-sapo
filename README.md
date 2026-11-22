@@ -281,6 +281,8 @@ Production runs at https://yomi-sapo.click on AWS (Lambda + CloudFront via SST, 
 
 3. **Add books** to production: process them locally, then push the new rows with `npm run db:sync` and choose `[2] Push missing to prod` (the startup/shutdown sync in `npm run dev` does the same). Both need `PROD_DATABASE_URL` (the Neon connection string) in `.env.local`. The sync covers database rows only (text, bookmarks, vocabulary); illustrations and metadata JSON under `public/bookv2-furigana/` are gitignored, so they never reach production. The admin API is local-only: production has no `ADMIN_API_KEY`, so `/api/admin` returns 401 there.
 
+4. **Aurora DSQL (prepared, not live)**: `lib/db/connection.ts` connects to Aurora DSQL only when `DSQL_ENDPOINT` is set, as `DSQL_USER` (default `yomi_app`) with an IAM token per connection, in `DSQL_REGION` (or `AWS_REGION`). Otherwise it uses `DATABASE_URL` exactly as before. Setting `PRODUCTION_DSQL_CLUSTER_ID` in `sst.config.ts` grants the production server function `dsql:DbConnect` on that cluster and sets those variables; it is empty, so production stays on Neon. The schema is applied with `scripts/db/apply-schema-dsql.ts` (see [scripts/db/README.md](scripts/db/README.md)). On DSQL the library lists books from the covering index `idx_text_entries_library` and recounts only books whose `content_bytes` is NULL, so anything that writes book text must clear `content_bytes`, as `upsertTextEntry` and `clean-book-text` do.
+
 ### Important Notes
 
 - **Text files are gitignored** - no copyrighted content in repository
