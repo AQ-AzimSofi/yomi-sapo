@@ -55,8 +55,32 @@ describe('GET /api/db-sync', () => {
     const response = await GET(new Request(SYNC_URL, { headers: OWNER_HEADERS }));
 
     expect(response.status).toBe(503);
-    expect((await response.json()).error.message).toBe('Sync not available - PROD_DATABASE_URL not configured');
+    expect((await response.json()).error.message).toBe('Sync not available - PROD_DSQL_ENDPOINT or PROD_DATABASE_URL not configured');
     expect(withClients).not.toHaveBeenCalled();
+  });
+
+  it('syncs with Neon through PROD_DATABASE_URL', async () => {
+    vi.mocked(withClients).mockResolvedValue([]);
+
+    await GET(new Request(SYNC_URL, { headers: OWNER_HEADERS }));
+
+    expect(withClients).toHaveBeenCalledWith(
+      { kind: 'postgres', url: 'postgresql://prod.invalid/yomi_sapo' },
+      'postgresql://local.invalid/yomi_sapo',
+      expect.any(Function)
+    );
+  });
+
+  it('syncs with Aurora DSQL once PROD_DSQL_ENDPOINT is set', async () => {
+    vi.stubEnv('PROD_DSQL_ENDPOINT', 'abc123.dsql.ap-northeast-1.on.aws');
+    vi.mocked(withClients).mockResolvedValue([]);
+
+    await GET(new Request(SYNC_URL, { headers: OWNER_HEADERS }));
+
+    expect(vi.mocked(withClients).mock.calls[0][0]).toEqual({
+      kind: 'dsql',
+      settings: { endpoint: 'abc123.dsql.ap-northeast-1.on.aws', region: 'ap-northeast-1', user: 'admin' },
+    });
   });
 
   it('answers a generic 500 that does not leak the connection error', async () => {

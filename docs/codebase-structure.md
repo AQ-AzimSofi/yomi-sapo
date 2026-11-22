@@ -42,7 +42,7 @@ yomi-sapo/
 | `/api/text-entries` | PUT | Copy a local book file into text_entries (dev server only) |
 | `/api/explain-sentence` | POST | Sentence explanations |
 | `/api/tts` | POST | Text-to-speech |
-| `/api/ruby-registry` | GET, POST | Furigana registry |
+| `/api/ruby-registry` | GET, POST, DELETE | A book's ruby registry from `ruby_registry_entries`; 503 `registry_unavailable` where the table does not exist (Neon) |
 | `/api/init-db` | GET | Initialize database tables |
 | `/api/health` | GET | Health check |
 | `/api/auth` | POST | Authentication |
@@ -173,12 +173,13 @@ import { getVocabularyEntries } from '@/lib/db/vocabularyQueries.sql';
 
 ```
 services/
-└── fileService.ts      # Book files and ruby registries on disk
+└── fileService.ts      # Book files on disk
 ```
 
 **fileService functions:**
 - `readTextFile(fileName)`
-- `readRubyRegistry`, `writeRubyRegistry`, `upsertRubyEntry`, `deleteRubyEntry`, `ignoreSuggestion`
+
+Ruby registries live in the `ruby_registry_entries` table (`lib/db/rubyRegistryQueries.sql.ts`), loaded from the `ruby-registry.json` files by `scripts/db/import-ruby-registry.ts`.
 
 ### API client (`/lib/api`)
 

@@ -10,6 +10,9 @@ const ENTRY_SCRIPTS = [
   '../db/sync-text-entry.ts',
   '../db/clean-book-text.ts',
   '../db/migrate.ts',
+  '../db/apply-schema-dsql.ts',
+  '../db/copy-to-dsql.ts',
+  '../db/import-ruby-registry.ts',
   '../dev-with-sync.ts',
   '../auth/generate-password-hash.ts',
 ];

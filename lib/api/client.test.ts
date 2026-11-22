@@ -14,6 +14,7 @@ import {
   fetchLibraryProgress,
   fetchNarration,
   fetchRubyRegistry,
+  isRubyRegistryUnavailable,
   fetchSession,
   fetchVocabulary,
   listTextFiles,
@@ -556,6 +557,20 @@ describe('ruby registry calls', () => {
       `/api/ruby-registry?directory=bookv2-furigana&bookName=${encodedBookName}&kanji=${encodeURIComponent('本')}&type=${type}`
     );
     expect(lastCall().init).toMatchObject({ method: 'DELETE', headers: {}, body: undefined });
+  });
+
+  it('tells a server without the registry table apart from any other failure', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: { code: 'registry_unavailable', message: 'The ruby registry is not available on this server yet' } }, 503)
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: { code: 'internal_error', message: 'Internal server error' } }, 500));
+
+    const unavailable = await fetchRubyRegistry(KEY).catch((error: unknown) => error);
+    const failed = await fetchRubyRegistry(KEY).catch((error: unknown) => error);
+
+    expect(isRubyRegistryUnavailable(unavailable)).toBe(true);
+    expect(isRubyRegistryUnavailable(failed)).toBe(false);
+    expect(isRubyRegistryUnavailable(new Error('network down'))).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env npx tsx
 /**
- * Brings the local database to the current schema by running CREATE_TABLES_SQL and
- * MIGRATIONS_SQL from lib/db/schema.ts, the same SQL GET /api/init-db runs.
+ * Brings the local database to the current schema by applying the statements in
+ * lib/db/schema.ts through lib/db/schemaRunner.ts, as GET /api/init-db does.
  *
  * It reads DATABASE_URL from .env.local and refuses any host other than localhost or
  * 127.0.0.1: production schema changes stay a deliberate manual step.
@@ -13,7 +13,7 @@
 import * as fs from 'fs';
 import dotenv from 'dotenv';
 import postgres from 'postgres';
-import { CREATE_TABLES_SQL, MIGRATIONS_SQL } from '../../lib/db/schema';
+import { applySchema } from '../../lib/db/schemaRunner';
 import { isLocalDatabase } from './localDatabase';
 import { isEntryPoint } from '../shared/entryPoint';
 
@@ -36,8 +36,7 @@ export async function main(): Promise<void> {
       throw new Error('refusing to change a database that is not on localhost or 127.0.0.1');
     }
 
-    await sql.unsafe(CREATE_TABLES_SQL);
-    await sql.unsafe(MIGRATIONS_SQL);
+    await applySchema(sql, 'postgres');
     console.log('Schema is up to date.');
   } finally {
     await sql.end();

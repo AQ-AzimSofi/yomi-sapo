@@ -17,8 +17,11 @@
  *   npx tsx scripts/db/clean-book-text.ts --prod --apply
  */
 
-import pg from 'pg';
+import type pg from 'pg';
 import dotenv from 'dotenv';
+import { createPgClient } from '../../lib/db/pgClient';
+import { retryOnSerializationFailure } from '../../lib/db/writeTransaction';
+import { PROD_DATABASE_VARIABLES, prodClientConfig, prodHostOf, readProdDatabase } from '../../lib/db/prodDatabase';
 import { cleanBookText } from './bookTextCleanup';
 import { parseCleanupFlags } from './cleanupFlags';
 import { isEntryPoint } from '../shared/entryPoint';
@@ -46,33 +49,45 @@ interface Connection {
   host: string;
 }
 
-// One statement, so every row is written or none is. A row that changed after it
-// was read is skipped instead of being overwritten with a stale cleaned copy.
-const UPDATE_UNCHANGED_ROWS_SQL = `
-  WITH written_books AS (
-    UPDATE text_entries AS entry
-    SET content = change.cleaned
-    FROM unnest($1::int[], $2::text[], $3::text[]) AS change(id, original, cleaned)
-    WHERE entry.id = change.id AND entry.content = change.original
-    RETURNING entry.id
-  ), written_bookmarks AS (
-    UPDATE bookmarks AS bookmark
-    SET bookmark_text = change.cleaned
-    FROM unnest($4::int[], $5::text[], $6::text[]) AS change(id, original, cleaned)
-    WHERE bookmark.id = change.id AND bookmark.bookmark_text = change.original
-    RETURNING bookmark.id
-  )
-  SELECT ARRAY(SELECT id FROM written_books) AS book_ids, ARRAY(SELECT id FROM written_bookmarks) AS bookmark_ids`;
+interface CleanedRows {
+  books: TextChange[];
+  bookmarks: TextChange[];
+}
 
-function connect(isProd: boolean): Connection {
-  const connectionString = isProd ? process.env.PROD_DATABASE_URL : process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error(`${isProd ? 'PROD_DATABASE_URL' : 'DATABASE_URL'} is not set in .env.local`);
-  }
-  const client = isProd
-    ? new pg.Client({ connectionString, ssl: { rejectUnauthorized: false } })
-    : new pg.Client({ connectionString });
-  return { client, host: new URL(connectionString).hostname };
+interface WrittenIds {
+  bookIds: number[];
+  bookmarkIds: number[];
+}
+
+type QueryClient = Pick<pg.Client, 'query'>;
+
+// Compare-and-set: a book that changed after it was read is skipped instead of being overwritten
+// with a stale cleaned copy. One book per statement, because each statement carries the book
+// twice and Aurora DSQL refuses a message over 10 MiB. Clearing content_bytes has the library
+// recount the book, which on Aurora DSQL it does only for a book whose content_bytes is NULL.
+const UPDATE_UNCHANGED_BOOK_SQL = `
+  UPDATE text_entries
+  SET content = $3, content_bytes = NULL
+  WHERE id = $1 AND content = $2
+  RETURNING id`;
+
+const UPDATE_UNCHANGED_BOOKMARKS_SQL = `
+  UPDATE bookmarks AS bookmark
+  SET bookmark_text = change.cleaned
+  FROM unnest($1::int[], $2::text[], $3::text[]) AS change(id, original, cleaned)
+  WHERE bookmark.id = change.id AND bookmark.bookmark_text = change.original
+  RETURNING bookmark.id`;
+
+function connectToProd(): Connection {
+  const prodDatabase = readProdDatabase(process.env);
+  if (!prodDatabase) throw new Error(`${PROD_DATABASE_VARIABLES} is not set in .env.local`);
+  return { client: createPgClient(prodClientConfig(prodDatabase), 'production'), host: prodHostOf(prodDatabase) };
+}
+
+function connectToLocal(): Connection {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('DATABASE_URL is not set in .env.local');
+  return { client: createPgClient({ connectionString }, 'local'), host: new URL(connectionString).hostname };
 }
 
 function describeRemovals(removedByRule: Record<string, number>): string {
@@ -86,9 +101,37 @@ function changeColumns(changes: TextChange[]): [number[], string[], string[]] {
   return [changes.map(({ id }) => id), changes.map(({ original }) => original), changes.map(({ cleaned }) => cleaned)];
 }
 
+// pg reports each statement after its commit, so a write conflict (40001) arrives with nothing
+// written and the statement is sent again.
+async function writeCleanedBooks(client: QueryClient, books: TextChange[]): Promise<number[]> {
+  const writtenIds: number[] = [];
+  for (const { id, original, cleaned } of books) {
+    const { rows } = await retryOnSerializationFailure(() =>
+      client.query<{ id: number }>(UPDATE_UNCHANGED_BOOK_SQL, [id, original, cleaned])
+    );
+    writtenIds.push(...rows.map((row) => row.id));
+  }
+  return writtenIds;
+}
+
+async function writeCleanedBookmarks(client: QueryClient, bookmarks: TextChange[]): Promise<number[]> {
+  if (bookmarks.length === 0) return [];
+  const { rows } = await retryOnSerializationFailure(() =>
+    client.query<{ id: number }>(UPDATE_UNCHANGED_BOOKMARKS_SQL, changeColumns(bookmarks))
+  );
+  return rows.map((row) => row.id);
+}
+
+/** Writes the cleaned books, then the cleaned bookmarks, and returns the ids of the rows written. */
+export async function writeCleanedRows(client: QueryClient, changes: CleanedRows): Promise<WrittenIds> {
+  const bookIds = await writeCleanedBooks(client, changes.books);
+  const bookmarkIds = await writeCleanedBookmarks(client, changes.bookmarks);
+  return { bookIds, bookmarkIds };
+}
+
 async function main(): Promise<void> {
   const { isProd, shouldApply } = parseCleanupFlags(process.argv.slice(2));
-  const { client, host } = connect(isProd);
+  const { client, host } = isProd ? connectToProd() : connectToLocal();
   await client.connect();
 
   try {
@@ -115,13 +158,10 @@ async function main(): Promise<void> {
     }
 
     const textChanges = bookChanges.map(({ row, cleaned }) => ({ id: row.id, original: row.content, cleaned }));
-    const { rows: [written] } = await client.query<{ book_ids: number[]; bookmark_ids: number[] }>(UPDATE_UNCHANGED_ROWS_SQL, [
-      ...changeColumns(textChanges),
-      ...changeColumns(bookmarkChanges),
-    ]);
-    console.log(`Updated ${written.book_ids.length} books and ${written.bookmark_ids.length} bookmarks.`);
+    const written = await writeCleanedRows(client, { books: textChanges, bookmarks: bookmarkChanges });
+    console.log(`Updated ${written.bookIds.length} books and ${written.bookmarkIds.length} bookmarks.`);
 
-    const skippedCount = textChanges.length + bookmarkChanges.length - written.book_ids.length - written.bookmark_ids.length;
+    const skippedCount = textChanges.length + bookmarkChanges.length - written.bookIds.length - written.bookmarkIds.length;
     if (skippedCount > 0) {
       throw new Error(`Skipped ${skippedCount} rows that changed after they were read. Run the script again.`);
     }

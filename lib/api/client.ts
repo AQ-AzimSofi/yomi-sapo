@@ -284,6 +284,11 @@ export async function saveRubyEntry(entry: SaveRubyEntryRequest): Promise<RubyRe
   return request<RubyRegistryResponse>(API_ROUTES.RUBY_REGISTRY, { method: 'POST', body: entry });
 }
 
+/** Whether a registry call failed because the server has no registry table (production before the move to Aurora DSQL). */
+export function isRubyRegistryUnavailable(error: unknown): boolean {
+  return error instanceof ApiError && error.body?.error?.code === 'registry_unavailable';
+}
+
 /** Deletes an entry, or ignores a suggestion so it is not offered again. */
 export async function removeRubyRegistryItem(
   key: RubyRegistryKey,

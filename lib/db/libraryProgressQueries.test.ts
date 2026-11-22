@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from '@/lib/db/connection';
 import { getLibraryRows, recountRow, type ContentRow, type LibraryRow } from './libraryProgressQueries.sql';
 
-vi.mock('@/lib/db/connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }) }));
+vi.mock('@/lib/db/connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }), databaseKind: 'postgres' }));
 
 const REPEATED_TEXT = '同じ文。';
 // 150 paragraphs: the repeated text sits on page 1 (unit 10) and page 3 (unit 110).
@@ -23,7 +23,15 @@ function staleRow(bookmark: Pick<LibraryRow, 'bookmark_text' | 'bookmark_page'>)
   };
 }
 
-const CONTENT: ContentRow = { id: 1, content: BOOK_TEXT, character_count: BOOK_TEXT.length, byte_count: 2 };
+const CONTENT: ContentRow = { id: 1, content: BOOK_TEXT, character_count: BOOK_TEXT.length, byte_count: 2, stored_bytes: 2 };
+const MIB = 1024 * 1024;
+
+type Transaction = ReturnType<typeof vi.fn>;
+
+// The first parameter of each UPDATE is its key column: text_entries ids, or bookmarks file names.
+function updatedKeys(transaction: Transaction, table: string): unknown {
+  return transaction.mock.calls.find(([strings]) => (strings as string[]).join('?').includes(`UPDATE ${table}`))?.[1];
+}
 
 function updatedTables(client: { mock: { calls: readonly unknown[][] } }): string[] {
   return client.mock.calls
@@ -71,6 +79,60 @@ describe('getLibraryRows', () => {
     expect(sql.begin).toHaveBeenCalledTimes(1);
     expect(updatedTables(transaction)).toEqual(['text_entries', 'bookmarks']);
     expect(updatedTables(vi.mocked(sql))).toEqual([]);
+  });
+
+  it('saves the recounts in transactions that each stay under 8 MiB of stored book text', async () => {
+    const storedBytesById = new Map([[1, 5 * MIB], [2, 4 * MIB], [3, 2 * MIB]]);
+    const bookIds = [...storedBytesById.keys()];
+    vi.mocked(sql)
+      .mockResolvedValueOnce(bookIds.map((id) => ({ ...staleRow({ bookmark_text: REPEATED_TEXT, bookmark_page: null }), id, file_name: `ほん${id}` })) as never)
+      .mockResolvedValueOnce(bookIds.map((id) => ({ ...CONTENT, id, stored_bytes: storedBytesById.get(id) })) as never);
+    const transactions: Transaction[] = [];
+    vi.mocked(sql.begin).mockImplementation(((callback: (tx: Transaction) => unknown) => {
+      const transaction = vi.fn().mockResolvedValue([]);
+      transactions.push(transaction);
+      return Promise.resolve(callback(transaction));
+    }) as never);
+
+    await getLibraryRows(() => true);
+
+    expect(transactions.map((transaction) => updatedKeys(transaction, 'text_entries'))).toEqual([[1], [2, 3]]);
+    expect(transactions.map((transaction) => updatedKeys(transaction, 'bookmarks'))).toEqual([['ほん1'], ['ほん2', 'ほん3']]);
+  });
+
+  it('saves the recounted rows again after a DSQL write conflict', async () => {
+    const transaction = vi.fn().mockResolvedValue([]);
+    const conflict = Object.assign(new Error('change conflicts with another transaction (OC000)'), { code: '40001' });
+    vi.mocked(sql.begin)
+      .mockRejectedValueOnce(conflict)
+      .mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+    mockStaleBookReads();
+
+    await getLibraryRows(() => true);
+
+    expect(sql.begin).toHaveBeenCalledTimes(2);
+    expect(updatedTables(transaction)).toEqual(['text_entries', 'bookmarks']);
+  });
+
+  it('compares each stored size with the size of the text, which PostgreSQL reads from the value header', async () => {
+    vi.mocked(sql).mockResolvedValueOnce([] as never);
+
+    await getLibraryRows(() => true);
+
+    expect((vi.mocked(sql).mock.calls[0][0] as TemplateStringsArray).join('?')).toContain('octet_length(t.content) AS current_bytes');
+  });
+
+  // The text was read outside the transaction that saves the counts, so a book rewritten
+  // in between must not get the counts of its old text.
+  it('saves the counts only while the book still has the size they were counted at', async () => {
+    const transaction = vi.fn().mockResolvedValue([]);
+    vi.mocked(sql.begin).mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+    mockStaleBookReads();
+
+    await getLibraryRows(() => true);
+
+    const textUpdate = transaction.mock.calls.map(([strings]) => (strings as string[]).join('?')).find((text) => text.includes('UPDATE text_entries'));
+    expect(textUpdate?.replace(/\s+/g, ' ')).toContain('WHERE t.id = u.id AND octet_length(t.content) = u.content_bytes');
   });
 
   it('fails when the transaction that saves the recounted rows rolls back', async () => {

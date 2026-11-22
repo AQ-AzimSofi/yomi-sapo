@@ -39,7 +39,7 @@ The source prepares `public/bookv2-furigana/<book>/<book>.txt`:
 
 Then the steps:
 
-1. Build `ruby-registry.json` from the EPUB's ruby (`core/extract-ruby-smart.py`), for an EPUB only. A failure here is reported and the run goes on, since the reader works without it.
+1. Build `ruby-registry.json` from the EPUB's ruby (`core/extract-ruby-smart.py`), for an EPUB only. A failure here is reported and the run goes on, since the reader works without it. The reader reads registries from the database, so load it afterwards with `npx tsx scripts/db/import-ruby-registry.ts --apply` (see [db/README.md](db/README.md)).
 2. Upload `images/` and the metadata JSON to the BookImages bucket when `BOOK_IMAGES_BUCKET` is set in `.env.local` (see "Book Illustrations" in the root README).
 3. Rephrase the text chunk by chunk and add furigana to each rephrased chunk (`core/add-furigana-to-text.py`). Each chunk is saved to its own files in `chunks/`, and `<book>-rephrase.txt` and `<book>-rephrase-furigana.txt` (the text the reader shows) are rebuilt from them in chunk order. After each chunk the reader's file is upserted into `text_entries` on the local database (`db/sync-text-entry.ts`), so the book can be read while it is still being processed.
 

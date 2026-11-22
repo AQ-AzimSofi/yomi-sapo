@@ -1,4 +1,11 @@
-import { Client } from 'pg';
+import type { Client } from 'pg';
+import { bookTextTooLargeError } from './bookTextSize';
+import { withCurrentContentBytes } from './contentBytes';
+import { errorCodeOf } from './errorCode';
+import { createPgClient } from './pgClient';
+import { prodClientConfig, type ProdDatabase } from './prodDatabase';
+import { retryOnSerializationFailure } from './writeTransaction';
+import { groupBySize } from '../utils/groupBySize';
 
 export type SyncDirection = 'prod -> local' | 'local -> prod';
 
@@ -23,6 +30,16 @@ export interface TableConfig {
   identity: IdentityKey;
   // Every synced table is last-write-wins on this column.
   timestampCol: string;
+  // Applied to each source row before it is written to the target.
+  prepareRow?: (row: Record<string, unknown>) => Record<string, unknown>;
+  // Why production must not store this row, or null when it may. Checked only when pushing.
+  prodRefusalOf?: (row: Record<string, unknown>) => string | null;
+}
+
+// A book too large for one Aurora DSQL value stays off production, Neon included, so that every
+// book there can move to DSQL. The local database stores any size.
+function bookTooLargeForProd(row: Record<string, unknown>): string | null {
+  return bookTextTooLargeError(String(row.content))?.message ?? null;
 }
 
 export const TABLES: TableConfig[] = [
@@ -46,6 +63,8 @@ export const TABLES: TableConfig[] = [
     orderBy: 'created_at',
     identity: { kind: 'composite', cols: FILE_DIR_PAIR, sep: '|' },
     timestampCol: 'updated_at',
+    prepareRow: withCurrentContentBytes,
+    prodRefusalOf: bookTooLargeForProd,
   },
 ];
 
@@ -61,11 +80,25 @@ async function getColumns(client: Client, tableName: string): Promise<string[]> 
   const bare = stripQuotes(tableName);
   const result = await client.query(
     `SELECT column_name FROM information_schema.columns
-     WHERE table_name = $1 AND table_schema = 'public'
+     WHERE table_name = $1 AND table_schema = current_schema()
      ORDER BY ordinal_position`,
     [bare]
   );
   return result.rows.map((r: { column_name: string }) => r.column_name);
+}
+
+// A target that numbers its rows from a sequence (SERIAL, or Aurora DSQL's nextval default) has
+// to number a copied row itself. Sending the source's id would collide with a row the target
+// numbered (23505), and leave its sequence behind ids already taken, so the app's next insert
+// there would collide too. Rows are matched on their conflict key, never on id.
+async function targetNumbersIds(client: Client, tableName: string): Promise<boolean> {
+  const result = await client.query(
+    `SELECT column_default FROM information_schema.columns
+     WHERE table_name = $1 AND column_name = $2 AND table_schema = current_schema()`,
+    [stripQuotes(tableName), SURROGATE_PK]
+  );
+  const columnDefault: unknown = result.rows[0]?.column_default;
+  return typeof columnDefault === 'string' && columnDefault.startsWith('nextval(');
 }
 
 async function getCount(client: Client, table: string): Promise<number | null> {
@@ -208,13 +241,53 @@ export interface SyncResult {
 
 const BATCH_SIZE = 25;
 const PG_MAX_PARAMS = 65535;
+// Aurora DSQL refuses a message over 10 MiB (08P01, dropping the connection) and a transaction
+// that writes over 10 MiB (54000). A statement holds rows up to this many parameter bytes, so
+// it stays far below both; a row larger than this, such as most books, is sent on its own.
+const MAX_BATCH_BYTES = 1024 * 1024;
+// Numbers, dates and booleans travel as a few bytes of text.
+const SCALAR_PARAMETER_BYTES = 8;
 
-function isConnectionClosed(err: unknown): boolean {
+// Aurora DSQL answers a message over 10 MiB with 08P01 and then drops the connection.
+const PROTOCOL_VIOLATION = '08P01';
+
+function isConnectionLost(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
+  if (errorCodeOf(err) === PROTOCOL_VIOLATION) return true;
   const msg = err.message;
   return msg.includes('Client was closed')
     || msg.includes('Connection terminated')
     || msg.includes('Client has encountered a connection error');
+}
+
+function describeDatabaseError(err: unknown): string {
+  const code = errorCodeOf(err);
+  const message = err instanceof Error ? err.message : String(err);
+  return code ? `[${code}] ${message}` : message;
+}
+
+function connectionLostError(tableName: string, err: unknown): Error {
+  return new Error(`[sync-core] ${tableName}: target connection closed mid-sync: ${describeDatabaseError(err)}`, { cause: err });
+}
+
+function parameterBytes(value: unknown): number {
+  if (typeof value === 'string') return Buffer.byteLength(value, 'utf8');
+  if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
+    return Buffer.byteLength(JSON.stringify(value), 'utf8');
+  }
+  return SCALAR_PARAMETER_BYTES;
+}
+
+function rowParameterBytes(row: Record<string, unknown>, columns: readonly string[]): number {
+  return columns.reduce((sum, column) => sum + parameterBytes(row[column]), 0);
+}
+
+function planBatches(rows: Record<string, unknown>[], columns: readonly string[]): Record<string, unknown>[][] {
+  return groupBySize(rows, (row) => rowParameterBytes(row, columns), MAX_BATCH_BYTES).flatMap((group) =>
+    Array.from({ length: Math.ceil(group.length / BATCH_SIZE) }, (_, batchI) =>
+      group.slice(batchI * BATCH_SIZE, (batchI + 1) * BATCH_SIZE)
+    )
+  );
 }
 
 type KeySnapshot = Map<string, { keyValues: unknown[]; updatedAtMs: number | null }>;
@@ -293,6 +366,17 @@ function rowIdentityLog(table: TableConfig, row: Record<string, unknown>): strin
   return cols.map(c => `${c}=${row[c]}`).join(',');
 }
 
+function selectRowsProdAccepts(table: TableConfig, rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const { prodRefusalOf } = table;
+  if (!prodRefusalOf) return rows;
+  return rows.filter((row) => {
+    const refusal = prodRefusalOf(row);
+    if (refusal === null) return true;
+    console.error(`  [ERR] ${table.name} row (${rowIdentityLog(table, row)}) not pushed: ${refusal}`);
+    return false;
+  });
+}
+
 export async function syncDirection(
   source: Client,
   target: Client,
@@ -300,8 +384,11 @@ export async function syncDirection(
   direction: SyncDirection
 ): Promise<SyncResult> {
   const tableName = stripQuotes(table.name);
-  const columns = await getColumns(source, table.name);
-  if (columns.length === 0) return { table: tableName, rows: 0, skipped: 0, failed: 0, direction };
+  const sourceColumns = await getColumns(source, table.name);
+  if (sourceColumns.length === 0) return { table: tableName, rows: 0, skipped: 0, failed: 0, direction };
+  const isIdConflictKey = conflictColumns(table.conflictKey).includes(SURROGATE_PK);
+  const isIdFromTarget = !isIdConflictKey && (await targetNumbersIds(target, table.name));
+  const columns = isIdFromTarget ? sourceColumns.filter((column) => column !== SURROGATE_PK) : sourceColumns;
 
   // Crash early on impossible state: if a future schema widens to where one
   // batch would exceed PG's hard parameter limit, the cause would otherwise
@@ -321,7 +408,8 @@ export async function syncDirection(
   const keys = selectKeysToTransfer(sourceSnapshot, targetSnapshot);
   if (keys.length === 0) return { table: tableName, rows: 0, skipped: 0, failed: 0, direction };
 
-  const sourceRows = await withSyncContext(`${context} fetch`, fetchRowsByKey(source, table, keys));
+  const fetchedRows = await withSyncContext(`${context} fetch`, fetchRowsByKey(source, table, keys));
+  const sourceRows = table.prepareRow ? fetchedRows.map(table.prepareRow) : fetchedRows;
   const unfetchedCount = keys.length - sourceRows.length;
   if (unfetchedCount > 0) {
     console.error(
@@ -330,12 +418,12 @@ export async function syncDirection(
     );
   }
 
+  const rowsToWrite = direction === 'local -> prod' ? selectRowsProdAccepts(table, sourceRows) : sourceRows;
   const singleRowSql = buildBatchUpsertSql(table, columns, 1);
   let rows = 0;
   let skipped = 0;
-  let failed = unfetchedCount;
-  for (let start = 0; start < sourceRows.length; start += BATCH_SIZE) {
-    const batch = sourceRows.slice(start, start + BATCH_SIZE);
+  let failed = unfetchedCount + sourceRows.length - rowsToWrite.length;
+  for (const batch of planBatches(rowsToWrite, columns)) {
     const sql = buildBatchUpsertSql(table, columns, batch.length);
     const values: unknown[] = [];
     for (const row of batch) {
@@ -343,16 +431,16 @@ export async function syncDirection(
     }
 
     try {
-      const result = await target.query(sql, values);
+      // pg waits for the commit of an autocommit statement, so a conflict Aurora DSQL raises at
+      // commit (40001) arrives here with nothing written, and the statement can be sent again.
+      const result = await retryOnSerializationFailure(() => target.query(sql, values));
       const affected = result.rowCount ?? 0;
       rows += affected;
       skipped += batch.length - affected;
     } catch (err) {
       // A dead connection will fail every remaining batch identically — bail
       // out so the wrapper's outer catch can report one error instead of N.
-      if (isConnectionClosed(err)) {
-        throw new Error(`[sync-core] ${tableName}: target connection closed mid-sync`);
-      }
+      if (isConnectionLost(err)) throw connectionLostError(tableName, err);
       // Data error: one poison row aborted the whole batch atomically. Retry
       // row-by-row to land the valid rows and pinpoint the offender.
       console.error(
@@ -362,14 +450,12 @@ export async function syncDirection(
       for (const row of batch) {
         const singleValues = columns.map(c => row[c]);
         try {
-          const result = await target.query(singleRowSql, singleValues);
+          const result = await retryOnSerializationFailure(() => target.query(singleRowSql, singleValues));
           const affected = result.rowCount ?? 0;
           rows += affected;
           skipped += 1 - affected;
         } catch (rowErr) {
-          if (isConnectionClosed(rowErr)) {
-            throw new Error(`[sync-core] ${tableName}: target connection closed mid-sync`);
-          }
+          if (isConnectionLost(rowErr)) throw connectionLostError(tableName, rowErr);
           failed++;
           console.error(
             `  [ERR] ${table.name} row (${rowIdentityLog(table, row)}): ` +
@@ -384,12 +470,12 @@ export async function syncDirection(
 }
 
 export async function withClients<T>(
-  prodUrl: string,
+  prodDatabase: ProdDatabase,
   localUrl: string,
   fn: (prod: Client, local: Client) => Promise<T>
 ): Promise<T> {
-  const prod = new Client({ connectionString: prodUrl, ssl: { rejectUnauthorized: false } });
-  const local = new Client({ connectionString: localUrl });
+  const prod = createPgClient(prodClientConfig(prodDatabase), 'prod');
+  const local = createPgClient({ connectionString: localUrl }, 'local');
 
   try {
     await Promise.all([prod.connect(), local.connect()]);
