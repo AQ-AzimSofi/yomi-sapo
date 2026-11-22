@@ -41,8 +41,8 @@ export const GEMINI_READER_CHUNKS = [
 
 /**
  * The same three chunks when Gemini reworded chunk 2's second head too far for alignRephrase to
- * put the source back: main logged it as unmatched and kept Gemini's wording in the reader file
- * (real alignRephrase and MeCab), so the < lines no longer hold the source text.
+ * put the source back: the old run logged it as unmatched and kept Gemini's wording in the reader
+ * file (real alignRephrase and MeCab), so the < lines no longer hold the source text.
  */
 export const GEMINI_REPLIES_WITH_UNMATCHED_HEAD = [
   GEMINI_REPLIES[0],

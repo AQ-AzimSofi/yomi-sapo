@@ -8,8 +8,8 @@ interface HeadLine {
 }
 
 const HEAD_PREFIX_PATTERN = /^[<＜]\s*/;
-// Main's furigana step wrote every line break in a chunk as CRLF on Windows, and main appended
-// each chunk after CHUNK_SEPARATOR, so a separator with no CR before it is a chunk boundary.
+// The version 1 pipeline's furigana step wrote every line break in a chunk as CRLF on Windows, and
+// it appended each chunk after CHUNK_SEPARATOR, so a separator with no CR before it is a chunk boundary.
 const BARE_SEPARATOR_PATTERN = /(?<!\r)\n\n/;
 const BARE_LINE_BREAK_PATTERN = /(?<!\r)\n/;
 
@@ -85,12 +85,12 @@ function isPieceOfChunk(piece: string, chunkIndex: number, chunkTexts: readonly 
 }
 
 /**
- * Splits a reader file main's pipeline wrote on Windows at the bare separators it appended each
- * chunk after. Unlike splitByChunkText, it still splits when main kept a head Gemini reworded too
- * far for alignRephrase to restore. Undefined unless there is one piece per chunk, no bare line
- * break is left in a piece (a chunk whose furigana step failed has them), and each piece's heads
- * found word for word in the chunks are mostly in its own chunk, which a chunk appended twice's
- * are not.
+ * Splits a reader file the version 1 pipeline wrote on Windows at the bare separators it appended
+ * each chunk after. Unlike splitByChunkText, it still splits when a head Gemini reworded too far
+ * for alignRephrase to restore kept Gemini's wording. Undefined unless there is one piece per
+ * chunk, no bare line break is left in a piece (a chunk whose furigana step failed has them), and
+ * each piece's heads found word for word in the chunks are mostly in its own chunk, so a chunk
+ * appended twice is not taken for the next one.
  */
 export function splitByChunkSeparators(text: string, chunks: readonly string[]): string[] | undefined {
   const pieces = text.split(BARE_SEPARATOR_PATTERN);

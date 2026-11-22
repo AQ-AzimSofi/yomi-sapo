@@ -82,7 +82,7 @@ describe('migrateV1Progress', () => {
   });
 
   it('Test_migrateV1Progress_ChunkAppendedTwiceIsAProblem', () => {
-    // Main redid a chunk it was killed in after appending it, then was stopped before appending the next.
+    // The old run redid a chunk it was killed in after appending it, then was stopped before appending the next.
     const appendedTwice = <T>([first, second]: readonly T[]) => [first, second, second].join('\n\n');
     const outputs = { rawText: appendedTwice(GEMINI_REPLIES_WITH_UNMATCHED_HEAD), furiganaText: appendedTwice(GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD) };
     const result = migrateV1Progress(v1Progress(['completed', 'completed', 'processing', 'pending']), GEMINI_CHUNKS, outputs);

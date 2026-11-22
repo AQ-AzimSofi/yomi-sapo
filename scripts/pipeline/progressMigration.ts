@@ -36,7 +36,7 @@ function findOutOfOrderChunk(items: readonly ChunkProgressV1[], completedCount: 
 
 // A run stopped mid-chunk may have appended that chunk before it could mark it completed. The
 // text check comes first as it is exact; the separators also split a reader file with a head
-// main could not restore.
+// the old run could not restore.
 function splitLegacyOutput(text: string, chunks: readonly string[], chunkCounts: readonly number[]): string[] | undefined {
   return [splitByChunkText, splitByChunkSeparators]
     .flatMap((split) => chunkCounts.map((chunkCount) => split(text, chunks.slice(0, chunkCount))))
@@ -45,7 +45,7 @@ function splitLegacyOutput(text: string, chunks: readonly string[], chunkCounts:
 
 function describeUnsplittable(completedCount: number): string {
   return `-rephrase-furigana.txt is not the ${completedCount} completed chunk(s) the progress file lists `
-    + '(its < lines must hold the source text in order, or its chunks must be the ones main appended), '
+    + '(its < lines must hold the source text in order, or its chunks must be the ones the old run appended), '
     + 'so it cannot be split into chunk files. --reset starts the book over.';
 }
 
