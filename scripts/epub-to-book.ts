@@ -137,7 +137,7 @@ async function main(options: PipelineOptions) {
   printSummary(options, book);
 }
 
-async function runCli(args: string[]): Promise<void> {
+export async function runCli(args: string[]): Promise<void> {
   if (args.length === 0 || isHelpRequested(args)) {
     console.log(HELP_TEXT);
     return;

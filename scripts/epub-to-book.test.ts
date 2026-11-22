@@ -1,6 +1,19 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
-import { HELP_TEXT, parseCliOptions } from './epub-to-book';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HELP_TEXT, parseCliOptions, runCli } from './epub-to-book';
+import { runBook } from './pipeline/runner';
+import { assertPythonHasMeCab } from './shared/python';
+
+vi.mock('./shared/python', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./shared/python')>()),
+  assertPythonHasMeCab: vi.fn(),
+}));
+vi.mock('./pipeline/runner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./pipeline/runner')>()),
+  runBook: vi.fn(async () => ({ bookName: 'book', sourceDir: 'public/bookv2-furigana/book' })),
+}));
 
 describe('parseCliOptions', () => {
   it('Test_parseCliOptions_Defaults', () => {
@@ -73,5 +86,41 @@ describe('HELP_TEXT', () => {
     '(default: DATABASE_URL, then POSTGRES_URL)',
   ])('Test_HELP_TEXT_ShowsTheSchemaDefaults %s', (expectedText) => {
     expect(HELP_TEXT).toContain(expectedText);
+  });
+});
+
+describe('runCli', () => {
+  const bookTextPath = path.join(os.tmpdir(), 'epub-to-book-cli-test', 'book.txt');
+
+  function writeBookText(): void {
+    fs.mkdirSync(path.dirname(bookTextPath), { recursive: true });
+    fs.writeFileSync(bookTextPath, '吾輩は猫である。');
+  }
+
+  afterEach(() => {
+    vi.mocked(assertPythonHasMeCab).mockReset();
+    vi.mocked(runBook).mockClear();
+    vi.restoreAllMocks();
+    fs.rmSync(path.dirname(bookTextPath), { recursive: true, force: true });
+  });
+
+  it('Test_runCli_PythonWithoutMeCabStopsBeforeAnyStep', async () => {
+    writeBookText();
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(assertPythonHasMeCab).mockImplementation(() => {
+      throw new Error('Python cannot import MeCab');
+    });
+
+    await expect(runCli([bookTextPath, '--skip-extract'])).rejects.toThrow('Python cannot import MeCab');
+    expect(runBook).not.toHaveBeenCalled();
+  });
+
+  it('Test_runCli_NoPythonStepSkipsTheMeCabCheck', async () => {
+    writeBookText();
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await runCli([bookTextPath, '--skip-extract', '--skip-rephrase']);
+    expect(assertPythonHasMeCab).not.toHaveBeenCalled();
+    expect(runBook).toHaveBeenCalledOnce();
   });
 });
