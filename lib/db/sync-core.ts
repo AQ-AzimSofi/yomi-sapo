@@ -1,4 +1,5 @@
 import type { Client } from 'pg';
+import { BookTextTooLargeError, estimateStoredBytes, MAX_STORED_TEXT_BYTES } from './bookTextSize';
 import { withCurrentContentBytes } from './contentBytes';
 import { createPgClient } from './pgClient';
 import { prodClientConfig, type ProdDatabase } from './prodDatabase';
@@ -30,6 +31,16 @@ export interface TableConfig {
   timestampCol: string;
   // Applied to each source row before it is written to the target.
   prepareRow?: (row: Record<string, unknown>) => Record<string, unknown>;
+  // Why production must not store this row, or null when it may. Checked only when pushing.
+  prodRefusalOf?: (row: Record<string, unknown>) => string | null;
+}
+
+// A book too large for one Aurora DSQL value stays off production, Neon included, so that every
+// book there can move to DSQL. The local database stores any size.
+function bookTooLargeForProd(row: Record<string, unknown>): string | null {
+  const estimatedStoredBytes = estimateStoredBytes(String(row.content));
+  if (estimatedStoredBytes <= MAX_STORED_TEXT_BYTES) return null;
+  return new BookTextTooLargeError(estimatedStoredBytes).message;
 }
 
 export const TABLES: TableConfig[] = [
@@ -54,6 +65,7 @@ export const TABLES: TableConfig[] = [
     identity: { kind: 'composite', cols: FILE_DIR_PAIR, sep: '|' },
     timestampCol: 'updated_at',
     prepareRow: withCurrentContentBytes,
+    prodRefusalOf: bookTooLargeForProd,
   },
 ];
 
@@ -360,6 +372,17 @@ function rowIdentityLog(table: TableConfig, row: Record<string, unknown>): strin
   return cols.map(c => `${c}=${row[c]}`).join(',');
 }
 
+function selectRowsProdAccepts(table: TableConfig, rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const { prodRefusalOf } = table;
+  if (!prodRefusalOf) return rows;
+  return rows.filter((row) => {
+    const refusal = prodRefusalOf(row);
+    if (refusal === null) return true;
+    console.error(`  [ERR] ${table.name} row (${rowIdentityLog(table, row)}) not pushed: ${refusal}`);
+    return false;
+  });
+}
+
 export async function syncDirection(
   source: Client,
   target: Client,
@@ -401,11 +424,12 @@ export async function syncDirection(
     );
   }
 
+  const rowsToWrite = direction === 'local -> prod' ? selectRowsProdAccepts(table, sourceRows) : sourceRows;
   const singleRowSql = buildBatchUpsertSql(table, columns, 1);
   let rows = 0;
   let skipped = 0;
-  let failed = unfetchedCount;
-  for (const batch of planBatches(sourceRows, columns)) {
+  let failed = unfetchedCount + sourceRows.length - rowsToWrite.length;
+  for (const batch of planBatches(rowsToWrite, columns)) {
     const sql = buildBatchUpsertSql(table, columns, batch.length);
     const values: unknown[] = [];
     for (const row of batch) {
