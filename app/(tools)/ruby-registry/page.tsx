@@ -37,6 +37,7 @@ function RubyRegistryContent() {
     registry,
     isLoading,
     error,
+    isUnavailable,
     addEntry,
     deleteEntry,
     ignoreSuggestion,
@@ -155,7 +156,16 @@ function RubyRegistryContent() {
           </select>
         </div>
 
-        {selectedBook && (
+        {selectedBook && isUnavailable && (
+          <div
+            className="p-4 border text-sm"
+            style={{ borderColor: COLORS.NEUTRAL, backgroundColor: COLORS.SURFACE, color: COLORS.SECONDARY }}
+          >
+            The ruby registry is not available on this server yet.
+          </div>
+        )}
+
+        {selectedBook && !isUnavailable && (
           <>
             {/* Search and Add */}
             <div className="flex gap-4 mb-6">
