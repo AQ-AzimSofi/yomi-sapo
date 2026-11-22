@@ -32,7 +32,7 @@ https://github.com/user-attachments/assets/16d81533-e417-4123-b764-a0066d0b6c84
 
 ### Study
 *   **Vocabulary list** — browse, search and delete saved words, and open the book each word came from. Saving words from the reader returns in a later update.
-*   **Ruby lookup** — per-book kanji→reading registry.
+*   **Ruby lookup** — per-book kanji→reading registry, stored in the `ruby_registry_entries` table and loaded from each book's `ruby-registry.json` with `scripts/db/import-ruby-registry.ts`. Production on Neon has no such table, so the panel says the word list is not available there until the move to Aurora DSQL.
 
 ### Access
 *   **Password login** for the full library, plus a **guest preview**: a few books are readable without signing in, capped to the first few pages (copyright-safe). In guest mode, AI explanation / TTS / translation run on the visitor's **own** API keys, stored only in their browser.
