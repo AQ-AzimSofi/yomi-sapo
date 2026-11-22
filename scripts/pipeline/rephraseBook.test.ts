@@ -7,7 +7,8 @@ import { splitParagraphs } from '../utils/claude-rephrase';
 import { getBookFiles } from './chunkFiles';
 import { chunkText, stripRubyTags } from './chunking';
 import { createProgress, type ProgressFile, type ProgressFileV1 } from './progress';
-import { batchRephrase, type FuriganaResult, type RephraseDeps, type RephraseOptions } from './rephraseBook';
+import type { FuriganaResult } from './furigana';
+import { batchRephrase, type RephraseDeps, type RephraseOptions } from './rephraseBook';
 import { FALLBACK_ERROR, type ChunkOutput } from './rephraseChunk';
 
 const BOOK_NAME = 'book';

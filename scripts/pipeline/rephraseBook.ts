@@ -1,13 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { isClaudeModel } from '../utils/claude-rephrase';
 import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { createKeyPool } from '../shared/geminiKeyPool';
-import { runPython } from '../shared/python';
-import { CORE_SCRIPTS_DIR } from '../shared/repoPaths';
 import { getBookFiles, getChunkPath, readFileOrEmpty, rebuildOutputs, type BookFiles } from './chunkFiles';
 import { chunkText, stripRubyTags } from './chunking';
+import { addFuriganaWithPython, type FuriganaResult } from './furigana';
 import {
   createProgress,
   isChunkFinished,
@@ -33,12 +31,6 @@ export interface RephraseOptions {
   reset: boolean;
   dryRun: boolean;
   apiUrl: string;
-}
-
-/** On failure `text` is the input unchanged and `error` says why. */
-export interface FuriganaResult {
-  text: string;
-  error?: string;
 }
 
 export interface TextEntryTarget {
@@ -117,28 +109,6 @@ async function syncToDatabase({ apiUrl, fileName, directory }: TextEntryTarget):
   } catch (error) {
     console.error(`    Database sync error:`, error);
     return false;
-  }
-}
-
-// ============================================================================
-// Furigana Addition
-// ============================================================================
-
-const MAX_FURIGANA_ERROR_CHARS = 300;
-
-function addFuriganaWithPython(readerText: string): FuriganaResult {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yomi-furigana-'));
-  try {
-    const inputPath = path.join(workDir, 'chunk.txt');
-    const outputPath = path.join(workDir, 'chunk-furigana.txt');
-    fs.writeFileSync(inputPath, readerText, 'utf-8');
-    runPython([path.join(CORE_SCRIPTS_DIR, 'add-furigana-to-text.py'), inputPath, '-o', outputPath], { isStderrCaptured: true });
-    return { text: fs.readFileSync(outputPath, 'utf-8') };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { text: readerText, error: reason.slice(0, MAX_FURIGANA_ERROR_CHARS) };
-  } finally {
-    fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
 
