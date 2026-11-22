@@ -3,10 +3,12 @@ import path from 'node:path';
 import { isClaudeModel } from '../utils/claude-rephrase';
 import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { createKeyPool } from '../shared/geminiKeyPool';
+import { runWorkerPool } from '../shared/workerPool';
 import { getBookFiles, getChunkPath, readFileOrEmpty, rebuildOutputs, type BookFiles } from './chunkFiles';
 import { chunkText, stripRubyTags } from './chunking';
 import { addFuriganaWithPython, type FuriganaResult } from './furigana';
 import {
+  applyChunkChanges,
   createProgress,
   isChunkFinished,
   listSavedChunkIndexes,
@@ -14,7 +16,6 @@ import {
   resetChangedChunks,
   saveProgress,
   simpleHash,
-  updateChunk,
   type ChunkProgress,
   type ProgressFile,
   type ProgressFileV1,
@@ -71,7 +72,12 @@ interface ChunkRun {
   chunks: string[];
   rephraser: ChunkRephraser;
   deps: RephraseDeps;
-  textEntry: TextEntryTarget;
+  startProgress: ProgressFile;
+  todoIndexes: number[];
+  /** What each chunk saved this run; the progress file is startProgress with these applied. */
+  savedChanges: Map<number, Partial<ChunkProgress>>;
+  startedAtMs: number;
+  syncReaderFile: () => Promise<void>;
 }
 
 function formatDuration(seconds: number): string {
@@ -158,7 +164,7 @@ function logRunPlan(start: RunStart, rephraser: ChunkRephraser, options: Rephras
     console.log(`Rephraser: claude -p (no delay between chunks)`);
   } else {
     const { delaySeconds } = progress.settings;
-    console.log(`API Keys: ${rephraser.keyCount} free (rotating for faster processing)`);
+    console.log(`Workers: ${rephraser.maxConcurrency} (one per free Gemini key)`);
     console.log(delaySeconds > 0 ? `Delay: at least ${delaySeconds}s between requests on one key` : 'Delay: none; a rate limit (429) is waited out');
   }
   console.log(`Model: ${options.model}`);
@@ -200,14 +206,27 @@ function commitRunStart(files: BookFiles, start: RunStart, writeFile: WriteFile)
 // Chunk Processing
 // ============================================================================
 
-async function syncReaderFile(run: ChunkRun): Promise<void> {
-  console.log(`  Syncing to database...`);
-  const isSynced = await run.deps.syncToDatabase(run.textEntry);
-  if (isSynced) {
-    console.log(`  Database synced! Users can now read the updated content.`);
-    return;
-  }
-  console.log(`  Warning: Database sync failed. File saved locally.`);
+/**
+ * One sync at a time, in the order asked for. Each sync reads the reader's file as it starts, so
+ * the last one leaves the newest text in the database even when chunks finish close together.
+ */
+function createReaderFileSync(syncToDatabase: SyncToDatabase, textEntry: TextEntryTarget): () => Promise<void> {
+  const queuedSyncs: Promise<void>[] = [];
+  const syncOnce = async (): Promise<void> => {
+    console.log(`  Syncing to database...`);
+    const isSynced = await syncToDatabase(textEntry);
+    if (isSynced) {
+      console.log(`  Database synced! Users can now read the updated content.`);
+      return;
+    }
+    console.log(`  Warning: Database sync failed. File saved locally.`);
+  };
+  return () => {
+    const previousSync = queuedSyncs.at(-1) ?? Promise.resolve();
+    const nextSync = previousSync.catch(() => undefined).then(syncOnce);
+    queuedSyncs.push(nextSync);
+    return nextSync;
+  };
 }
 
 function needsOnlyFurigana(item: ChunkProgress): boolean {
@@ -223,8 +242,8 @@ function addFuriganaToChunkFile(run: ChunkRun, chunkIndex: number, readerText: s
   return furigana.error;
 }
 
-async function rephraseToChunkFiles(run: ChunkRun, chunkIndex: number): Promise<Partial<ChunkProgress>> {
-  const output = await run.rephraser.rephraseChunk(run.chunks[chunkIndex], { chunkIndex, signal: run.deps.stopSignal });
+async function rephraseToChunkFiles(run: ChunkRun, chunkIndex: number, workerIndex: number): Promise<Partial<ChunkProgress>> {
+  const output = await run.rephraser.rephraseChunk(run.chunks[chunkIndex], { chunkIndex, workerIndex, signal: run.deps.stopSignal });
   run.deps.writeFile(getChunkPath(run.files.chunksDir, chunkIndex, 'rephrase'), output.rawText);
   // Kept so a failed furigana step can be redone later without asking the model again.
   run.deps.writeFile(getChunkPath(run.files.chunksDir, chunkIndex, 'reader'), output.readerText);
@@ -246,42 +265,47 @@ function redoFurigana(run: ChunkRun, chunkIndex: number): Partial<ChunkProgress>
 /**
  * Chunk files first, then the progress file, then the outputs rebuilt from the chunk files. A
  * kill between any two writes leaves either the chunk unsaved (it is redone) or saved with stale
- * outputs (the next run rebuilds them), so text is never repeated or reordered.
+ * outputs (the next run rebuilds them), so text is never repeated or reordered. Both saves run
+ * without awaiting anything, so chunks that finish together cannot interleave them.
  */
-async function processChunk(run: ChunkRun, progress: ProgressFile, chunkIndex: number): Promise<ProgressFile> {
-  const item = progress.chunks.items[chunkIndex];
-  console.log(`Processing chunk ${chunkIndex + 1}/${run.chunks.length} (${stripRubyTags(run.chunks[chunkIndex]).length} chars)...`);
-  const changes = needsOnlyFurigana(item) ? redoFurigana(run, chunkIndex) : await rephraseToChunkFiles(run, chunkIndex);
-  const updatedProgress = updateChunk(progress, chunkIndex, changes);
-  saveProgress(run.files.progressPath, updatedProgress, run.deps.writeFile);
-  rebuildOutputs(run.files, listSavedChunkIndexes(updatedProgress), run.deps.writeFile);
-  await syncReaderFile(run);
-  return updatedProgress;
+function commitChunk(run: ChunkRun, chunkIndex: number, changes: Partial<ChunkProgress>): ProgressFile {
+  const progress = applyChunkChanges(run.startProgress, new Map([...run.savedChanges, [chunkIndex, changes]]));
+  saveProgress(run.files.progressPath, progress, run.deps.writeFile);
+  run.savedChanges.set(chunkIndex, changes);
+  rebuildOutputs(run.files, listSavedChunkIndexes(progress), run.deps.writeFile);
+  return progress;
 }
 
-async function processChunks(run: ChunkRun, startProgress: ProgressFile): Promise<ProgressFile> {
-  const todoItems = startProgress.chunks.items.filter((item) => !isChunkFinished(item));
-  const { stopSignal } = run.deps;
-  const startTime = Date.now();
-  console.log('\n=== Starting Processing ===\n');
+function logChunkSaved(run: ChunkRun, chunkIndex: number, progress: ProgressFile): void {
+  const processedCount = run.savedChanges.size;
+  const remainingCount = run.todoIndexes.length - processedCount;
+  const avgSecs = (Date.now() - run.startedAtMs) / 1000 / processedCount;
+  console.log(`  Chunk ${chunkIndex + 1} done! (${progress.chunks.completed}/${progress.chunks.total})`);
+  console.log(`  ETA for remaining: ${formatDuration(remainingCount * avgSecs)}`);
+}
 
-  return todoItems.reduce(async (previous, item, todoPosition) => {
-    const progress = await previous;
-    if (stopSignal.aborted) return progress;
-    // A chunk cut short by the stop is not saved, and the error the cut caused is not the run's.
-    const updatedProgress = await processChunk(run, progress, item.index).catch((error: unknown) => {
-      if (stopSignal.aborted) return progress;
-      throw error;
-    });
-    if (stopSignal.aborted) return updatedProgress;
+async function processChunk(run: ChunkRun, chunkIndex: number, workerIndex: number): Promise<void> {
+  const item = run.startProgress.chunks.items[chunkIndex];
+  console.log(`Processing chunk ${chunkIndex + 1}/${run.chunks.length} (${stripRubyTags(run.chunks[chunkIndex]).length} chars)...`);
+  const changes = needsOnlyFurigana(item) ? redoFurigana(run, chunkIndex) : await rephraseToChunkFiles(run, chunkIndex, workerIndex);
+  logChunkSaved(run, chunkIndex, commitChunk(run, chunkIndex, changes));
+  await run.syncReaderFile();
+}
 
-    const processedCount = todoPosition + 1;
-    const remainingCount = todoItems.length - processedCount;
-    const avgTime = (Date.now() - startTime) / 1000 / processedCount;
-    console.log(`  Done! (${updatedProgress.chunks.completed}/${updatedProgress.chunks.total})`);
-    console.log(`  ETA for remaining: ${formatDuration(remainingCount * avgTime)}`);
-    return updatedProgress;
-  }, Promise.resolve(startProgress));
+/**
+ * Up to maxConcurrency chunks at once, started in order. Chunks can finish out of order, so until
+ * an earlier chunk finishes the reader's file has a gap where it goes.
+ */
+async function processChunks(run: ChunkRun): Promise<ProgressFile> {
+  const workerCount = Math.min(run.rephraser.maxConcurrency, run.todoIndexes.length);
+  console.log(`\n=== Starting Processing (${workerCount} chunk(s) at a time) ===\n`);
+  await runWorkerPool({
+    jobs: run.todoIndexes,
+    workerCount,
+    signal: run.deps.stopSignal,
+    runJob: (chunkIndex, workerIndex) => processChunk(run, chunkIndex, workerIndex),
+  });
+  return applyChunkChanges(run.startProgress, run.savedChanges);
 }
 
 function printChunkList(label: string, items: readonly ChunkProgress[]): void {
@@ -337,15 +361,25 @@ export async function batchRephrase(
 
   commitRunStart(files, start, deps.writeFile);
   const textEntry = { fileName: `${bookName}-rephrase-furigana`, directory: `${options.outputDir}/${bookName}`, filePath: files.furiganaPath };
-  const run: ChunkRun = { files, chunks: start.chunks, rephraser, deps, textEntry };
+  const run: ChunkRun = {
+    files,
+    chunks: start.chunks,
+    rephraser,
+    deps,
+    startProgress: start.progress,
+    todoIndexes: start.progress.chunks.items.filter((item) => !isChunkFinished(item)).map((item) => item.index),
+    savedChanges: new Map(),
+    startedAtMs: Date.now(),
+    syncReaderFile: createReaderFileSync(deps.syncToDatabase, textEntry),
+  };
 
   // An earlier run stopped after saving a chunk but before rebuilding the outputs
   if (rebuildOutputs(files, listSavedChunkIndexes(start.progress), deps.writeFile)) {
     console.log('Rebuilt the outputs from the chunk files');
-    await syncReaderFile(run);
+    await run.syncReaderFile();
   }
 
-  const finalProgress = await processChunks(run, start.progress);
+  const finalProgress = await processChunks(run);
   printSummary(files, finalProgress);
   return finalProgress.chunks.items.every(isChunkFinished);
 }

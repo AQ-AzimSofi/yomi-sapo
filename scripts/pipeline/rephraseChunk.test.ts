@@ -41,8 +41,9 @@ function createFakeRephraser(env: NodeJS.ProcessEnv, replyToCall: ReplyToCall, d
   return { rephraser, calls };
 }
 
+// Each chunk on its own worker, as the worker pool spreads them when there are enough keys.
 function chunkRequest(chunkIndex: number, signal = new AbortController().signal) {
-  return { chunkIndex, signal };
+  return { chunkIndex, workerIndex: chunkIndex, signal };
 }
 
 const FREE_AND_PAID_KEYS = { GEMINI_API_KEY: 'free1', GEMINI_API_KEY2: 'free2', GEMINI_API_KEY_PAID: 'paid' };
@@ -54,11 +55,15 @@ describe('createGeminiRephraser', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('Test_createGeminiRephraser_KeyCountIsFreeKeys', () => {
-    expect(createFakeRephraser(FREE_AND_PAID_KEYS, () => VALID_RESPONSE).rephraser.keyCount).toBe(2);
+  it('Test_createGeminiRephraser_OneWorkerPerFreeKey', () => {
+    expect(createFakeRephraser(FREE_AND_PAID_KEYS, () => VALID_RESPONSE).rephraser.maxConcurrency).toBe(2);
   });
 
-  it('Test_createGeminiRephraser_SpreadsChunksOverFreeKeys', async () => {
+  it('Test_createGeminiRephraser_OneWorkerWithOnlyThePaidKey', () => {
+    expect(createFakeRephraser({ GEMINI_API_KEY_PAID: 'paid' }, () => VALID_RESPONSE).rephraser.maxConcurrency).toBe(1);
+  });
+
+  it('Test_createGeminiRephraser_EachWorkerStartsOnItsOwnKey', async () => {
     const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, () => VALID_RESPONSE);
     await rephraser.rephraseChunk(SOURCE, chunkRequest(1));
     expect(calls).toMatchObject([{ apiKey: 'free2', model: 'gemini-3.5-flash' }]);
