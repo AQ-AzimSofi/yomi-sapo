@@ -17,8 +17,10 @@
  *   npx tsx scripts/db/clean-book-text.ts --prod --apply
  */
 
-import pg from 'pg';
+import type pg from 'pg';
 import dotenv from 'dotenv';
+import { createPgClient } from '../../lib/db/pgClient';
+import { PROD_DATABASE_VARIABLES, prodClientConfig, prodHostOf, readProdDatabase } from '../../lib/db/prodDatabase';
 import { cleanBookText } from './bookTextCleanup';
 import { parseCleanupFlags } from './cleanupFlags';
 import { isEntryPoint } from '../shared/entryPoint';
@@ -66,15 +68,16 @@ const UPDATE_UNCHANGED_ROWS_SQL = `
   )
   SELECT ARRAY(SELECT id FROM written_books) AS book_ids, ARRAY(SELECT id FROM written_bookmarks) AS bookmark_ids`;
 
-function connect(isProd: boolean): Connection {
-  const connectionString = isProd ? process.env.PROD_DATABASE_URL : process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error(`${isProd ? 'PROD_DATABASE_URL' : 'DATABASE_URL'} is not set in .env.local`);
-  }
-  const client = isProd
-    ? new pg.Client({ connectionString, ssl: { rejectUnauthorized: false } })
-    : new pg.Client({ connectionString });
-  return { client, host: new URL(connectionString).hostname };
+function connectToProd(): Connection {
+  const prodDatabase = readProdDatabase(process.env);
+  if (!prodDatabase) throw new Error(`${PROD_DATABASE_VARIABLES} is not set in .env.local`);
+  return { client: createPgClient(prodClientConfig(prodDatabase), 'production'), host: prodHostOf(prodDatabase) };
+}
+
+function connectToLocal(): Connection {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('DATABASE_URL is not set in .env.local');
+  return { client: createPgClient({ connectionString }, 'local'), host: new URL(connectionString).hostname };
 }
 
 function describeRemovals(removedByRule: Record<string, number>): string {
@@ -90,7 +93,7 @@ function changeColumns(changes: TextChange[]): [number[], string[], string[]] {
 
 async function main(): Promise<void> {
   const { isProd, shouldApply } = parseCleanupFlags(process.argv.slice(2));
-  const { client, host } = connect(isProd);
+  const { client, host } = isProd ? connectToProd() : connectToLocal();
   await client.connect();
 
   try {
