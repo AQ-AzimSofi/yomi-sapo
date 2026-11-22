@@ -48,10 +48,12 @@ interface Connection {
 
 // One statement, so every row is written or none is. A row that changed after it
 // was read is skipped instead of being overwritten with a stale cleaned copy.
+// Clearing content_bytes has the library recount the book, which on Aurora DSQL
+// it does only for a book whose content_bytes is NULL.
 const UPDATE_UNCHANGED_ROWS_SQL = `
   WITH written_books AS (
     UPDATE text_entries AS entry
-    SET content = change.cleaned
+    SET content = change.cleaned, content_bytes = NULL
     FROM unnest($1::int[], $2::text[], $3::text[]) AS change(id, original, cleaned)
     WHERE entry.id = change.id AND entry.content = change.original
     RETURNING entry.id
