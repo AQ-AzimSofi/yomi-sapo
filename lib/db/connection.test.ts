@@ -42,4 +42,29 @@ describe('connection without DSQL_ENDPOINT', () => {
     expect(vi.mocked(postgres).mock.calls[0][0]).toBe('');
     expect(console.warn).toHaveBeenCalledTimes(2);
   });
+
+  it('reports a PostgreSQL database', async () => {
+    const connection = await importConnectionWith({ DATABASE_URL: 'postgres://u:p@db.example/app' });
+
+    expect(connection.databaseKind).toBe('postgres');
+  });
+});
+
+describe('connection with DSQL_ENDPOINT', () => {
+  const DSQL_ENV = { DSQL_ENDPOINT: 'abc123.dsql.ap-northeast-1.on.aws', DSQL_REGION: 'ap-northeast-1', DATABASE_URL: 'postgres://neon/app' };
+
+  it('connects to the cluster with the DSQL options instead of DATABASE_URL', async () => {
+    const connection = await importConnectionWith(DSQL_ENV);
+
+    expect(vi.mocked(postgres).mock.calls).toEqual([[expect.objectContaining({ host: DSQL_ENV.DSQL_ENDPOINT, username: 'yomi_app', ssl: 'verify-full' })]]);
+    expect(connection.databaseKind).toBe('dsql');
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it('asks for a password function, so every new connection gets a fresh token', async () => {
+    await importConnectionWith(DSQL_ENV);
+
+    const [options] = vi.mocked(postgres).mock.calls[0] as unknown as [{ password: unknown }];
+    expect(options.password).toBeTypeOf('function');
+  });
 });
