@@ -1,5 +1,9 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
+// The production Aurora DSQL cluster id. Empty keeps the app on DATABASE_URL (Neon). Set,
+// it grants the server function dsql:DbConnect on that cluster and switches the app to it.
+const PRODUCTION_DSQL_CLUSTER_ID = "";
+
 export default $config({
   app(input) {
     return {
@@ -44,6 +48,16 @@ export default $config({
       withDecryption: true,
     });
 
+    const dsqlClusterId = stage === "production" ? PRODUCTION_DSQL_CLUSTER_ID : "";
+    const { dsqlServerAccess } = await import("./infra/dsqlServerAccess");
+    const dsqlAccess = dsqlClusterId
+      ? dsqlServerAccess({
+          clusterId: dsqlClusterId,
+          region: (await aws.getRegion()).name,
+          accountId: (await aws.getCallerIdentity()).accountId,
+        })
+      : undefined;
+
     // Audiobook recordings. Private: the app hands out short-lived presigned URLs
     // so a purchased recording is never reachable without a signed-in session.
     const narrationAudio = new sst.aws.Bucket("NarrationAudio");
@@ -72,7 +86,9 @@ export default $config({
         GOOGLE_TRANSLATE_API_KEY: googleTranslateApiKey.value,
         GOOGLE_TTS_API_KEY: googleTtsApiKey.value,
         SESSION_SECRET: sessionSecret.value,
+        ...dsqlAccess?.environment,
       },
+      ...(dsqlAccess ? { permissions: dsqlAccess.permissions } : {}),
       warm: 1,
     });
 
