@@ -9,6 +9,7 @@ const ENTRY_SCRIPTS = [
   '../db/sync-narration.ts',
   '../db/clean-book-text.ts',
   '../db/migrate.ts',
+  '../db/apply-schema-dsql.ts',
   '../dev-with-sync.ts',
   '../auth/generate-password-hash.ts',
 ];
