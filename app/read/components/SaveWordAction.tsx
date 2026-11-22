@@ -105,14 +105,13 @@ function SaveWordAction({ unitTexts, book, isEnabled, bottomInsetPx }: SaveWordA
   if (!shownSelection) return null;
 
   const save = async () => {
-    const selection = shownSelection;
-    setPendingSave({ selection, status: 'saving' });
+    setPendingSave({ selection: shownSelection, status: 'saving' });
     try {
-      const response = await saveVocabularyEntry({ ...selection.draft, ...book });
-      setPendingSave({ selection, status: response.created ? 'saved' : 'already-saved' });
+      const response = await saveVocabularyEntry({ ...shownSelection.draft, ...book });
+      setPendingSave({ selection: shownSelection, status: response.created ? 'saved' : 'already-saved' });
     } catch (error) {
       console.error('Failed to save the word:', error);
-      setPendingSave({ selection, status: 'failed' });
+      setPendingSave({ selection: shownSelection, status: 'failed' });
     }
   };
 
