@@ -132,6 +132,19 @@ describe('syncDirection', () => {
     expect(insertedRows(target.inserts[0])).toEqual([word]);
   });
 
+  it('copies content_bytes as NULL when it no longer matches the book text, so the target recounts the book', async () => {
+    const books = [book('stale', 'あいう', { id: 1, content_bytes: 6 }), book('current', 'あいう', { id: 2, content_bytes: 9 })];
+    const source = fakeClient({ columns: BOOK_COLUMNS, rows: books, idDefault: SERIAL_ID });
+    const target = fakeClient(emptyTarget());
+
+    await syncDirection(source.client, target.client, TEXT_ENTRIES, 'prod -> local');
+
+    expect(insertedRows(target.inserts[0]).map((row) => [row.file_name, row.content_bytes])).toEqual([
+      ['stale', null],
+      ['current', 9],
+    ]);
+  });
+
   it('stops at an over-long message (08P01), which also drops the connection, instead of retrying row by row', async () => {
     const source = fakeClient({ columns: BOOK_COLUMNS, rows: [book('a', 'あ'), book('b', 'い', { id: 2 })], idDefault: SERIAL_ID });
     const target = fakeClient(emptyTarget(), [databaseError('08P01', 'invalid message length')]);

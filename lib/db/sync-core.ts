@@ -1,4 +1,5 @@
 import type { Client } from 'pg';
+import { withCurrentContentBytes } from './contentBytes';
 import { createPgClient } from './pgClient';
 import { prodClientConfig, type ProdDatabase } from './prodDatabase';
 import { retryOnSerializationFailure } from './writeTransaction';
@@ -27,6 +28,8 @@ export interface TableConfig {
   identity: IdentityKey;
   // Every synced table is last-write-wins on this column.
   timestampCol: string;
+  // Applied to each source row before it is written to the target.
+  prepareRow?: (row: Record<string, unknown>) => Record<string, unknown>;
 }
 
 export const TABLES: TableConfig[] = [
@@ -50,6 +53,7 @@ export const TABLES: TableConfig[] = [
     orderBy: 'created_at',
     identity: { kind: 'composite', cols: FILE_DIR_PAIR, sep: '|' },
     timestampCol: 'updated_at',
+    prepareRow: withCurrentContentBytes,
   },
 ];
 
@@ -387,7 +391,8 @@ export async function syncDirection(
   const keys = selectKeysToTransfer(sourceSnapshot, targetSnapshot);
   if (keys.length === 0) return { table: tableName, rows: 0, skipped: 0, failed: 0, direction };
 
-  const sourceRows = await withSyncContext(`${context} fetch`, fetchRowsByKey(source, table, keys));
+  const fetchedRows = await withSyncContext(`${context} fetch`, fetchRowsByKey(source, table, keys));
+  const sourceRows = table.prepareRow ? fetchedRows.map(table.prepareRow) : fetchedRows;
   const unfetchedCount = keys.length - sourceRows.length;
   if (unfetchedCount > 0) {
     console.error(
