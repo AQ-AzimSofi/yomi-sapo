@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Client } from 'pg';
 import { syncDirection, TABLES, type TableConfig } from './sync-core';
@@ -143,6 +144,27 @@ describe('syncDirection', () => {
       ['stale', null],
       ['current', 9],
     ]);
+  });
+
+  it('does not push a book too large for one Aurora DSQL value, and counts it as failed', async () => {
+    const tooLarge = book('huge', randomBytes(900_000).toString('base64'), { id: 1 });
+    const source = fakeClient({ columns: BOOK_COLUMNS, rows: [tooLarge, book('small', 'あ', { id: 2 })], idDefault: SERIAL_ID });
+    const target = fakeClient(emptyTarget());
+
+    const result = await syncDirection(source.client, target.client, TEXT_ENTRIES, 'local -> prod');
+
+    expect(result).toMatchObject({ rows: 1, failed: 1 });
+    expect(target.inserts.flatMap((statement) => insertedRows(statement).map((row) => row.file_name))).toEqual(['small']);
+  });
+
+  it('still pulls such a book into the local database', async () => {
+    const tooLarge = book('huge', randomBytes(900_000).toString('base64'), { id: 1 });
+    const source = fakeClient({ columns: BOOK_COLUMNS, rows: [tooLarge], idDefault: SERIAL_ID });
+    const target = fakeClient(emptyTarget());
+
+    const result = await syncDirection(source.client, target.client, TEXT_ENTRIES, 'prod -> local');
+
+    expect(result).toMatchObject({ rows: 1, failed: 0 });
   });
 
   it('stops at an over-long message (08P01), which also drops the connection, instead of retrying row by row', async () => {
