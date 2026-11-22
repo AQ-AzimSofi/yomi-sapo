@@ -6,6 +6,7 @@ import {
   SAVED_WORD_PARAM,
   locateSavedWord,
   savedWordFrom,
+  savedWordStart,
   vocabularySourceHref,
 } from './sourceLink';
 
@@ -66,6 +67,21 @@ describe('savedWordFrom', () => {
 
   it('keeps a word that came without its sentence', () => {
     expect(savedWordFrom('焦燥感', null)).toEqual({ word: '焦燥感', sentence: '' });
+  });
+});
+
+describe('savedWordStart', () => {
+  it('finds the copy of the word inside the saved sentence', () => {
+    expect(savedWordStart('焦燥感だ。彼は焦燥感に駆られた。', { word: '焦燥感', sentence: '彼は焦燥感に駆られた。' })).toBe(7);
+  });
+
+  it('finds the first copy when the link has no sentence or the sentence is not shown', () => {
+    expect(savedWordStart('前の焦燥感。後の焦燥感。', { word: '焦燥感', sentence: '' })).toBe(2);
+    expect(savedWordStart('前の焦燥感。後の焦燥感。', { word: '焦燥感', sentence: '別の文。' })).toBe(2);
+  });
+
+  it('gives -1 when the word is not shown', () => {
+    expect(savedWordStart('前の文。', { word: '焦燥感', sentence: '' })).toBe(-1);
   });
 });
 

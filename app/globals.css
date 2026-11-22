@@ -94,6 +94,11 @@ body {
   color: inherit;
 }
 
+/* The word a link from the vocabulary list opened the reader at (app/read/savedWordMark.ts). */
+::highlight(saved-word) {
+  background-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
 /* Reading content typography, the same for plain, furigana and rephrased books (ReaderItem).
    The text sizes itself from the reader container (app/read/page.tsx), which the font size and
    line height sliders set. At their defaults (16px, 1.8) the original text is 18px on 28px lines

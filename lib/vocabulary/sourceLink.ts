@@ -45,6 +45,15 @@ export function savedWordFrom(word: string | null, sentence: string | null): Sav
   return { word, sentence: sentence ?? '' };
 }
 
+/**
+ * Where to mark the saved word in a unit's shown text (no furigana): the first copy
+ * inside its sentence, or the first copy at all when the sentence is not found. -1 without one.
+ */
+export function savedWordStart(shownText: string, { word, sentence }: SavedWordQuery): number {
+  const sentenceStart = sentence ? shownText.indexOf(sentence) : -1;
+  return shownText.indexOf(word, Math.max(sentenceStart, 0));
+}
+
 /** The first unit holding the saved sentence (the word, without one), compared as bookmarks are. */
 export function locateSavedWord(unitMainTexts: readonly string[], { word, sentence }: SavedWordQuery): SavedWordLocation | null {
   const target = toMatchText(sentence) || word;

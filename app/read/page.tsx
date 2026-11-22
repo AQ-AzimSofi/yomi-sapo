@@ -49,6 +49,7 @@ import {
 } from '@/lib/vocabulary/sourceLink';
 import { loginPathReturningTo } from '@/lib/auth/loginPath';
 import { describeLoadFailure } from './loadFailure';
+import { markSavedWord } from './savedWordMark';
 import { applyReaderTheme } from './readerTheme';
 import { READER_PREFERENCES } from './readerPreferences';
 import { acceptsAudioShortcut, closePanel, togglePanel, type ActivePanel } from './readerPanels';
@@ -400,6 +401,12 @@ function ReaderContent({
     const timer = setTimeout(scrollToLanding, 100);
     return () => clearTimeout(timer);
   }, [currentPage, isLoading, bookmarkText, savedWordUnitIndex]);
+
+  // Marked again whenever its page opens or the furigana toggle redraws the text.
+  useEffect(() => {
+    if (isLoading || !savedWord || savedWordUnitIndex === null) return;
+    return markSavedWord(savedWordUnitIndex, savedWord);
+  }, [isLoading, savedWord, savedWordUnitIndex, currentPage, showFurigana]);
 
   useEffect(() => {
     if (!audiobookEnabled || audioIndex < 0) return;
