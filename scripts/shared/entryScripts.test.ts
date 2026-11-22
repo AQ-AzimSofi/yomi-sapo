@@ -10,6 +10,7 @@ const ENTRY_SCRIPTS = [
   '../db/clean-book-text.ts',
   '../db/migrate.ts',
   '../db/apply-schema-dsql.ts',
+  '../db/copy-to-dsql.ts',
   '../dev-with-sync.ts',
   '../auth/generate-password-hash.ts',
 ];
