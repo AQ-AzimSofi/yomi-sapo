@@ -1,4 +1,4 @@
-import { sql } from './connection';
+import { databaseKind, sql } from './connection';
 import { runWriteTransaction } from './writeTransaction';
 import { groupBySize } from '@/lib/utils/groupBySize';
 import {
@@ -14,11 +14,13 @@ import {
  *
  * All book text together is tens of MB, so the counts the cards need are cached in
  * text_entries.total_pages / total_characters and bookmarks.bookmark_page. A book's
- * cache is stale when text_entries.content_bytes (the size it was counted at) differs
- * from octet_length(content): any edit or appended chunk changes the size, and
- * octet_length reads it without decompressing the text, unlike char_length. A moved
- * bookmark is stale when it was saved without a page (bookmark_page is NULL). Only stale books'
- * text is fetched, recounted and written back.
+ * cache is stale when text_entries.content_bytes (the size it was counted at) is NULL,
+ * which every write of new text sets, or differs from octet_length(content): any edit
+ * or appended chunk changes the size, and on PostgreSQL octet_length reads it from the
+ * value's header without the text. Aurora DSQL has to read the whole stored text for
+ * it, so there the list trusts content_bytes alone and reads only idx_text_entries_library.
+ * A moved bookmark is stale when it was saved without a page (bookmark_page is NULL).
+ * Only stale books' text is fetched, recounted and written back.
  */
 export interface LibraryRow {
   id: number;
@@ -28,7 +30,8 @@ export interface LibraryRow {
   total_pages: number | null;
   total_characters: number | null;
   content_bytes: number | null;
-  current_bytes: number;
+  // NULL only on DSQL, for a book not counted since its text was written.
+  current_bytes: number | null;
   bookmark_text: string | null;
   bookmark_page: number | null;
   bookmark_updated_at: string | null;
@@ -55,7 +58,7 @@ function bookmarkPageOf(bookmarkText: string, items: ReaderItem[], savedPage: nu
 }
 
 function hasStaleTextCounts(row: LibraryRow): boolean {
-  return row.content_bytes !== row.current_bytes;
+  return row.content_bytes === null || row.content_bytes !== row.current_bytes;
 }
 
 // Recomputed whenever the text is recounted, even on a guest's request: recounting
@@ -79,6 +82,8 @@ export function recountRow(row: LibraryRow, content: ContentRow): LibraryRow {
 
 async function saveRecountedGroup(recounted: LibraryRow[], bookmarkRows: LibraryRow[]): Promise<void> {
   await runWriteTransaction(sql, async (tx) => {
+    // The text was read before this transaction. A book rewritten since then no longer has
+    // the size it was counted at, so it keeps its uncounted state for the next load.
     await tx`
       UPDATE text_entries AS t
       SET total_pages = u.total_pages, total_characters = u.total_characters, content_bytes = u.content_bytes
@@ -88,7 +93,7 @@ async function saveRecountedGroup(recounted: LibraryRow[], bookmarkRows: Library
         ${recounted.map((row) => row.total_characters)}::int[],
         ${recounted.map((row) => row.content_bytes)}::int[]
       ) AS u(id, total_pages, total_characters, content_bytes)
-      WHERE t.id = u.id
+      WHERE t.id = u.id AND octet_length(t.content) = u.content_bytes
     `;
     if (bookmarkRows.length === 0) return;
     // Matching bookmark_text skips a bookmark that moved while this request ran, so
@@ -142,12 +147,18 @@ async function refreshStaleRows(rows: LibraryRow[]): Promise<LibraryRow[]> {
   return rows.map((row) => recountedById.get(row.id) ?? row);
 }
 
-/**
- * Library rows with up-to-date page counts and bookmark pages. `isVisible` limits
- * which books are returned (and therefore recounted); callers decide what to expose.
- */
-export async function getLibraryRows(isVisible: (row: LibraryRow) => boolean): Promise<LibraryRow[]> {
-  const rows = await sql<LibraryRow[]>`
+function selectLibraryRows() {
+  if (databaseKind === 'dsql') {
+    return sql<LibraryRow[]>`
+      SELECT
+        t.id, t.file_name, t.directory, t.created_at, t.total_pages, t.total_characters, t.content_bytes,
+        t.content_bytes AS current_bytes,
+        b.bookmark_text, b.bookmark_page, b.updated_at AS bookmark_updated_at
+      FROM text_entries t
+      LEFT JOIN bookmarks b ON t.file_name = b.file_name AND t.directory = b.directory
+    `;
+  }
+  return sql<LibraryRow[]>`
     SELECT
       t.id, t.file_name, t.directory, t.created_at, t.total_pages, t.total_characters, t.content_bytes,
       octet_length(t.content) AS current_bytes,
@@ -155,5 +166,13 @@ export async function getLibraryRows(isVisible: (row: LibraryRow) => boolean): P
     FROM text_entries t
     LEFT JOIN bookmarks b ON t.file_name = b.file_name AND t.directory = b.directory
   `;
+}
+
+/**
+ * Library rows with up-to-date page counts and bookmark pages. `isVisible` limits
+ * which books are returned (and therefore recounted); callers decide what to expose.
+ */
+export async function getLibraryRows(isVisible: (row: LibraryRow) => boolean): Promise<LibraryRow[]> {
+  const rows = await selectLibraryRows();
   return refreshStaleRows(rows.filter(isVisible));
 }

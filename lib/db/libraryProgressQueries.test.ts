@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from '@/lib/db/connection';
 import { getLibraryRows, recountRow, type ContentRow, type LibraryRow } from './libraryProgressQueries.sql';
 
-vi.mock('@/lib/db/connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }) }));
+vi.mock('@/lib/db/connection', () => ({ sql: Object.assign(vi.fn(), { begin: vi.fn() }), databaseKind: 'postgres' }));
 
 const REPEATED_TEXT = '同じ文。';
 // 150 paragraphs: the repeated text sits on page 1 (unit 10) and page 3 (unit 110).
@@ -112,6 +112,27 @@ describe('getLibraryRows', () => {
 
     expect(sql.begin).toHaveBeenCalledTimes(2);
     expect(updatedTables(transaction)).toEqual(['text_entries', 'bookmarks']);
+  });
+
+  it('compares each stored size with the size of the text, which PostgreSQL reads from the value header', async () => {
+    vi.mocked(sql).mockResolvedValueOnce([] as never);
+
+    await getLibraryRows(() => true);
+
+    expect((vi.mocked(sql).mock.calls[0][0] as TemplateStringsArray).join('?')).toContain('octet_length(t.content) AS current_bytes');
+  });
+
+  // The text was read outside the transaction that saves the counts, so a book rewritten
+  // in between must not get the counts of its old text.
+  it('saves the counts only while the book still has the size they were counted at', async () => {
+    const transaction = vi.fn().mockResolvedValue([]);
+    vi.mocked(sql.begin).mockImplementation(((callback: (tx: typeof transaction) => unknown) => Promise.resolve(callback(transaction))) as never);
+    mockStaleBookReads();
+
+    await getLibraryRows(() => true);
+
+    const textUpdate = transaction.mock.calls.map(([strings]) => (strings as string[]).join('?')).find((text) => text.includes('UPDATE text_entries'));
+    expect(textUpdate?.replace(/\s+/g, ' ')).toContain('WHERE t.id = u.id AND octet_length(t.content) = u.content_bytes');
   });
 
   it('fails when the transaction that saves the recounted rows rolls back', async () => {
