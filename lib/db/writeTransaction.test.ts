@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type postgres from 'postgres';
-import { retryDelayMs, runWriteTransaction } from './writeTransaction';
+import { retryDelayMs, retryOnSerializationFailure, runWriteTransaction } from './writeTransaction';
 
 const NO_WAIT = { maxAttempts: 5, baseDelayMs: 0 };
 
@@ -88,6 +88,23 @@ describe('runWriteTransaction', () => {
 
     expect(attemptsBeforeDelay).toBe(1);
     expect(begin).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('retryOnSerializationFailure', () => {
+  it('returns what the attempt that succeeded returned', async () => {
+    const attempt = vi.fn().mockRejectedValueOnce(CONFLICT).mockResolvedValueOnce({ rowCount: 1 });
+
+    expect(await retryOnSerializationFailure(attempt, NO_WAIT)).toEqual({ rowCount: 1 });
+    expect(attempt).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry any other error', async () => {
+    const tooLarge = databaseError('08P01', 'invalid message length');
+    const attempt = vi.fn().mockRejectedValue(tooLarge);
+
+    await expect(retryOnSerializationFailure(attempt, NO_WAIT)).rejects.toBe(tooLarge);
+    expect(attempt).toHaveBeenCalledTimes(1);
   });
 });
 
