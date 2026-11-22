@@ -21,7 +21,7 @@ import {
 } from './vocabulary/[id]/route';
 import { PUT as putTextEntry } from './text-entries/route';
 
-vi.mock('@/lib/db/connection', () => ({ sql: { unsafe: vi.fn() } }));
+vi.mock('@/lib/db/connection', () => ({ sql: { unsafe: vi.fn() }, databaseKind: 'postgres' }));
 vi.mock('@/lib/db/schemaRunner', () => ({ applySchema: vi.fn() }));
 vi.mock('@/lib/db/vocabularyQueries.sql', () => ({
   getVocabularyEntryById: vi.fn(),
