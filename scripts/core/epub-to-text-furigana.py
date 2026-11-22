@@ -14,12 +14,9 @@ Usage:
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
-import urllib.request
-import urllib.error
 
 
 # Progress goes to stderr so stdout carries only the result the pipeline reads.
@@ -177,71 +174,6 @@ def extract_images_from_epub(book, output_dir, safe_title):
     return image_metadata
 
 
-def upload_to_api(fileName, directory, content, api_url=None, api_key=None):
-    """
-    Upload text entry to the database via API.
-
-    Args:
-        fileName: Name of the file (without .txt extension)
-        directory: Directory name (e.g., 'bookv2-furigana')
-        content: Text content to upload
-        api_url: API endpoint URL (default: http://localhost:3333)
-        api_key: Admin API key (default: from ADMIN_API_KEY env var)
-
-    Returns:
-        True if successful, False otherwise
-    """
-    if api_url is None:
-        api_url = os.environ.get('API_URL', 'http://localhost:3333')
-    if api_key is None:
-        api_key = os.environ.get('ADMIN_API_KEY')
-
-    if not api_key:
-        log("Error: ADMIN_API_KEY environment variable not set")
-        log("Please set it with: export ADMIN_API_KEY=your-api-key")
-        return False
-
-    endpoint = f"{api_url}/api/admin?action=text-entries"
-
-    payload = {
-        'fileName': fileName,
-        'directory': directory,
-        'content': content
-    }
-
-    headers = {
-        'Content-Type': 'application/json',
-        'x-api-key': api_key
-    }
-
-    try:
-        data = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(endpoint, data=data, headers=headers, method='POST')
-
-        log(f"  Uploading to API: {endpoint}")
-        with urllib.request.urlopen(req, timeout=30) as response:
-            response_data = json.loads(response.read().decode('utf-8'))
-            if response_data.get('success'):
-                log(f"  [OK] Upload successful: {response_data.get('message', 'OK')}")
-                return True
-            else:
-                log(f"  [FAIL] Upload failed: {response_data.get('message', 'Unknown error')}")
-                return False
-
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode('utf-8')
-        log(f"  [FAIL] HTTP Error {e.code}: {e.reason}")
-        log(f"     {error_body}")
-        return False
-    except urllib.error.URLError as e:
-        log(f"  [FAIL] Connection Error: {e.reason}")
-        log(f"     Make sure the server is running at {api_url}")
-        return False
-    except Exception as e:
-        log(f"  [FAIL] Unexpected error: {e}")
-        return False
-
-
 def extract_text_from_html(html_content):
     """
     Extract text content from HTML, preserving only ruby tags.
@@ -252,7 +184,7 @@ def extract_text_from_html(html_content):
     return html_content
 
 
-def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, preserve_long_vowel=False, output_mode='file'):
+def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, preserve_long_vowel=False):
     """
     Convert EPUB to text file with furigana.
 
@@ -261,15 +193,13 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
         filter_n3_plus: If True, only add furigana to N3+ kanji
         output_dir: Directory to save output file (default: public/bookv2-furigana/)
         preserve_long_vowel: If True, keep ー in output. If False (default), convert to proper vowels.
-        output_mode: Output mode - 'file' (default) or 'api'
 
     Returns:
-        Path to created text file (file mode) or True/False (api mode)
+        Path to created text file
     """
     log(f"Processing EPUB: {epub_path}")
     log(f"Filtering mode: {'N3+ only' if filter_n3_plus else 'All kanji'}")
     log(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
-    log(f"Output mode: {output_mode}")
 
     # Read EPUB
     try:
@@ -403,66 +333,6 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
     output_path = book_dir / f"{safe_title}.txt"
     metadata_path = book_dir / f"{safe_title}.json"
 
-    # Save based on output mode
-    if output_mode == 'api':
-        log(f"\nUploading to API...")
-        log(f"  File name: {safe_title}")
-        log(f"  Directory: bookv2-furigana")
-        log(f"  Content length: {len(output_text)} characters")
-
-        success = upload_to_api(
-            fileName=safe_title,
-            directory='bookv2-furigana',
-            content=output_text
-        )
-
-        if not success:
-            log("\n[FAIL] Failed to upload to API")
-            log("  You can still save to file by running without --output-mode api")
-            sys.exit(1)
-
-        # Calculate file size estimate
-        file_size = len(output_text.encode('utf-8')) / 1024  # KB
-
-        log(f"\n{'='*60}")
-        log(f"[OK] Upload complete!")
-        log(f"{'='*60}")
-        log(f"File name: {safe_title}")
-        log(f"Directory: bookv2-furigana")
-        log(f"File size (estimate): {file_size:.1f} KB")
-        log(f"Chapters: {len(chapters)}")
-        log(f"Images: {len(image_metadata)} (saved to {book_dir})")
-        log(f"Filter mode: {'N3+ kanji only' if filter_n3_plus else 'All kanji'}")
-        log(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
-        log(f"{'='*60}")
-
-        # Still save metadata JSON file for images reference
-        metadata = {
-            'title': title,
-            'author': author,
-            'fileName': safe_title,
-            'originalEpubName': Path(epub_path).name,
-            'processingHistory': {
-                'filterMode': 'n3' if filter_n3_plus else 'all',
-                'hiraganaStyle': 'long-vowel' if preserve_long_vowel else 'full',
-                'chaptersCount': len(chapters),
-                'fileSize': int(file_size),
-                'imageCount': len(image_metadata)
-            },
-            'images': image_metadata
-        }
-
-        log(f"\nSaving metadata to: {metadata_path}")
-        try:
-            with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            log(f"Error saving metadata: {e}")
-            # Don't exit - metadata is not critical for API mode
-
-        return True
-
-    # File mode (default)
     # Save text file
     log(f"\nSaving text to: {output_path}")
     try:
@@ -530,10 +400,6 @@ Examples:
   # Only add furigana to N3+ kanji (advanced/rare kanji)
   python epub-to-text-furigana.py book.epub --filter n3
 
-  # Upload directly to database via API (requires ADMIN_API_KEY env var)
-  export ADMIN_API_KEY=your-secret-key
-  python epub-to-text-furigana.py book.epub --output-mode api
-
   # Specify custom output directory
   python epub-to-text-furigana.py book.epub --output ./output/
 
@@ -566,13 +432,6 @@ Note: Existing furigana in the EPUB will always be preserved.
         help='Hiragana style: "full" (しょう) or "long-vowel" (しょー) (default: full)'
     )
 
-    parser.add_argument(
-        '--output-mode',
-        choices=['file', 'api'],
-        default='file',
-        help='Output mode: "file" (save to filesystem) or "api" (upload to database via API) (default: file)'
-    )
-
     args = parser.parse_args()
 
     # Validate input file
@@ -590,26 +449,16 @@ Note: Existing furigana in the EPUB will always be preserved.
     # Process the EPUB
     filter_n3_plus = (args.filter == 'n3')
     preserve_long_vowel = (args.hiragana_style == 'long-vowel')
-    output_mode = args.output_mode
 
     result = process_epub_to_text(
         epub_path,
         filter_n3_plus=filter_n3_plus,
         output_dir=args.output,
-        preserve_long_vowel=preserve_long_vowel,
-        output_mode=output_mode
+        preserve_long_vowel=preserve_long_vowel
     )
 
-    if output_mode == 'api':
-        if result:
-            log("\n[OK] Done! Text uploaded to database via API.")
-            log("  Refresh your app to see the new book.")
-        else:
-            log("\n[FAIL] Failed to upload to API.")
-            sys.exit(1)
-    else:
-        log("\n[OK] Done! You can now use this file in your Japanese reading app.")
-        log(f"  File saved to: {result}")
+    log("\n[OK] Done! You can now use this file in your Japanese reading app.")
+    log(f"  File saved to: {result}")
 
 
 if __name__ == '__main__':
