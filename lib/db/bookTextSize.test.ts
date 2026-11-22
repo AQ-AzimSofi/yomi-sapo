@@ -1,7 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import postgres from 'postgres';
 import { describe, expect, it } from 'vitest';
-import { assertBookTextFits, BookTextTooLargeError, estimateStoredBytes, MAX_STORED_TEXT_BYTES } from './bookTextSize';
+import {
+  assertBookTextFits,
+  BookTextTooLargeError,
+  bookTextTooLargeError,
+  estimateStoredBytes,
+  MAX_STORED_TEXT_BYTES,
+} from './bookTextSize';
 
 // Printable ASCII in random order barely compresses, like the random values that found DSQL's exact 1 MiB cut.
 function incompressibleText(bytes: number): string {
@@ -27,6 +33,16 @@ describe('estimateStoredBytes', () => {
     const text = '吾輩は猫である。名前はまだ無い。\n'.repeat(100_000);
 
     expect(estimateStoredBytes(text)).toBeLessThan(Buffer.byteLength(text) / 50);
+  });
+});
+
+describe('bookTextTooLargeError', () => {
+  it('is null for text that fits', () => {
+    expect(bookTextTooLargeError(incompressibleText(MAX_STORED_TEXT_BYTES))).toBeNull();
+  });
+
+  it('is the error that refuses text over the cap', () => {
+    expect(bookTextTooLargeError(incompressibleText(MAX_STORED_TEXT_BYTES + 1))?.estimatedStoredBytes).toBe(MAX_STORED_TEXT_BYTES + 1);
   });
 });
 

@@ -32,12 +32,18 @@ export class BookTextTooLargeError extends Error {
   }
 }
 
+/** The error that refuses book text too large for one Aurora DSQL value, or null when it fits. */
+export function bookTextTooLargeError(text: string): BookTextTooLargeError | null {
+  const estimatedStoredBytes = estimateStoredBytes(text);
+  if (estimatedStoredBytes <= MAX_STORED_TEXT_BYTES) return null;
+  return new BookTextTooLargeError(estimatedStoredBytes);
+}
+
 /**
  * Refuses book text that might not fit in one Aurora DSQL value. It applies on Neon too, so no
  * book is saved there that could not move to DSQL.
  */
 export function assertBookTextFits(text: string): void {
-  const estimatedStoredBytes = estimateStoredBytes(text);
-  if (estimatedStoredBytes <= MAX_STORED_TEXT_BYTES) return;
-  throw new BookTextTooLargeError(estimatedStoredBytes);
+  const tooLarge = bookTextTooLargeError(text);
+  if (tooLarge) throw tooLarge;
 }
