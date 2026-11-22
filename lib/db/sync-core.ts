@@ -1,5 +1,5 @@
 import type { Client } from 'pg';
-import { BookTextTooLargeError, estimateStoredBytes, MAX_STORED_TEXT_BYTES } from './bookTextSize';
+import { bookTextTooLargeError } from './bookTextSize';
 import { withCurrentContentBytes } from './contentBytes';
 import { createPgClient } from './pgClient';
 import { prodClientConfig, type ProdDatabase } from './prodDatabase';
@@ -38,9 +38,7 @@ export interface TableConfig {
 // A book too large for one Aurora DSQL value stays off production, Neon included, so that every
 // book there can move to DSQL. The local database stores any size.
 function bookTooLargeForProd(row: Record<string, unknown>): string | null {
-  const estimatedStoredBytes = estimateStoredBytes(String(row.content));
-  if (estimatedStoredBytes <= MAX_STORED_TEXT_BYTES) return null;
-  return new BookTextTooLargeError(estimatedStoredBytes).message;
+  return bookTextTooLargeError(String(row.content))?.message ?? null;
 }
 
 export const TABLES: TableConfig[] = [
