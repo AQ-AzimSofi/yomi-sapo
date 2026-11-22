@@ -28,6 +28,27 @@ function sleep(delayMs: number): Promise<void> {
 }
 
 /**
+ * Runs attempt, and runs it again on SQLSTATE 40001 with jittered exponential backoff, up to
+ * policy.maxAttempts. A 40001 means nothing was committed, so the attempt must be a whole unit:
+ * a transaction, or a statement that commits on its own and reports its commit errors.
+ */
+export async function retryOnSerializationFailure<T>(
+  attempt: () => Promise<T>,
+  policy: WriteRetryPolicy = DEFAULT_WRITE_RETRY
+): Promise<T> {
+  const runAttempt = async (attemptNumber: number): Promise<T> => {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (!isSerializationFailure(error) || attemptNumber >= policy.maxAttempts) throw error;
+      await sleep(retryDelayMs(attemptNumber, policy.baseDelayMs));
+      return runAttempt(attemptNumber + 1);
+    }
+  };
+  return runAttempt(1);
+}
+
+/**
  * Runs a unit of writes in one transaction and runs the whole unit again on
  * SQLSTATE 40001, with jittered exponential backoff, up to policy.maxAttempts.
  *
@@ -42,14 +63,5 @@ export async function runWriteTransaction(
   work: WriteWork,
   policy: WriteRetryPolicy = DEFAULT_WRITE_RETRY
 ): Promise<void> {
-  const runAttempt = async (attempt: number): Promise<void> => {
-    try {
-      await client.begin(work);
-    } catch (error) {
-      if (!isSerializationFailure(error) || attempt >= policy.maxAttempts) throw error;
-      await sleep(retryDelayMs(attempt, policy.baseDelayMs));
-      return runAttempt(attempt + 1);
-    }
-  };
-  return runAttempt(1);
+  await retryOnSerializationFailure(() => client.begin(work), policy);
 }
