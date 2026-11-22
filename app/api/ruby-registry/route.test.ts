@@ -105,6 +105,13 @@ describe('POST /api/ruby-registry', () => {
     expect(upsertRubyEntry).not.toHaveBeenCalled();
   });
 
+  it('keeps the source of an entry extracted from the EPUB, as the edit page sends it back', async () => {
+    const response = await POST(saveRequest({ directory: 'bookv2-furigana', bookName: 'ほん', entry: { ...ENTRY, source: 'epub_smart' } }));
+
+    expect(response.status).toBe(200);
+    expect(upsertRubyEntry).toHaveBeenCalledWith('bookv2-furigana', 'ほん', { ...ENTRY, source: 'epub_smart' });
+  });
+
   it("saves only the entry fields, marked as the reader's own", async () => {
     await POST(saveRequest({ directory: 'bookv2-furigana', bookName: 'ほん', entry: { ...ENTRY, extra: 'x' } }));
 
