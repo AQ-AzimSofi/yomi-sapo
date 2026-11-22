@@ -9,9 +9,13 @@ Improvements:
 - Added cleanup for full-width spaces
 
 Usage:
-    python extract-ruby-smart.py
+    python extract-ruby-smart.py <book.epub> --out <book folder>/ruby-registry.json
+
+The registry's bookTitle is the name of the folder it is written to. Exits non-zero when the
+EPUB cannot be read, without writing anything.
 """
 
+import argparse
 import json
 import re
 import sys
@@ -216,95 +220,41 @@ def extract_words_from_html(html_content: str) -> dict[str, WordEntry]:
     return words
 
 
-def find_book_directory(epub_path: Path, public_dir: Path) -> Path | None:
-    """Intelligent folder matching with fuzzy comparison."""
-    clean_name = epub_path.stem.strip()
+def build_registry(epub_path: Path, book_title: str) -> dict:
+    book = epub.read_epub(str(epub_path))
+    all_words = {}
 
-    for v_dir in ['bookv3-rephrase', 'bookv2-furigana', 'bookv1-rephrase']:
-        base = public_dir / v_dir
-        if not base.exists():
-            continue
+    for spine_id, linear in book.spine:
+        item = book.get_item_with_id(spine_id)
+        if item and item.get_type() == ebooklib.ITEM_DOCUMENT:
+            html = item.get_content().decode('utf-8')
+            chapter_words = extract_words_from_html(html)
+            all_words.update(chapter_words)
 
-        for d in base.iterdir():
-            if not d.is_dir():
-                continue
-            folder_norm = d.name.replace(' ', '')
-            file_norm = clean_name.replace(' ', '')
-
-            if folder_norm in file_norm or file_norm in folder_norm:
-                return d
-    return None
+    log(f"  -> Extracted {len(all_words)} unique vocabulary entries")
+    entries = [
+        {'kanji': all_words[w].word, 'reading': all_words[w].reading, 'source': 'epub_smart', 'note': ''}
+        for w in sorted(all_words.keys())
+    ]
+    return {'bookTitle': book_title, 'entries': entries}
 
 
 def main():
-    script_dir = Path(__file__).parent
-    project_root = script_dir.parent.parent
-    public_dir = project_root / 'public'
+    parser = argparse.ArgumentParser(description="Build a book's ruby registry (vocabulary index) from its EPUB")
+    parser.add_argument('epub_file', help='Path to the EPUB')
+    parser.add_argument('--out', required=True, help='ruby-registry.json to write, inside the book folder')
+    args = parser.parse_args()
 
-    # Check for dated subdirectory first, then fall back to temp/
-    temp_base = project_root / 'temp'
-    dated_dir = temp_base / '2025-01-02'
+    epub_path = Path(args.epub_file)
+    registry_path = Path(args.out)
+    log(f"Processing: {epub_path.name}")
+    log("Using Smart Extraction: Kanji-Merge + Semantic Okurigana")
+    registry = build_registry(epub_path, registry_path.parent.name)
 
-    if dated_dir.exists():
-        temp_dir = dated_dir
-        log(f"Using dated directory: {temp_dir}")
-    elif temp_base.exists():
-        temp_dir = temp_base
-    else:
-        log(f"Error: temp directory not found at {temp_base}")
-        sys.exit(1)
-
-    epub_files = list(temp_dir.glob('*.epub'))
-    log(f"Found {len(epub_files)} EPUB files")
-    log("Using Smart Extraction: Kanji-Merge + Semantic Okurigana\n")
-
-    total_books_updated = 0
-
-    for epub_path in epub_files:
-        log(f"Processing: {epub_path.name}")
-        try:
-            book = epub.read_epub(str(epub_path))
-            all_words = {}
-
-            for spine_id, linear in book.spine:
-                item = book.get_item_with_id(spine_id)
-                if item and item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    html = item.get_content().decode('utf-8')
-                    chapter_words = extract_words_from_html(html)
-                    all_words.update(chapter_words)
-
-            log(f"  -> Extracted {len(all_words)} unique vocabulary entries")
-
-            book_dir = find_book_directory(epub_path, public_dir)
-            if book_dir:
-                registry_path = book_dir / 'ruby-registry.json'
-
-                registry = {
-                    'bookTitle': book_dir.name,
-                    'entries': []
-                }
-
-                for w in sorted(all_words.keys()):
-                    entry = all_words[w]
-                    registry['entries'].append({
-                        'kanji': entry.word,
-                        'reading': entry.reading,
-                        'source': 'epub_smart',
-                        'note': ''
-                    })
-
-                with open(registry_path, 'w', encoding='utf-8') as f:
-                    json.dump(registry, f, ensure_ascii=False, indent=2)
-
-                log(f"  -> Registry updated: {registry_path}")
-                total_books_updated += 1
-            else:
-                log(f"  [!] Skipped: Could not find matching directory in public/")
-
-        except Exception as e:
-            log(f"  [!] Error processing {epub_path.name}: {e}")
-
-    log(f"\nCompleted. Updated {total_books_updated} books.")
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(registry_path, 'w', encoding='utf-8') as f:
+        json.dump(registry, f, ensure_ascii=False, indent=2)
+    log(f"  -> Registry written: {registry_path}")
 
 
 if __name__ == '__main__':
