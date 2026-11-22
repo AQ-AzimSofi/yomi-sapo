@@ -1,6 +1,7 @@
 /**
- * Row types and the schema statements that GET /api/init-db and npm run db:migrate apply.
+ * Row types and the schema statements that lib/db/schemaRunner.ts applies.
  */
+import type { DatabaseKind } from './connectionConfig';
 
 export interface Bookmark {
   id?: number;
@@ -33,26 +34,29 @@ export interface VocabularyRow {
   updated_at: Date;
 }
 
-/**
- * Every statement GET /api/init-db and npm run db:migrate apply, in order and one per call.
- * Each creates what does not exist yet or brings a table an older schema created up to date,
- * so running them again changes nothing.
- */
-export const SCHEMA_STATEMENTS: readonly string[] = [
+// Tables for a new database, in the form Aurora DSQL accepts:
+// - DSQL has no SERIAL, and wants BIGINT for an identity column, which postgres.js returns as a
+//   string. So an INT id defaults to a sequence with the name SERIAL would give it. DSQL allows
+//   CACHE 1 or at least 65536, and 65536 would spend a block of 65536 ids per new connection.
+// - UNIQUE (file_name, directory) stays inline: it is the ON CONFLICT target, DSQL cannot add a
+//   constraint later, and its index already serves lookups by file_name and directory.
+// A database an older schema created keeps its SERIAL ids and extra indexes; IF NOT EXISTS
+// leaves its tables and their sequences alone.
+const TABLE_STATEMENTS: readonly string[] = [
+  `CREATE SEQUENCE IF NOT EXISTS bookmarks_id_seq CACHE 1`,
   `CREATE TABLE IF NOT EXISTS bookmarks (
-    id SERIAL PRIMARY KEY,
+    id INT PRIMARY KEY DEFAULT nextval('bookmarks_id_seq'),
     file_name VARCHAR(255) NOT NULL,
     directory VARCHAR(255) NOT NULL,
     bookmark_text TEXT NOT NULL,
     bookmark_page INT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(file_name, directory)
+    UNIQUE (file_name, directory)
   )`,
-  `ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS bookmark_page INT`,
-  `CREATE INDEX IF NOT EXISTS idx_bookmarks_file_directory ON bookmarks(file_name, directory)`,
 
+  `CREATE SEQUENCE IF NOT EXISTS text_entries_id_seq CACHE 1`,
   `CREATE TABLE IF NOT EXISTS text_entries (
-    id SERIAL PRIMARY KEY,
+    id INT PRIMARY KEY DEFAULT nextval('text_entries_id_seq'),
     file_name VARCHAR(255) NOT NULL,
     directory VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
@@ -61,14 +65,14 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
     content_bytes INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(file_name, directory)
+    UNIQUE (file_name, directory)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_text_entries_file_directory ON text_entries(file_name, directory)`,
 
   // An audiobook recording paired with one text variant. It holds the S3 object key rather
   // than a URL: the recording is private, so the API signs a short-lived URL per request.
+  `CREATE SEQUENCE IF NOT EXISTS narration_id_seq CACHE 1`,
   `CREATE TABLE IF NOT EXISTS narration (
-    id SERIAL PRIMARY KEY,
+    id INT PRIMARY KEY DEFAULT nextval('narration_id_seq'),
     file_name VARCHAR(255) NOT NULL,
     directory VARCHAR(255) NOT NULL,
     audio_key VARCHAR(500) NOT NULL,
@@ -76,9 +80,8 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
     cues JSONB NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(file_name, directory)
+    UNIQUE (file_name, directory)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_narration_file_directory ON narration(file_name, directory)`,
 
   `CREATE TABLE IF NOT EXISTS vocabulary_entries (
     id VARCHAR(255) PRIMARY KEY,
@@ -92,10 +95,14 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_vocabulary_entries_created_at ON vocabulary_entries(created_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_vocabulary_entries_word ON vocabulary_entries(word)`,
-  `CREATE INDEX IF NOT EXISTS idx_vocabulary_entries_file ON vocabulary_entries(file_name, directory)`,
+];
 
+// Brings tables an older schema created on PostgreSQL up to date. A DSQL database starts from
+// TABLE_STATEMENTS with every column, and DSQL refuses ADD COLUMN with a DEFAULT even when the
+// column exists. A later column for DSQL needs a bare ADD COLUMN, then SET DEFAULT, then a
+// backfill in batches, each a separate statement.
+const POSTGRES_UPGRADE_STATEMENTS: readonly string[] = [
+  `ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS bookmark_page INT`,
   `ALTER TABLE text_entries ADD COLUMN IF NOT EXISTS total_pages INT DEFAULT 0`,
   `ALTER TABLE text_entries ADD COLUMN IF NOT EXISTS total_characters INT DEFAULT 0`,
   // Size the cached page counts were computed at; NULL means not yet counted.
@@ -110,3 +117,21 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   `UPDATE text_entries SET updated_at = created_at WHERE updated_at IS NULL`,
   `ALTER TABLE text_entries ALTER COLUMN updated_at SET DEFAULT CURRENT_TIMESTAMP`,
 ];
+
+// DSQL builds a secondary index only with CREATE INDEX ASYNC, and accepts no DESC key order.
+// The runner waits for each build on DSQL and drops ASYNC on PostgreSQL.
+const INDEX_STATEMENTS: readonly string[] = [
+  `CREATE INDEX ASYNC IF NOT EXISTS idx_vocabulary_entries_created_at ON vocabulary_entries (created_at)`,
+  `CREATE INDEX ASYNC IF NOT EXISTS idx_vocabulary_entries_word ON vocabulary_entries (word)`,
+  `CREATE INDEX ASYNC IF NOT EXISTS idx_vocabulary_entries_file ON vocabulary_entries (file_name, directory)`,
+];
+
+/**
+ * The statements GET /api/init-db, npm run db:migrate and scripts/db/apply-schema-dsql.ts apply,
+ * in order and one per call: DSQL runs one DDL statement per transaction. Each creates only what
+ * does not exist yet, so running them again changes nothing.
+ */
+export function schemaStatementsFor(kind: DatabaseKind): readonly string[] {
+  if (kind === 'dsql') return [...TABLE_STATEMENTS, ...INDEX_STATEMENTS];
+  return [...TABLE_STATEMENTS, ...POSTGRES_UPGRADE_STATEMENTS, ...INDEX_STATEMENTS];
+}

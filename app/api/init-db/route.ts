@@ -11,7 +11,7 @@ export const GET = withAuth('viewer', async (request, viewer) => {
     return signInRequired();
   }
 
-  await applySchema(sql);
+  await applySchema(sql, 'postgres');
 
   return NextResponse.json({
     message: 'Database tables created successfully',

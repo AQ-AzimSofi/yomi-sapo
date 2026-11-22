@@ -36,7 +36,7 @@ export async function main(): Promise<void> {
       throw new Error('refusing to change a database that is not on localhost or 127.0.0.1');
     }
 
-    await applySchema(sql);
+    await applySchema(sql, 'postgres');
     console.log('Schema is up to date.');
   } finally {
     await sql.end();
