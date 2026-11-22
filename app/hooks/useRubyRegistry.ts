@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ApiError, fetchRubyRegistry, removeRubyRegistryItem, saveRubyEntry } from '@/lib/api/client';
 import type { RubyRegistry, RubyEntry } from '@/lib/types';
+import type { RubyEntrySource } from '@/lib/rubyEntrySource';
 import type { RubyRegistryResponse } from '@/lib/api/contracts';
 
 interface UseRubyRegistryOptions {
@@ -15,7 +16,7 @@ interface UseRubyRegistryReturn {
   registry: RubyRegistry | null;
   isLoading: boolean;
   error: Error | null;
-  addEntry: (entry: Omit<RubyEntry, 'source'> & { source?: 'epub' | 'user' }) => Promise<void>;
+  addEntry: (entry: Omit<RubyEntry, 'source'> & { source?: RubyEntrySource }) => Promise<void>;
   deleteEntry: (kanji: string) => Promise<void>;
   ignoreSuggestion: (kanji: string) => Promise<void>;
   refetch: () => Promise<void>;
@@ -79,7 +80,7 @@ export function useRubyRegistry({
     }
   };
 
-  const addEntry = (entry: Omit<RubyEntry, 'source'> & { source?: 'epub' | 'user' }) =>
+  const addEntry = (entry: Omit<RubyEntry, 'source'> & { source?: RubyEntrySource }) =>
     changeRegistry('Failed to save entry', () =>
       saveRubyEntry({
         directory,

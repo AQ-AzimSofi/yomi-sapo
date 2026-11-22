@@ -1,6 +1,7 @@
 /**
  * よみサポアプリケーションのコア型定義
  */
+import type { RubyEntrySource } from './rubyEntrySource';
 
 // AI生成のマークダウンから解析されたアイテム構造
 export interface ParsedItem {
@@ -103,7 +104,7 @@ export interface VocabularyEntry {
 export interface RubyEntry {
   kanji: string;
   reading: string;
-  source: 'epub' | 'user';
+  source: RubyEntrySource;
   note: string;
 }
 

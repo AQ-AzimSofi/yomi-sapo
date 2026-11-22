@@ -314,8 +314,8 @@ function RubyRegistryContent() {
                           <span
                             className="text-xs px-2 py-0.5 border"
                             style={{
-                              borderColor: entry.source === 'epub' ? COLORS.NEUTRAL : COLORS.PRIMARY,
-                              color: entry.source === 'epub' ? COLORS.SECONDARY : COLORS.PRIMARY,
+                              borderColor: entry.source === 'user' ? COLORS.PRIMARY : COLORS.NEUTRAL,
+                              color: entry.source === 'user' ? COLORS.PRIMARY : COLORS.SECONDARY,
                             }}
                           >
                             {entry.source}

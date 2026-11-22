@@ -10,6 +10,7 @@ import { apiError, parseJsonBody } from '@/lib/api/respond';
 import { isNonEmptyString, isOptionalString, isRecord } from '@/lib/utils/typeGuards';
 import { isPublicDirectory } from '@/lib/publicBooks';
 import { isSafeBookRef } from '@/lib/books/bookRef';
+import { isRubyEntrySource } from '@/lib/rubyEntrySource';
 import type { RubyEntryDraft, RubyRegistryResponse, SaveRubyEntryRequest } from '@/lib/api/contracts';
 
 export const dynamic = 'force-dynamic';
@@ -19,7 +20,7 @@ function isRubyEntryDraft(entry: unknown): entry is RubyEntryDraft {
     isRecord(entry) &&
     isNonEmptyString(entry.kanji) &&
     isNonEmptyString(entry.reading) &&
-    (entry.source === undefined || entry.source === 'epub' || entry.source === 'user') &&
+    (entry.source === undefined || isRubyEntrySource(entry.source)) &&
     isOptionalString(entry.note)
   );
 }
