@@ -88,7 +88,7 @@ Every table is last-write-wins on `updated_at`: a row is copied when the other s
 How rows are written, on Neon and DSQL alike:
 - Each statement carries at most 1 MiB of parameters and 25 rows, so most books go one per statement, under DSQL's 10 MiB message and transaction limits.
 - A statement that hits a write conflict (40001) is sent again. An over-long message (08P01), after which DSQL drops the connection, stops the sync with that error. A dropped connection is logged instead of crashing the process.
-- A new row gets its `id` from the target's sequence; rows are matched on `(file_name, directory)` or the vocabulary `id`, never on the serial id.
+- A new row gets its `id` from the target's sequence; rows are matched on `(file_name, directory)` or the vocabulary `id`, never on the serial id. Earlier versions of the sync sent the local ids, which never moved Neon's sequences, so a target sequence that lags behind the table's largest id is first moved past it. One that is ahead is left alone.
 - A book's `content_bytes` is copied only while it equals the size of its text, and as NULL otherwise.
 - A push leaves out a book too large for one DSQL value and counts it as failed; a pull takes it.
 
