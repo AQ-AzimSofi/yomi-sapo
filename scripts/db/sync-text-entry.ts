@@ -15,9 +15,12 @@
 
 import fs from 'node:fs';
 import { parseArgs } from 'node:util';
+import { isHelpRequested } from '../shared/cliSchema';
 import { isEntryPoint } from '../shared/entryPoint';
 import { loadRepoEnv } from '../shared/repoPaths';
 import { isLocalDatabase } from './localDatabase';
+
+const USAGE = 'Usage: npx tsx --conditions=react-server scripts/db/sync-text-entry.ts --directory <dir> --file-name <name> --file <path of the text file>';
 
 export interface TextEntryFile {
   directory: string;
@@ -50,12 +53,16 @@ function parseCliArgs(): TextEntryFile {
   });
   const { directory, 'file-name': fileName, file: filePath } = values;
   if (!directory || !fileName || !filePath) {
-    throw new Error('Usage: --directory <dir> --file-name <name> --file <path of the text file>');
+    throw new Error(USAGE);
   }
   return { directory, fileName, filePath };
 }
 
-async function main(): Promise<void> {
+async function main(args: string[]): Promise<void> {
+  if (isHelpRequested(args)) {
+    console.log(USAGE);
+    return;
+  }
   loadRepoEnv();
   try {
     await syncTextEntryFile(parseCliArgs());
@@ -66,7 +73,7 @@ async function main(): Promise<void> {
 }
 
 if (isEntryPoint(import.meta.url)) {
-  main().catch((error: unknown) => {
+  main(process.argv.slice(2)).catch((error: unknown) => {
     console.error(`    Database sync failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   });
