@@ -7,6 +7,7 @@ import { useStarredWords } from '@/app/hooks/useStarredWords';
 import { useEscapeKey } from '@/app/hooks/useEscapeKey';
 import type { RubyEntry } from '@/lib/types';
 import Link from 'next/link';
+import { RUBY_LOOKUP_UNAVAILABLE_MESSAGE, rubyLookupView } from './rubyLookupView';
 
 interface RubyLookupSidebarProps {
   isOpen: boolean;
@@ -26,7 +27,7 @@ export default function RubyLookupSidebar({
   const [showStarredOnly, setShowStarredOnly] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { registry, isLoading, searchEntries } = useRubyRegistry({
+  const { registry, isLoading, isUnavailable, searchEntries } = useRubyRegistry({
     directory,
     bookName,
     enabled: isOpen && !!directory && !!bookName,
@@ -47,6 +48,13 @@ export default function RubyLookupSidebar({
       return a.kanji.localeCompare(b.kanji, 'ja');
     });
   }, [registry?.entries, searchQuery, searchEntries, starredWords, showStarredOnly]);
+
+  const view = rubyLookupView({
+    isLoading,
+    isUnavailable,
+    entryCount: registry?.entries.length ?? 0,
+    shownCount: sortedEntries.length,
+  });
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -147,7 +155,7 @@ export default function RubyLookupSidebar({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5">
-          {isLoading ? (
+          {view === 'loading' ? (
             <div className="flex flex-col items-center justify-center py-12">
               <div
                 className="animate-spin rounded-full h-7 w-7 border-2 border-transparent"
@@ -155,7 +163,11 @@ export default function RubyLookupSidebar({
               />
               <span className="mt-3 text-sm" style={{ color: THEME.SECONDARY }}>Loading...</span>
             </div>
-          ) : !registry || registry.entries.length === 0 ? (
+          ) : view === 'unavailable' ? (
+            <div className="text-center py-12">
+              <p className="text-sm" style={{ color: THEME.SECONDARY }}>{RUBY_LOOKUP_UNAVAILABLE_MESSAGE}</p>
+            </div>
+          ) : view === 'empty' ? (
             <div className="text-center py-12">
               <p className="mb-4 text-sm" style={{ color: THEME.SECONDARY }}>No entries yet</p>
               <Link
@@ -166,7 +178,7 @@ export default function RubyLookupSidebar({
                 Set up registry
               </Link>
             </div>
-          ) : sortedEntries.length === 0 ? (
+          ) : view === 'no-matches' ? (
             <div className="text-center py-12">
               <p className="text-sm" style={{ color: THEME.SECONDARY }}>
                 {showStarredOnly
