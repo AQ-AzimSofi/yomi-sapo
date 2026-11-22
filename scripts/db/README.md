@@ -44,6 +44,17 @@ npx tsx --conditions=react-server scripts/db/sync-narration.ts --manifest "<book
 
 ---
 
+## sync-text-entry.ts
+
+Upserts one book file into `text_entries` on the local database, through `upsertTextEntry` in `lib/db/queries.ts`. The book pipeline runs it after every chunk; run it by hand after editing a book file. It refuses any host other than `localhost` or `127.0.0.1`; use `sync.ts` to push to production. Like `sync-narration.ts`, it needs the react-server condition:
+
+```bash
+npx tsx --conditions=react-server scripts/db/sync-text-entry.ts --directory "bookv2-furigana/<book>" \
+  --file-name "<book>-rephrase-furigana" --file "public/bookv2-furigana/<book>/<book>-rephrase-furigana.txt"
+```
+
+---
+
 ## clean-book-text.ts
 
 Normalizes the stored book text in `text_entries`, and every `bookmarks.bookmark_text` the same way so bookmarks keep matching: Windows line endings become LF, and markup junk left by EPUB extraction or the rephrase model is removed. It is a dry run unless `--apply` is given, targets `DATABASE_URL` unless `--prod` is given (then `PROD_DATABASE_URL`), and leaves `updated_at` unchanged so the sync does not treat the cleaned rows as newer.

@@ -1,6 +1,6 @@
 # EPUB to Text with Furigana Converter
 
-`scripts/core/epub-to-text-furigana.py` converts a Japanese EPUB to plain text with furigana (ruby annotations). It is step 1 of the book pipeline, `scripts/epub-to-book.ts`, which is the usual way to run it (see [README.md](./README.md)). Run it on its own to extract a book without rephrasing it.
+`scripts/core/epub-to-text-furigana.py` converts a Japanese EPUB to plain text with furigana (ruby annotations). It is the EPUB source of the book pipeline, `scripts/epub-to-book.ts`, which is the usual way to run it (see [README.md](./README.md)). Run it on its own to extract a book without rephrasing it.
 
 ## Features
 

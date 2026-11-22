@@ -1,28 +1,19 @@
 #!/usr/bin/env npx tsx
 /**
- * Unified EPUB to Book Processing Script
+ * The book pipeline: args -> a book source -> the steps (scripts/pipeline/).
  *
- * Complete pipeline for converting EPUB files to fully processed books:
- * 1. Extract text + images from EPUB
- * 2. Extract ruby registry from EPUB
- * 3. Upload illustrations + image metadata to the BookImages bucket (BOOK_IMAGES_BUCKET)
- * 4. Batch rephrase with Claude (claude -p, on the subscription) or the Gemini API
- * 5. Add furigana to rephrased text
- * 6. Sync to database after each chunk
+ * Sources (scripts/pipeline/bookSources.ts):
+ * - an EPUB: text, images and metadata extracted into public/<output-dir>/<book>/
+ * - an ocr-pages.ts output folder: its joined text gets furigana, its figures are copied
+ * - --skip-extract: the text already in public/<output-dir>/<book>/<book>.txt
  *
- * Usage:
- *   npx tsx scripts/epub-to-book.ts "path/to/book.epub" [options]
+ * Steps (scripts/pipeline/pipelineSteps.ts):
+ * 1. Ruby registry from the EPUB
+ * 2. Upload illustrations + image metadata to the BookImages bucket (BOOK_IMAGES_BUCKET)
+ * 3. Rephrase chunk by chunk with Claude (claude -p, on the subscription) or the Gemini API,
+ *    add furigana, and sync the reader's file to the local database after each chunk
  *
- * Options:
- *   --output-dir <dir>   Output directory in public/ (default: bookv2-furigana)
- *   --chunk-size <n>     Target characters per chunk (default: 5000)
- *   --delay <n>          Seconds between Gemini chunks (default: 120; Claude runs without delay)
- *   --model <name>       Claude model (sonnet, opus) or a gemini-* model (default: sonnet)
- *   --skip-rephrase      Only extract, don't rephrase
- *   --skip-images        Don't extract images
- *   --filter <level>     Kanji filter: all, n3 (default: all)
- *   --reset              Start fresh, ignore existing progress
- *   --dry-run            Show plan without processing
+ * Usage: npx tsx scripts/epub-to-book.ts <book.epub | ocr folder> [options], options in HELP_TEXT below.
  */
 
 import * as fs from 'fs';
@@ -41,26 +32,31 @@ const DEFAULT_REPHRASE_MODEL = 'sonnet';
 // ============================================================================
 
 const HELP_TEXT = `
-Unified EPUB to Book Processing Script
+Book pipeline: EPUB or OCR text -> furigana, rephrase, local database
 
 Usage:
   npx tsx scripts/epub-to-book.ts <epub-file> [options]
+  npx tsx scripts/epub-to-book.ts <ocr-pages.ts output folder> [options]
+  npx tsx scripts/epub-to-book.ts <any path named after the book> --skip-extract [options]
 
 Options:
-  --output-dir <dir>   Output directory in public/ (default: bookv2-furigana)
-  --chunk-size <n>     Target characters per chunk (default: 5000)
-  --delay <n>          Seconds between Gemini chunks (default: 120; Claude runs without delay)
-  --model <name>       Claude model (sonnet, opus) or a gemini-* model (default: sonnet)
-  --skip-rephrase      Only extract, don't rephrase
-  --skip-images        Don't extract images
-  --filter <level>     Kanji filter: all, n3 (default: all)
-  --reset              Start fresh, ignore existing progress
-  --dry-run            Show plan without processing
+  --output-dir <dir>     Output directory in public/ (default: bookv2-furigana)
+  --chunk-size <n>       Target characters per chunk (default: 5000)
+  --delay <n>            Seconds between Gemini chunks (default: 120; Claude runs without delay)
+  --model <name>         Claude model (sonnet, opus) or a gemini-* model (default: sonnet)
+  --skip-extract         Use public/<output-dir>/<book>/<book>.txt as it is; the input path only names the book
+  --skip-rephrase        Only extract, don't rephrase
+  --skip-images          Has no effect: the EPUB extractor always writes the images
+  --filter <level>       Kanji filter: all, n3 (default: all)
+  --reset                Start fresh, ignore existing progress
+  --dry-run              Show plan without processing
+  --database-url <url>   Local database each chunk is synced to (default: DATABASE_URL); other hosts are refused
 
 Example:
   npx tsx scripts/epub-to-book.ts "my-book.epub"
   npx tsx scripts/epub-to-book.ts "my-book.epub" --delay 300 --filter n3
   npx tsx scripts/epub-to-book.ts "my-book.epub" --skip-rephrase
+  npx tsx scripts/epub-to-book.ts "temp/books/my-book-ocr"
 `;
 
 export function parseCliOptions(args: string[]): PipelineOptions {
