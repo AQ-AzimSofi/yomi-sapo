@@ -47,6 +47,9 @@ except ImportError:
     log("Make sure you're running this script from the project root or scripts directory.")
     sys.exit(1)
 
+# scripts/core/ -> the repo root
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[2] / 'public' / 'bookv2-furigana'
+
 
 def sanitize_filename(title):
     """Convert book title to safe filename."""
@@ -222,11 +225,7 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
 
     # Create output filename and directory structure
     safe_title = sanitize_filename(title)
-    if output_dir is None:
-        script_dir = Path(__file__).parent
-        project_root = script_dir.parent
-        output_dir = project_root / 'public' / 'bookv2-furigana'
-    output_dir = Path(output_dir)
+    output_dir = DEFAULT_OUTPUT_DIR if output_dir is None else Path(output_dir)
 
     # Extract images first
     log(f"\n{'='*60}")

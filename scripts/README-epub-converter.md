@@ -33,7 +33,7 @@ python scripts/core/epub-to-text-furigana.py path/to/book.epub --filter n3 --out
 python scripts/core/epub-to-text-furigana.py --help
 ```
 
-Pass `--output` every time. Without it the script writes to `scripts/public/bookv2-furigana/`, not the `public/bookv2-furigana/` its `--help` names: the default is still computed for the folder the script lived in before it moved to `scripts/core/`. The pipeline always passes `--output`. Use `python3` where `python` is Python 2 or missing.
+Without `--output` the script writes to the repo's `public/bookv2-furigana/`, wherever it is run from. Progress goes to stderr; the last line on stdout is a JSON result (`bookName`, `textPath`, `metadataPath`) that the pipeline reads. Use `python3` where `python` is Python 2 or missing.
 
 ## Output
 
