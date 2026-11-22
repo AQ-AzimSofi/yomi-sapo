@@ -21,8 +21,7 @@ export function createEpubSource(epubPath: string): BookSource {
     label: 'EPUB',
     needsPython: true,
     prepare: ({ libraryDir, filter }) => {
-      const bookName = extractEpub(epubPath, libraryDir, filter);
-      if (!bookName) throw new Error('Failed to extract EPUB');
+      const { bookName } = extractEpub(epubPath, libraryDir, filter);
       return { bookName, sourceDir: path.join(libraryDir, bookName), epubPath };
     },
   };

@@ -2,48 +2,48 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { describePython, resolvePython, runPython } from '../shared/python';
 import { CORE_SCRIPTS_DIR, REPO_ROOT } from '../shared/repoPaths';
+import type { KanjiFilter } from './runner';
 
-export function extractEpub(epubPath: string, libraryDir: string, filter: string): string | null {
-  const scriptArgs = [
-    path.join(CORE_SCRIPTS_DIR, 'epub-to-text-furigana.py'),
-    epubPath,
-    ...(filter === 'n3' ? ['--filter', 'n3'] : []),
-    '--output', libraryDir,
-  ];
+const EXTRACT_SCRIPT = path.join(CORE_SCRIPTS_DIR, 'epub-to-text-furigana.py');
 
-  console.log(`Running: ${describePython(resolvePython())} ${scriptArgs.join(' ')}\n`);
+/** What epub-to-text-furigana.py prints as the last line of its stdout. */
+export interface ExtractedBook {
+  /** The book folder's name, the EPUB title made safe for a file name. */
+  bookName: string;
+  textPath: string;
+  metadataPath: string;
+}
 
+function isExtractedBook(value: unknown): value is ExtractedBook {
+  if (typeof value !== 'object' || value === null) return false;
+  const { bookName, textPath, metadataPath } = value as Record<string, unknown>;
+  return [bookName, textPath, metadataPath].every((field) => typeof field === 'string' && field.length > 0);
+}
+
+function parseJsonOrUndefined(line: string): unknown {
   try {
-    runPython(scriptArgs);
-
-    // Find the created book directory
-    const dirs = fs.readdirSync(libraryDir, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => d.name);
-
-    // Find most recently created directory (the one we just made)
-    let newestDir = '';
-    let newestTime = 0;
-
-    for (const dir of dirs) {
-      const dirPath = path.join(libraryDir, dir);
-      const stat = fs.statSync(dirPath);
-      if (stat.mtimeMs > newestTime) {
-        newestTime = stat.mtimeMs;
-        newestDir = dir;
-      }
-    }
-
-    if (newestDir) {
-      console.log(`\nExtracted to: ${newestDir}`);
-      return newestDir;
-    }
-
-    return null;
-  } catch (error) {
-    console.error('Error running epub extraction:', error);
-    return null;
+    return JSON.parse(line);
+  } catch {
+    return undefined;
   }
+}
+
+export function parseExtractionResult(stdout: string): ExtractedBook {
+  const resultLine = stdout.trim().split('\n').at(-1) ?? '';
+  const parsed = parseJsonOrUndefined(resultLine);
+  if (!isExtractedBook(parsed)) {
+    throw new Error(`epub-to-text-furigana.py did not end with its JSON result line; it printed: ${resultLine || '(nothing)'}`);
+  }
+  return parsed;
+}
+
+/** Extracts the EPUB into <libraryDir>/<book>/ and returns the book it wrote. Throws when the extraction fails. */
+export function extractEpub(epubPath: string, libraryDir: string, filter: KanjiFilter): ExtractedBook {
+  const scriptArgs = [EXTRACT_SCRIPT, epubPath, ...(filter === 'n3' ? ['--filter', 'n3'] : []), '--output', libraryDir];
+  console.log(`Running: ${describePython(resolvePython())} ${scriptArgs.join(' ')}\n`);
+  const book = parseExtractionResult(runPython(scriptArgs));
+  console.log(`\nExtracted to: ${book.bookName}`);
+  return book;
 }
 
 // ============================================================================
