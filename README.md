@@ -198,7 +198,7 @@ Upload or update a single text entry.
 }
 ```
 
-A book must fit in one Aurora DSQL value, which holds at most 1 MiB after compression. Text estimated to need more (`lib/db/bookTextSize.ts`) is refused with `413 text_too_large` here, in `bulk-seed` and in the pipeline's `PUT /api/text-entries`; split such a book into parts. Today's largest book (3.61 MB) fits; how much raw text fits depends on how well it compresses, from about 2.3 MB to 3.7 MB for the current books.
+A book must fit in one Aurora DSQL value, which holds at most 1 MiB after compression. Text estimated to need more (`lib/db/bookTextSize.ts`) is refused with `413 text_too_large` here, in `bulk-seed` and by `PUT /api/text-entries`. The pipeline's database sync (`scripts/db/sync-text-entry.ts`) refuses it too and prints `Database sync failed:` with the reason. Split such a book into parts. Today's largest book (3.61 MB) fits; how much raw text fits depends on how well it compresses, from about 2.3 MB to 3.7 MB for the current books.
 
 #### `POST /api/admin?action=bookmarks`
 Set a bookmark position for a file.
