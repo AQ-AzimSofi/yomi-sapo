@@ -11,7 +11,7 @@ import { applySchema } from './schemaRunner';
 const POSTGRES_URL = process.env.SCHEMA_TEST_DATABASE_URL ?? '';
 const DSQL_ENDPOINT = process.env.DSQL_TEST_ENDPOINT ?? '';
 const SCRATCH_SCHEMA = `schema_runner_test_${Date.now()}`;
-const TABLES = ['bookmarks', 'narration', 'text_entries', 'vocabulary_entries'];
+const TABLES = ['bookmarks', 'narration', 'ruby_registry_entries', 'text_entries', 'vocabulary_entries'];
 // DSQL builds each index in a background job, about 20 s apiece on the test cluster.
 const APPLY_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -24,6 +24,7 @@ const EXPECTED_INDEXES = [
   'idx_vocabulary_entries_word',
   'narration_file_name_directory_key',
   'narration_pkey',
+  'ruby_registry_entries_pkey',
   'text_entries_file_name_directory_key',
   'text_entries_pkey',
   'vocabulary_entries_pkey',
