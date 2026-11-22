@@ -2,13 +2,29 @@
 
 ## migrate.ts
 
-Brings the local database to the current schema. It runs `CREATE_TABLES_SQL` and then `MIGRATIONS_SQL` from `lib/db/schema.ts`, the same SQL as `GET /api/init-db`, against `DATABASE_URL` in `.env.local`. Every statement is idempotent, so running it again changes nothing.
+Brings the local database to the current schema. It applies `schemaStatementsFor('postgres')` from `lib/db/schema.ts` through `lib/db/schemaRunner.ts`, one statement per call, the same as `GET /api/init-db`, against `DATABASE_URL` in `.env.local`. Every statement is idempotent, so running it again changes nothing.
 
 ```bash
 npm run db:migrate    # npx tsx scripts/db/migrate.ts
 ```
 
-It prints the target host and refuses any host other than `localhost` or `127.0.0.1`, so production schema changes stay a deliberate manual step (see the change log below). A new column goes in `MIGRATIONS_SQL` as an `ADD COLUMN IF NOT EXISTS` statement.
+It prints the target host and refuses any host other than `localhost` or `127.0.0.1`, so production schema changes stay a deliberate manual step (see the change log below).
+
+The statements are written for Aurora DSQL, and the runner drops `ASYNC` from `CREATE INDEX ASYNC` on PostgreSQL. A new database gets `INT` ids from `CACHE 1` sequences and one index per `UNIQUE (file_name, directory)`. A database an older schema created keeps its `SERIAL` ids and extra indexes, and `POSTGRES_UPGRADE_STATEMENTS` brings its columns up to date on PostgreSQL only. A new column must also work on DSQL: a bare `ADD COLUMN IF NOT EXISTS`, then `ALTER COLUMN ... SET DEFAULT`, then a backfill in batches, each its own statement. DSQL refuses `ADD COLUMN` with a `DEFAULT` or `NOT NULL`, any `ADD CONSTRAINT`, and two DDL statements (or DDL and DML) in one transaction.
+
+`lib/db/schemaRunner.integration.test.ts` applies the schema twice into a scratch schema it drops afterwards. It runs only when `SCHEMA_TEST_DATABASE_URL` names a throwaway PostgreSQL database or `DSQL_TEST_ENDPOINT` names a DSQL test cluster.
+
+---
+
+## apply-schema-dsql.ts
+
+Applies the same statements to an Aurora DSQL cluster as `admin`, waiting for each `CREATE INDEX ASYNC` job. The app's `yomi_app` role cannot run DDL, so `GET /api/init-db` answers `409` on DSQL and schema changes go through this script.
+
+```bash
+npx tsx scripts/db/apply-schema-dsql.ts --endpoint <cluster id>.dsql.<region>.on.aws
+```
+
+It signs an admin IAM token with the default AWS credentials, which need `dsql:DbConnectAdmin` on the cluster, and refuses anything but a DSQL endpoint. Run it while the app serves no traffic: after a DDL statement, the next statement of an app session can fail once with `OC001`.
 
 ---
 
@@ -46,7 +62,7 @@ npx tsx --conditions=react-server scripts/db/sync-narration.ts --manifest "<book
 
 ## clean-book-text.ts
 
-Normalizes the stored book text in `text_entries`, and every `bookmarks.bookmark_text` the same way so bookmarks keep matching: Windows line endings become LF, and markup junk left by EPUB extraction or the rephrase model is removed. It is a dry run unless `--apply` is given, targets `DATABASE_URL` unless `--prod` is given (then `PROD_DATABASE_URL`), and leaves `updated_at` unchanged so the sync does not treat the cleaned rows as newer.
+Normalizes the stored book text in `text_entries`, and every `bookmarks.bookmark_text` the same way so bookmarks keep matching: Windows line endings become LF, and markup junk left by EPUB extraction or the rephrase model is removed. It is a dry run unless `--apply` is given, targets `DATABASE_URL` unless `--prod` is given (then `PROD_DATABASE_URL`), and leaves `updated_at` unchanged so the sync does not treat the cleaned rows as newer. It clears `content_bytes` of each book it rewrites, so the library recounts it.
 
 ```bash
 npx tsx scripts/db/clean-book-text.ts                  # local, dry run
@@ -78,4 +94,4 @@ npx tsx scripts/db/clean-book-text.ts --prod --apply   # production, write
 **Why:**
 The `/api/library-progress` route queries `total_pages` and `total_characters` from `text_entries`. These columns existed locally (added by `init-db`) but were never applied to prod, causing a 500 error on the library page.
 
-**Today:** `MIGRATIONS_SQL` adds both columns, and `/api/library-progress` recounts any row whose `content_bytes` no longer matches its stored text (including rows never counted), so a database needs no separate backfill.
+**Today:** `POSTGRES_UPGRADE_STATEMENTS` in `lib/db/schema.ts` adds both columns, and `/api/library-progress` recounts any row whose `content_bytes` is NULL or no longer matches its stored text, so a database needs no separate backfill.
