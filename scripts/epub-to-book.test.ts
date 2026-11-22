@@ -5,7 +5,7 @@ import { parseCliOptions } from './epub-to-book';
 describe('parseCliOptions', () => {
   it('Test_parseCliOptions_Defaults', () => {
     expect(parseCliOptions(['book.epub'])).toEqual({
-      epubPath: path.resolve('book.epub'),
+      inputPath: path.resolve('book.epub'),
       outputDir: 'bookv2-furigana',
       chunkSize: 5000,
       delaySeconds: 120,
@@ -26,7 +26,7 @@ describe('parseCliOptions', () => {
       '--skip-rephrase', '--skip-extract', '--skip-images', '--filter', 'n3', '--reset', '--dry-run', '--api-url', 'http://127.0.0.1:9',
     ];
     expect(parseCliOptions(args)).toEqual({
-      epubPath: path.resolve('book.epub'),
+      inputPath: path.resolve('book.epub'),
       outputDir: 'out',
       chunkSize: 300,
       delaySeconds: 5,

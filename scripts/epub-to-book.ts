@@ -27,37 +27,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { extractEpub, extractRubyRegistry } from './pipeline/epubExtraction';
-import { uploadBookImages } from './pipeline/illustrationUpload';
-import { batchRephrase, defaultRephraseDeps } from './pipeline/rephraseBook';
+import { selectBookSource, type BookSource } from './pipeline/bookSources';
+import { PIPELINE_STEPS } from './pipeline/pipelineSteps';
+import { runSteps, type PipelineOptions, type PreparedBook } from './pipeline/runner';
 import { assertPythonHasMeCab } from './shared/python';
 import { loadRepoEnv, REPO_ROOT } from './shared/repoPaths';
 import { isEntryPoint } from './shared/entryPoint';
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 const DEFAULT_REPHRASE_MODEL = 'sonnet';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface CLIOptions {
-  epubPath: string;
-  outputDir: string;
-  chunkSize: number;
-  delaySeconds: number;
-  model: string;
-  skipRephrase: boolean;
-  skipExtract: boolean;
-  skipImages: boolean;
-  filter: 'all' | 'n3';
-  reset: boolean;
-  dryRun: boolean;
-  apiUrl: string;
-}
 
 // ============================================================================
 // Main
@@ -86,9 +63,9 @@ Example:
   npx tsx scripts/epub-to-book.ts "my-book.epub" --skip-rephrase
 `;
 
-export function parseCliOptions(args: string[]): CLIOptions {
-  const options: CLIOptions = {
-    epubPath: path.resolve(args[0]),
+export function parseCliOptions(args: string[]): PipelineOptions {
+  const options: PipelineOptions = {
+    inputPath: path.resolve(args[0]),
     outputDir: 'bookv2-furigana',
     chunkSize: 5000,
     delaySeconds: 120, // Base delay (divided by number of API keys)
@@ -144,65 +121,21 @@ export function parseCliOptions(args: string[]): CLIOptions {
   return options;
 }
 
-async function main(options: CLIOptions) {
-  // Validate EPUB file
-  if (!fs.existsSync(options.epubPath)) {
-    console.error(`Error: EPUB file not found: ${options.epubPath}`);
-    process.exit(1);
-  }
-
-  const needsPython = !options.skipExtract || !options.skipRephrase;
-  if (needsPython) assertPythonHasMeCab();
-
+function printBanner(options: PipelineOptions, source: BookSource): void {
   console.log(`
 ============================================================
   EPUB to Book Processing Pipeline
 ============================================================
-  EPUB: ${options.epubPath}
+  Input: ${options.inputPath} (${source.label})
   Output: public/${options.outputDir}/
   Model: ${options.model}
   Filter: ${options.filter}
   Skip Rephrase: ${options.skipRephrase}
 ============================================================
 `);
+}
 
-  // Step 1: Extract EPUB
-  let bookName: string | null;
-  if (options.skipExtract) {
-    // Derive book name from epub filename
-    bookName = path.basename(options.epubPath, path.extname(options.epubPath));
-    console.log(`\n=== Skipping Extraction (--skip-extract) ===`);
-    console.log(`Using existing book: ${bookName}\n`);
-  } else {
-    bookName = extractEpub(options.epubPath, options.outputDir, options.filter);
-    if (!bookName) {
-      console.error('Failed to extract EPUB');
-      process.exit(1);
-    }
-  }
-
-  const sourceDir = path.join(REPO_ROOT, 'public', options.outputDir, bookName);
-
-  // Step 2: Extract Ruby Registry
-  if (!options.skipExtract) {
-    extractRubyRegistry(options.epubPath);
-  }
-
-  // Step 3: Upload illustrations before rephrasing, so chunks synced during step 4
-  // are readable with their images straight away
-  uploadBookImages(options.outputDir, bookName, options.dryRun);
-
-  // Step 4: Batch Rephrase (unless skipped)
-  if (!options.skipRephrase) {
-    const success = await batchRephrase({ bookName, sourceDir }, options, defaultRephraseDeps);
-    if (!success && !options.dryRun) {
-      console.log('\nRephrasing incomplete. Run again to resume.');
-    }
-  } else {
-    console.log('\n=== Skipping Rephrase (--skip-rephrase) ===');
-    console.log(`Book extracted to: ${sourceDir}`);
-  }
-
+function printSummary(options: PipelineOptions, { bookName }: PreparedBook): void {
   console.log(`
 ============================================================
   Processing Complete!
@@ -218,6 +151,23 @@ async function main(options: CLIOptions) {
     - ${bookName}-rephrase-furigana.txt (final with furigana)` : ''}
 ============================================================
 `);
+}
+
+async function main(options: PipelineOptions) {
+  if (!fs.existsSync(options.inputPath)) {
+    console.error(`Error: not found: ${options.inputPath}`);
+    process.exit(1);
+  }
+
+  const source = selectBookSource(options);
+  const needsPython = source.needsPython || !options.skipRephrase;
+  if (needsPython) assertPythonHasMeCab();
+  printBanner(options, source);
+
+  console.log(`\n=== Preparing the book: ${source.label} ===\n`);
+  const book = source.prepare({ libraryDir: path.join(REPO_ROOT, 'public', options.outputDir), filter: options.filter });
+  await runSteps(PIPELINE_STEPS, { options, book });
+  printSummary(options, book);
 }
 
 async function runCli(args: string[]): Promise<void> {

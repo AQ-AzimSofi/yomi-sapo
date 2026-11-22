@@ -3,14 +3,12 @@ import * as path from 'path';
 import { describePython, resolvePython, runPython } from '../shared/python';
 import { CORE_SCRIPTS_DIR, REPO_ROOT } from '../shared/repoPaths';
 
-export function extractEpub(epubPath: string, outputDir: string, filter: string): string | null {
-  console.log('\n=== Step 1: Extracting EPUB ===\n');
-
+export function extractEpub(epubPath: string, libraryDir: string, filter: string): string | null {
   const scriptArgs = [
     path.join(CORE_SCRIPTS_DIR, 'epub-to-text-furigana.py'),
     epubPath,
     ...(filter === 'n3' ? ['--filter', 'n3'] : []),
-    '--output', path.join(REPO_ROOT, 'public', outputDir),
+    '--output', libraryDir,
   ];
 
   console.log(`Running: ${describePython(resolvePython())} ${scriptArgs.join(' ')}\n`);
@@ -19,8 +17,7 @@ export function extractEpub(epubPath: string, outputDir: string, filter: string)
     runPython(scriptArgs);
 
     // Find the created book directory
-    const baseDir = path.join(REPO_ROOT, 'public', outputDir);
-    const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
+    const dirs = fs.readdirSync(libraryDir, { withFileTypes: true })
       .filter(d => d.isDirectory())
       .map(d => d.name);
 
@@ -29,7 +26,7 @@ export function extractEpub(epubPath: string, outputDir: string, filter: string)
     let newestTime = 0;
 
     for (const dir of dirs) {
-      const dirPath = path.join(baseDir, dir);
+      const dirPath = path.join(libraryDir, dir);
       const stat = fs.statSync(dirPath);
       if (stat.mtimeMs > newestTime) {
         newestTime = stat.mtimeMs;
@@ -54,8 +51,6 @@ export function extractEpub(epubPath: string, outputDir: string, filter: string)
 // ============================================================================
 
 export function extractRubyRegistry(epubPath: string): boolean {
-  console.log('\n=== Step 2: Extracting Ruby Registry ===\n');
-
   // Create temp directory and copy EPUB there for extract-ruby-smart.py
   const tempDir = path.join(REPO_ROOT, 'temp');
   if (!fs.existsSync(tempDir)) {
