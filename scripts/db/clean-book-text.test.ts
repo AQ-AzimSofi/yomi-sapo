@@ -39,6 +39,15 @@ describe('writeCleanedRows', () => {
     expect(sent[0].values).toEqual([1, 'あ\r\n', 'あ\n']);
   });
 
+  // On Aurora DSQL the library recounts only a book whose content_bytes is NULL.
+  it('clears content_bytes with the new text, so the library recounts the cleaned book', async () => {
+    const { client, sent } = fakeClient();
+
+    await writeCleanedRows(client, { books: BOOKS.slice(0, 1), bookmarks: [] });
+
+    expect(sent[0].text).toMatch(/SET content = \$3, content_bytes = NULL\s/);
+  });
+
   it('leaves out a book that changed after it was read', async () => {
     const { client } = fakeClient([2]);
 
