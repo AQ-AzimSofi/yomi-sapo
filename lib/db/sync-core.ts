@@ -211,12 +211,31 @@ export interface SyncResult {
 const BATCH_SIZE = 25;
 const PG_MAX_PARAMS = 65535;
 
-function isConnectionClosed(err: unknown): boolean {
+// Aurora DSQL answers a message over 10 MiB with 08P01 and then drops the connection.
+const PROTOCOL_VIOLATION = '08P01';
+
+function errorCodeOf(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null || !('code' in err)) return undefined;
+  return typeof err.code === 'string' ? err.code : undefined;
+}
+
+function isConnectionLost(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
+  if (errorCodeOf(err) === PROTOCOL_VIOLATION) return true;
   const msg = err.message;
   return msg.includes('Client was closed')
     || msg.includes('Connection terminated')
     || msg.includes('Client has encountered a connection error');
+}
+
+function describeDatabaseError(err: unknown): string {
+  const code = errorCodeOf(err);
+  const message = err instanceof Error ? err.message : String(err);
+  return code ? `[${code}] ${message}` : message;
+}
+
+function connectionLostError(tableName: string, err: unknown): Error {
+  return new Error(`[sync-core] ${tableName}: target connection closed mid-sync: ${describeDatabaseError(err)}`, { cause: err });
 }
 
 type KeySnapshot = Map<string, { keyValues: unknown[]; updatedAtMs: number | null }>;
@@ -352,9 +371,7 @@ export async function syncDirection(
     } catch (err) {
       // A dead connection will fail every remaining batch identically — bail
       // out so the wrapper's outer catch can report one error instead of N.
-      if (isConnectionClosed(err)) {
-        throw new Error(`[sync-core] ${tableName}: target connection closed mid-sync`);
-      }
+      if (isConnectionLost(err)) throw connectionLostError(tableName, err);
       // Data error: one poison row aborted the whole batch atomically. Retry
       // row-by-row to land the valid rows and pinpoint the offender.
       console.error(
@@ -369,9 +386,7 @@ export async function syncDirection(
           rows += affected;
           skipped += 1 - affected;
         } catch (rowErr) {
-          if (isConnectionClosed(rowErr)) {
-            throw new Error(`[sync-core] ${tableName}: target connection closed mid-sync`);
-          }
+          if (isConnectionLost(rowErr)) throw connectionLostError(tableName, rowErr);
           failed++;
           console.error(
             `  [ERR] ${table.name} row (${rowIdentityLog(table, row)}): ` +
