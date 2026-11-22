@@ -25,6 +25,7 @@ import {
   runDbSync,
   saveBookmark,
   saveRubyEntry,
+  saveVocabularyEntry,
   synthesizeSpeech,
   translate,
 } from './client';
@@ -585,6 +586,20 @@ describe('vocabulary calls', () => {
     expect(await fetchVocabulary()).toEqual(list);
     expect(lastCall().url).toBe('/api/vocabulary');
     expect(lastCall().init).toMatchObject({ method: 'GET', headers: {} });
+  });
+
+  it('posts a word to save as JSON and returns whether it was new', async () => {
+    const draft = { ...BOOK, word: '言葉', reading: 'ことば', sentence: '言葉を選ぶ。', paragraphText: '言葉を選ぶ。' };
+    const saved = { success: true, message: 'Vocabulary entry already saved', entry: { id: 'entry-1', ...draft }, created: false };
+    fetchMock.mockResolvedValue(jsonResponse(saved));
+
+    expect(await saveVocabularyEntry(draft)).toEqual(saved);
+    expect(lastCall().url).toBe('/api/vocabulary');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    });
   });
 
   it('deletes one entry by id', async () => {

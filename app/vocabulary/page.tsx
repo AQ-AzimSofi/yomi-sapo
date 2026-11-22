@@ -9,6 +9,7 @@ import { toTint } from '@/lib/utils/colorTint';
 import { parseFurigana, segmentsToHTML } from '@/lib/utils/furiganaParser';
 import type { VocabularyEntry } from '@/lib/types';
 import { ApiError, deleteVocabularyEntry, fetchVocabulary } from '@/lib/api/client';
+import { vocabularySourceHref } from '@/lib/vocabulary/sourceLink';
 
 // The list route repeats its error message at the top level for this page.
 function describeLoadFailure(error: unknown): string {
@@ -70,16 +71,6 @@ export default function VocabularyPage() {
       console.error('Error deleting entry:', err);
       alert('削除に失敗しました');
     }
-  };
-
-  const navigateToSource = (entry: VocabularyEntry) => {
-    // Navigate to the book with the word highlighted
-    const params = new URLSearchParams({
-      directory: entry.directory,
-      fileName: entry.fileName,
-      highlight: entry.word,
-    });
-    router.push(`/read?${params.toString()}`);
   };
 
   const formatDate = (dateString: string | Date) => {
@@ -167,7 +158,7 @@ export default function VocabularyPage() {
               まだ単語を保存していません
             </p>
             <p className="text-sm mb-6" style={{ color: COLORS.SECONDARY }}>
-              リーダーから単語を保存する機能は、今後のアップデートで戻ります
+              本を読みながら語句を選ぶと、「単語帳に保存」でここに残せます
             </p>
             <Link
               href={PAGE_ROUTES.LIBRARY}
@@ -345,7 +336,7 @@ export default function VocabularyPage() {
                 削除
               </button>
               <button
-                onClick={() => navigateToSource(selectedEntry)}
+                onClick={() => router.push(vocabularySourceHref(selectedEntry))}
                 className="min-h-11 px-5 text-sm font-bold interactive-btn"
                 style={{
                   backgroundColor: COLORS.PRIMARY,

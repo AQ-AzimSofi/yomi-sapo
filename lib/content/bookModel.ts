@@ -70,7 +70,8 @@ export function buildPlayableUnits(content: string): PlayableUnit[] {
   return toPlayableUnits(parseReaderItems(content));
 }
 
-function bookmarkMatchText(text: string): string {
+/** Book text as stored passages are compared with it: without furigana or line breaks, trimmed. */
+export function toMatchText(text: string): string {
   return stripFurigana(text).replace(/[\r\n]/g, '').trim();
 }
 
@@ -86,9 +87,9 @@ export function findBookmarkIndex(
   bookmarkText: string,
   savedPage?: number | null
 ): number | null {
-  const target = bookmarkMatchText(bookmarkText);
+  const target = toMatchText(bookmarkText);
   if (!target) return null;
-  const isMatch = (text: string) => bookmarkMatchText(text) === target;
+  const isMatch = (text: string) => toMatchText(text) === target;
   if (!savedPage) {
     const firstMatch = mainTexts.findIndex(isMatch);
     return firstMatch === -1 ? null : firstMatch;

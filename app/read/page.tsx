@@ -10,6 +10,7 @@ import CopyRangeModal from './components/CopyRangeModal';
 import ReaderSettings from './components/ReaderSettings';
 import ReadingContent from './components/ReadingContent';
 import ReaderHeader from './components/ReaderHeader';
+import SaveWordAction from './components/SaveWordAction';
 import BottomSheet from '@/app/components/ui/BottomSheet';
 import { useBookMetadata } from '@/app/hooks/useBookMetadata';
 import { useGuestMode } from '@/app/hooks/useGuestMode';
@@ -33,12 +34,22 @@ import {
 import { copyTextForPages } from '@/lib/content/copyText';
 import { useAudioBook } from '@/app/hooks/useAudioBook';
 import { useNarration } from '@/app/hooks/useNarration';
+import { useReadAloud } from '@/app/hooks/useReadAloud';
 import { useOpenedOnce } from '@/app/hooks/useOpenedOnce';
 import { usePreference } from '@/app/hooks/usePreference';
 import { ApiError, fetchBookText, fetchBookmark, prioritize, saveBookmark } from '@/lib/api/client';
 import { bookRefFromParams, rubyRegistryKey, toBookKey } from '@/lib/books/bookRef';
+import {
+  SAVED_SENTENCE_PARAM,
+  SAVED_WORD_PARAM,
+  locateSavedWord,
+  savedWordFrom,
+  savedWordParams,
+  type SavedWordQuery,
+} from '@/lib/vocabulary/sourceLink';
 import { loginPathReturningTo } from '@/lib/auth/loginPath';
 import { describeLoadFailure } from './loadFailure';
+import { markSavedWord } from './savedWordMark';
 import { applyReaderTheme } from './readerTheme';
 import { READER_PREFERENCES } from './readerPreferences';
 import { acceptsAudioShortcut, closePanel, togglePanel, type ActivePanel } from './readerPanels';
@@ -70,21 +81,31 @@ const GuestApiKeyModal = dynamic(
   { ssr: false }
 );
 
+// Room the audiobook bar takes at the bottom of the screen.
+const AUDIO_BAR_INSET_PX = 150;
 const PRIORITIZE_ERROR_MESSAGE = 'このページを分析できませんでした。もう一度お試しください。';
 const COPY_ERROR_MESSAGE = 'クリップボードにコピーできませんでした。';
 
-function SearchParamsReader({
-  children,
-}: {
-  children: (params: { directory: string | null; fileName: string | null; page: number; hasExplicitPage: boolean }) => React.ReactNode;
-}) {
+interface ReaderParams {
+  directory: string | null;
+  fileName: string | null;
+  page: number;
+  hasExplicitPage: boolean;
+  // The saved word a link from the vocabulary list opens the reader at.
+  savedWord: string | null;
+  savedSentence: string | null;
+}
+
+function SearchParamsReader({ children }: { children: (params: ReaderParams) => React.ReactNode }) {
   const searchParams = useSearchParams();
   const directory = searchParams.get('directory');
   const fileName = searchParams.get('fileName');
   const hasExplicitPage = searchParams.has('page');
   const page = parseInt(searchParams.get('page') || '1', 10);
+  const savedWord = searchParams.get(SAVED_WORD_PARAM);
+  const savedSentence = searchParams.get(SAVED_SENTENCE_PARAM);
 
-  return <>{children({ directory, fileName, page, hasExplicitPage })}</>;
+  return <>{children({ directory, fileName, page, hasExplicitPage, savedWord, savedSentence })}</>;
 }
 
 function ReaderContent({
@@ -92,11 +113,15 @@ function ReaderContent({
   fileNameParam,
   pageParam,
   hasExplicitPage,
+  savedWordParam,
+  savedSentenceParam,
 }: {
   directoryParam: string | null;
   fileNameParam: string | null;
   pageParam: number;
   hasExplicitPage: boolean;
+  savedWordParam: string | null;
+  savedSentenceParam: string | null;
 }) {
   const router = useRouter();
 
@@ -140,7 +165,7 @@ function ReaderContent({
     [directoryParam, fileNameParam]
   );
   const { imageMap } = useBookMetadata(book);
-  const { isGuest } = useGuestMode();
+  const { isGuest, isAuthenticated } = useGuestMode();
   const hasOpenedExplanation = useOpenedOnce(activePanel === 'explanation');
   const hasOpenedRubyLookup = useOpenedOnce(activePanel === 'ruby');
 
@@ -263,6 +288,13 @@ function ReaderContent({
   const bookmarkItemIndex = bookmarkLocation.unitIndex;
   const bookmarkPage = bookmarkLocation.page;
 
+  const savedWord = useMemo(() => savedWordFrom(savedWordParam, savedSentenceParam), [savedWordParam, savedSentenceParam]);
+  const savedWordLocation = useMemo(
+    () => (savedWord ? locateSavedWord(unitMainTexts, savedWord) : null),
+    [savedWord, unitMainTexts]
+  );
+  const savedWordUnitIndex = savedWordLocation?.unitIndex ?? null;
+
   const getStartIndex = useCallback(() => {
     const pageTop = pageStartIndex(currentPage);
     if (bookmarkItemIndex == null) return pageTop;
@@ -294,12 +326,21 @@ function ReaderContent({
     getStartIndex,
   });
 
+  const { state: readAloud, toggle: toggleReadAloud, stop: stopReadAloud } = useReadAloud(audioSpeed);
+
+  // Each item used to own its player, so leaving the page or the book silenced it.
+  useEffect(() => {
+    stopReadAloud();
+  }, [currentPage, book, stopReadAloud]);
+
   const buildReadHref = useCallback(
-    (page: number) => {
+    (page: number, keptSavedWord: SavedWordQuery | null) => {
       const params = new URLSearchParams();
       if (directoryParam) params.set('directory', directoryParam);
       if (fileNameParam) params.set('fileName', fileNameParam);
       params.set('page', page.toString());
+      const savedWordEntries = keptSavedWord ? Object.entries(savedWordParams(keptSavedWord)) : [];
+      savedWordEntries.forEach(([name, value]) => params.set(name, value));
       return `/read?${params.toString()}`;
     },
     [directoryParam, fileNameParam]
@@ -307,10 +348,11 @@ function ReaderContent({
 
   // The whole book is already loaded, so a page change only needs the URL.
   // Next keeps useSearchParams in sync with the History API, and skipping the
-  // router avoids a server round trip on every page turn.
+  // router avoids a server round trip on every page turn. Only the jump to a
+  // saved word's page keeps the word, so the page it lands on can flash it.
   const navigateToPage = useCallback(
-    (page: number, { replace }: { replace: boolean }) => {
-      const href = buildReadHref(page);
+    (page: number, { replace, keptSavedWord = null }: { replace: boolean; keptSavedWord?: SavedWordQuery | null }) => {
+      const href = buildReadHref(page, keptSavedWord);
       if (replace) {
         window.history.replaceState(null, '', href);
         return;
@@ -321,14 +363,16 @@ function ReaderContent({
   );
 
   const [didAutoNavigate, setDidAutoNavigate] = useState(false);
+  // A link from the vocabulary list opens on its word's page; otherwise the reader resumes at the bookmark.
+  const openingPage = savedWordLocation?.page ?? bookmarkPage;
 
   useEffect(() => {
     if (isLoading || didAutoNavigate) return;
-    if (!hasExplicitPage && bookmarkPage && bookmarkPage > 1 && currentPage !== bookmarkPage) {
+    if (!hasExplicitPage && openingPage && openingPage > 1 && currentPage !== openingPage) {
       setDidAutoNavigate(true);
-      navigateToPage(bookmarkPage, { replace: true });
+      navigateToPage(openingPage, { replace: true, keptSavedWord: savedWord });
     }
-  }, [isLoading, hasExplicitPage, bookmarkPage, currentPage, navigateToPage, didAutoNavigate]);
+  }, [isLoading, hasExplicitPage, openingPage, currentPage, navigateToPage, didAutoNavigate, savedWord]);
 
   // Read through a ref so that playback stopping is not itself a reason to scroll
   // back to the bookmark; only a page or bookmark change is.
@@ -341,16 +385,28 @@ function ReaderContent({
     if (isLoading) return;
     if (isAudioFollowingRef.current) return;
 
-    const scrollToBookmark = () => {
+    const scrollToLanding = () => {
+      const savedWordItem =
+        savedWordUnitIndex === null ? null : document.querySelector(`[data-global-index="${savedWordUnitIndex}"]`);
+      if (savedWordItem) {
+        savedWordItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       const bookmarkElement = document.getElementById('bookmark');
       if (bookmarkElement) {
         bookmarkElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     };
 
-    const timer = setTimeout(scrollToBookmark, 100);
+    const timer = setTimeout(scrollToLanding, 100);
     return () => clearTimeout(timer);
-  }, [currentPage, isLoading, bookmarkText]);
+  }, [currentPage, isLoading, bookmarkText, savedWordUnitIndex]);
+
+  // Marked again whenever its page opens or the furigana toggle redraws the text.
+  useEffect(() => {
+    if (isLoading || !savedWord || savedWordUnitIndex === null) return;
+    return markSavedWord(savedWordUnitIndex, savedWord);
+  }, [isLoading, savedWord, savedWordUnitIndex, currentPage, showFurigana]);
 
   useEffect(() => {
     if (!audiobookEnabled || audioIndex < 0) return;
@@ -448,12 +504,15 @@ function ReaderContent({
     setKeyboardMode(prev => !prev);
   };
 
-  const handleSentenceClick = (location: SentenceLocation) => {
-    if (!aiExplanationEnabled) return;
+  const handleSentenceClick = useCallback(
+    (location: SentenceLocation) => {
+      if (!aiExplanationEnabled) return;
 
-    setExplanationTarget({ sentence: location.sentence, surroundings: sentenceSurroundings(readerItems, location) });
-    setActivePanel('explanation');
-  };
+      setExplanationTarget({ sentence: location.sentence, surroundings: sentenceSurroundings(readerItems, location) });
+      setActivePanel('explanation');
+    },
+    [aiExplanationEnabled, readerItems]
+  );
 
 
   const handleGoToBookmark = useCallback(() => {
@@ -590,7 +649,7 @@ function ReaderContent({
         <div
           style={{
             position: 'fixed',
-            bottom: audiobookEnabled ? 150 : 24,
+            bottom: audiobookEnabled ? AUDIO_BAR_INSET_PX : 24,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 60,
@@ -619,7 +678,7 @@ function ReaderContent({
           role="alert"
           style={{
             position: 'fixed',
-            bottom: audiobookEnabled ? 150 : 24,
+            bottom: audiobookEnabled ? AUDIO_BAR_INSET_PX : 24,
             left: '50%',
             transform: 'translateX(-50%)',
             // Above the open menu and the copy dialog, where a copy can fail.
@@ -653,6 +712,7 @@ function ReaderContent({
         style={{
           fontSize: `${fontSize}px`,
           lineHeight: lineHeight,
+          ['--reader-line-height' as string]: lineHeight,
           paddingBottom: audiobookEnabled ? 140 : undefined,
         }}
       >
@@ -672,7 +732,12 @@ function ReaderContent({
           startCursorIndex={audioStartCursor}
           playingIndex={audioStatus === 'idle' ? -1 : audioIndex}
           onStartFromHere={setStartCursor}
+          highlightedUnitIndex={savedWordUnitIndex}
+          highlightWord={savedWord?.word ?? null}
           priorityScores={priorityScores}
+          readAloud={readAloud}
+          onReadAloud={toggleReadAloud}
+          onStopReadAloud={stopReadAloud}
         />
 
         {totalPages > 1 && (
@@ -731,6 +796,16 @@ function ReaderContent({
       </main>
 
       <ReaderFAB actions={menuActions} />
+
+      {/* Owner only: guests cannot save to the 単語帳. */}
+      {isAuthenticated && (
+        <SaveWordAction
+          unitTexts={unitMainTexts}
+          book={book}
+          isEnabled={activePanel === null && !isGuestKeyPromptOpen}
+          bottomInsetPx={audiobookEnabled ? AUDIO_BAR_INSET_PX : 0}
+        />
+      )}
 
       <CopyRangeModal
         isOpen={activePanel === 'copyRange'}
@@ -817,12 +892,14 @@ export default function ReadPage() {
       }
     >
       <SearchParamsReader>
-        {({ directory, fileName, page, hasExplicitPage }) => (
+        {({ directory, fileName, page, hasExplicitPage, savedWord, savedSentence }) => (
           <ReaderContent
             directoryParam={directory}
             fileNameParam={fileName}
             pageParam={page}
             hasExplicitPage={hasExplicitPage}
+            savedWordParam={savedWord}
+            savedSentenceParam={savedSentence}
           />
         )}
       </SearchParamsReader>
