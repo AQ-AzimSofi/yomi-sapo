@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ownerSessionHeaders, TEST_SESSION_SECRET } from '@/lib/auth/testSession';
 import { sql } from '@/lib/db/connection';
-import { SCHEMA_STATEMENTS } from '@/lib/db/schema';
+import { applySchema } from '@/lib/db/schemaRunner';
 import {
   deleteVocabularyEntry,
   getVocabularyEntryById,
@@ -22,6 +22,7 @@ import {
 import { PUT as putTextEntry } from './text-entries/route';
 
 vi.mock('@/lib/db/connection', () => ({ sql: { unsafe: vi.fn() } }));
+vi.mock('@/lib/db/schemaRunner', () => ({ applySchema: vi.fn() }));
 vi.mock('@/lib/db/vocabularyQueries.sql', () => ({
   getVocabularyEntryById: vi.fn(),
   updateVocabularyEntry: vi.fn(),
@@ -63,7 +64,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest());
 
     expect(response.status).toBe(401);
-    expect(sql.unsafe).not.toHaveBeenCalled();
+    expect(applySchema).not.toHaveBeenCalled();
   });
 
   it('runs the schema SQL for a signed-in owner in production', async () => {
@@ -72,7 +73,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest(OWNER_HEADERS));
 
     expect(response.status).toBe(200);
-    expect(vi.mocked(sql.unsafe).mock.calls).toEqual(SCHEMA_STATEMENTS.map((statement) => [statement]));
+    expect(applySchema).toHaveBeenCalledWith(sql, 'postgres');
   });
 
   it.each(['test', 'staging'])('rejects a guest when NODE_ENV is %s', async (nodeEnv) => {
@@ -81,7 +82,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest());
 
     expect(response.status).toBe(401);
-    expect(sql.unsafe).not.toHaveBeenCalled();
+    expect(applySchema).not.toHaveBeenCalled();
   });
 
   it('runs the schema SQL without a session on the local dev server', async () => {
@@ -90,7 +91,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest());
 
     expect(response.status).toBe(200);
-    expect(vi.mocked(sql.unsafe).mock.calls).toEqual(SCHEMA_STATEMENTS.map((statement) => [statement]));
+    expect(applySchema).toHaveBeenCalledWith(sql, 'postgres');
   });
 });
 
