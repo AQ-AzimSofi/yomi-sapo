@@ -381,13 +381,24 @@ function ReaderContent({
     isAudioFollowingRef.current = audiobookEnabled && audioStatus !== 'idle';
   }, [audiobookEnabled, audioStatus]);
 
+  // A vocabulary link lands on its saved word, but a bookmark saved after landing
+  // (the same page and word, only the bookmark changed) scrolls to the bookmark.
+  const lastLandingRef = useRef<string | null>(null);
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading) {
+      lastLandingRef.current = null;
+      return;
+    }
     if (isAudioFollowingRef.current) return;
+    const landing = `${currentPage}:${savedWordUnitIndex}`;
+    const isNewLanding = landing !== lastLandingRef.current;
+    lastLandingRef.current = landing;
 
     const scrollToLanding = () => {
       const savedWordItem =
-        savedWordUnitIndex === null ? null : document.querySelector(`[data-global-index="${savedWordUnitIndex}"]`);
+        isNewLanding && savedWordUnitIndex !== null
+          ? document.querySelector(`[data-global-index="${savedWordUnitIndex}"]`)
+          : null;
       if (savedWordItem) {
         savedWordItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
