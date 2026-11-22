@@ -103,7 +103,7 @@ Files are created in: `public/bookv2-furigana/[book-name]/`
 
 ### Using processed books in the app:
 
-The library lists books from the database, so load the text there to read it in the app: run with `--output-mode api` (see below) or use the all-in-one `scripts/epub-to-book.ts` pipeline.
+The library lists books from the database, so load the text there to read it in the app: use the all-in-one `scripts/epub-to-book.ts` pipeline (see [scripts/README.md](./scripts/README.md)).
 
 ---
 
@@ -131,7 +131,7 @@ Sources, in order: an override in `scripts/covers/overrides.json`, the cover dec
 
 Illustrations inside a book (`[IMAGE:...]` markers in the text) and the book's image metadata JSON are copyrighted too, so they live in the private `BookImages` S3 bucket with the same layout they have under `public/`, for example `bookv2-furigana/<book>/images/illustration-001.jpg`. The reader loads them through `/api/book-assets?path=...`, which serves any book to a signed-in reader and only the preview books to guests, with `Cache-Control: private` so CloudFront never shares them between users. An illustration that fails to load is skipped.
 
-`scripts/epub-to-book.ts` uploads a new book's illustrations automatically (step 3) when `BOOK_IMAGES_BUCKET` is set in `.env.local`. To upload everything already on disk:
+`scripts/epub-to-book.ts` uploads a new book's illustrations automatically (its illustration upload step) when `BOOK_IMAGES_BUCKET` is set in `.env.local`. To upload everything already on disk:
 
 ```bash
 BUCKET=$(aws s3api list-buckets --query "Buckets[?starts_with(Name, 'yomi-sapo-production-bookimagesbucket')].Name" --output text)
@@ -167,10 +167,9 @@ npm run db:migrate  # Create or update the tables (refuses any database that is 
 
 3. **Add books** (choose one method):
 
-**Option A: Via EPUB Script** (Recommended for EPUB files)
+**Option A: Via the Book Pipeline** (Recommended for EPUB files)
 ```bash
-export ADMIN_API_KEY=your_key_here
-python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
+npx tsx scripts/epub-to-book.ts book.epub
 ```
 
 **Option B: Via Direct API Call**
@@ -231,29 +230,6 @@ Upload multiple text entries at once.
   ]
 }
 ```
-
-### EPUB Script API Mode
-
-The EPUB processing script supports direct upload to the database:
-
-```bash
-# Set your API key
-export ADMIN_API_KEY=your_key_here
-
-# Process and upload directly to database (no files created)
-python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
-
-# Optional: target another local/LAN dev server (defaults to http://localhost:3333).
-# Production rejects API mode: it has no ADMIN_API_KEY.
-export API_URL=http://192.168.1.15:3001
-python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
-```
-
-**API Mode Features:**
-- Uploads text content directly to database
-- Images still saved to `public/bookv2-furigana/[book-name]/images/`
-- Metadata JSON still created for image references
-- No text files created (database-only)
 
 ### Local Development Workflow
 

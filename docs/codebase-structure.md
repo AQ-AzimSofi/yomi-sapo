@@ -268,20 +268,21 @@ lib/
 
 ## Scripts Directory (`/scripts`)
 
-Utility scripts for data processing:
+Offline tools that run on the owner's machine, never in the deployed app. [scripts/README.md](../scripts/README.md) describes each one and how to run it.
 
-| Script | Language | Purpose |
-|--------|----------|---------|
-| `add-furigana.js` | JavaScript | Add furigana to text |
-| `add-furigana-improved.js` | JavaScript | Improved furigana processing |
-| `add-furigana-final.js` | JavaScript | Final furigana version |
-| `clean-and-add-furigana.js` | JavaScript | Clean text + add furigana |
-| `epub-to-text.py` | Python | Convert EPUB to text |
-| `epub-to-text-furigana.py` | Python | EPUB to text with furigana |
-| `extract-ruby-from-epub.py` | Python | Extract ruby annotations |
-| `add-furigana-to-text.py` | Python | Python furigana processor |
-| `batch-rephrase.ts` | TypeScript | Batch AI rephrasing |
-| `migrate-ruby-registry.py` | Python | Ruby registry migration |
+| Path | Language | Purpose |
+|------|----------|---------|
+| `epub-to-book.ts` | TypeScript | Book pipeline: extract an EPUB, build its ruby registry, upload illustrations, rephrase (Claude by default, Gemini as the alternative), add furigana, sync each chunk to the local database |
+| `core/` | Python | Pipeline steps: EPUB to text with furigana, ruby registry, MeCab furigana for rephrased text |
+| `utils/` | TypeScript | Claude rephraser and Gemini reply alignment, used by the pipeline |
+| `prompts/` | Markdown | System prompt of the Claude rephraser |
+| `ocr/` | TypeScript | OCR page images into text with Gemini |
+| `kindle/` | TypeScript | Kindle Cloud Reader page turner and screenshots |
+| `covers/` | Python | Collect book covers for the BookCovers bucket |
+| `audio/` | Python, TypeScript | Align an audiobook to its transcript and build the narration manifest |
+| `db/` | TypeScript | Local schema migration, local and production sync, narration loading, stored text cleanup |
+| `auth/` | TypeScript | Password hash for `AUTH_PASSWORD_HASH` |
+| `dev-with-sync.ts` | TypeScript | `npm run dev`: start the database container and sync with production on start and stop |
 
 ---
 

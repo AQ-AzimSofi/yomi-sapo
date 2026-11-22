@@ -2,7 +2,7 @@
  * マークダウン解析用の検証ユーティリティ
  */
 
-import { MARKDOWN_PATTERNS } from '@/lib/constants';
+import { MARKDOWN_PATTERNS } from '../../constants';
 
 /**
  * 日本語の対話マーカー

@@ -3,7 +3,7 @@
  * テキストのフォーマットとクリーンアップを処理
  */
 
-import { MARKDOWN_PATTERNS } from '@/lib/constants';
+import { MARKDOWN_PATTERNS } from '../../constants';
 
 /**
  * 行から見出しのプレフィックスを削除します（< または ＜）

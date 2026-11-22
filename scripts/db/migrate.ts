@@ -15,6 +15,7 @@ import dotenv from 'dotenv';
 import postgres from 'postgres';
 import { CREATE_TABLES_SQL, MIGRATIONS_SQL } from '../../lib/db/schema';
 import { isLocalDatabase } from './localDatabase';
+import { isEntryPoint } from '../shared/entryPoint';
 
 const ENV_FILE = '.env.local';
 
@@ -24,7 +25,7 @@ function readDatabaseUrl(): string {
   return env.DATABASE_URL;
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   // IF NOT EXISTS reports every table that is already there as a notice.
   const sql = postgres(readDatabaseUrl(), { max: 1, onnotice: () => undefined });
   try {
@@ -43,7 +44,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error('migrate failed:', error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+if (isEntryPoint(import.meta.url)) {
+  main().catch((error) => {
+    console.error('migrate failed:', error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}
