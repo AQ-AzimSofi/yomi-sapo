@@ -2,6 +2,7 @@ import type { Client } from 'pg';
 import { createPgClient } from './pgClient';
 import { prodClientConfig, type ProdDatabase } from './prodDatabase';
 import { retryOnSerializationFailure } from './writeTransaction';
+import { groupBySize } from '../utils/groupBySize';
 
 export type SyncDirection = 'prod -> local' | 'local -> prod';
 
@@ -211,6 +212,12 @@ export interface SyncResult {
 
 const BATCH_SIZE = 25;
 const PG_MAX_PARAMS = 65535;
+// Aurora DSQL refuses a message over 10 MiB (08P01, dropping the connection) and a transaction
+// that writes over 10 MiB (54000). A statement holds rows up to this many parameter bytes, so
+// it stays far below both; a row larger than this, such as most books, is sent on its own.
+const MAX_BATCH_BYTES = 1024 * 1024;
+// Numbers, dates and booleans travel as a few bytes of text.
+const SCALAR_PARAMETER_BYTES = 8;
 
 // Aurora DSQL answers a message over 10 MiB with 08P01 and then drops the connection.
 const PROTOCOL_VIOLATION = '08P01';
@@ -237,6 +244,26 @@ function describeDatabaseError(err: unknown): string {
 
 function connectionLostError(tableName: string, err: unknown): Error {
   return new Error(`[sync-core] ${tableName}: target connection closed mid-sync: ${describeDatabaseError(err)}`, { cause: err });
+}
+
+function parameterBytes(value: unknown): number {
+  if (typeof value === 'string') return Buffer.byteLength(value, 'utf8');
+  if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
+    return Buffer.byteLength(JSON.stringify(value), 'utf8');
+  }
+  return SCALAR_PARAMETER_BYTES;
+}
+
+function rowParameterBytes(row: Record<string, unknown>, columns: readonly string[]): number {
+  return columns.reduce((sum, column) => sum + parameterBytes(row[column]), 0);
+}
+
+function planBatches(rows: Record<string, unknown>[], columns: readonly string[]): Record<string, unknown>[][] {
+  return groupBySize(rows, (row) => rowParameterBytes(row, columns), MAX_BATCH_BYTES).flatMap((group) =>
+    Array.from({ length: Math.ceil(group.length / BATCH_SIZE) }, (_, batchI) =>
+      group.slice(batchI * BATCH_SIZE, (batchI + 1) * BATCH_SIZE)
+    )
+  );
 }
 
 type KeySnapshot = Map<string, { keyValues: unknown[]; updatedAtMs: number | null }>;
@@ -356,8 +383,7 @@ export async function syncDirection(
   let rows = 0;
   let skipped = 0;
   let failed = unfetchedCount;
-  for (let start = 0; start < sourceRows.length; start += BATCH_SIZE) {
-    const batch = sourceRows.slice(start, start + BATCH_SIZE);
+  for (const batch of planBatches(sourceRows, columns)) {
     const sql = buildBatchUpsertSql(table, columns, batch.length);
     const values: unknown[] = [];
     for (const row of batch) {
