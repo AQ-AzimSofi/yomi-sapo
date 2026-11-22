@@ -21,6 +21,21 @@ async function waitForIndexJob(client: SchemaClient, answer: readonly postgres.R
   if (job?.succeeded !== true) throw new Error(`index job ${String(jobId)} did not succeed: ${firstLineOf(statement)}`);
 }
 
+// A failed DSQL build leaves its index behind, marked invalid, and CREATE INDEX ASYNC IF NOT
+// EXISTS then skips it without starting a job. So a run after a failure checks validity itself.
+async function assertNoInvalidIndexes(client: SchemaClient): Promise<void> {
+  const invalid = await client.unsafe(`
+    SELECT index_class.relname AS index_name
+    FROM pg_index
+    JOIN pg_class AS index_class ON index_class.oid = pg_index.indexrelid
+    JOIN pg_namespace ON pg_namespace.oid = index_class.relnamespace
+    WHERE pg_namespace.nspname = current_schema() AND NOT pg_index.indisvalid
+  `);
+  if (invalid.length === 0) return;
+  const names = invalid.map((row) => String(row.index_name)).join(', ');
+  throw new Error(`invalid indexes left by a failed build: ${names}. Drop them as admin and run again.`);
+}
+
 /**
  * Applies the schema for the kind of database, one statement per call and in order, and stops at
  * the first error. Each statement is sent without parameters, so postgres.js uses the simple query
@@ -34,4 +49,5 @@ export async function applySchema(client: SchemaClient, kind: DatabaseKind, log:
     if (kind === 'dsql') await waitForIndexJob(client, answer, sent);
     log(firstLineOf(sent));
   }
+  if (kind === 'dsql') await assertNoInvalidIndexes(client);
 }
