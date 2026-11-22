@@ -14,9 +14,9 @@
  * Illustrations, photos, diagrams and tables are cropped out of the page image and left in the
  * text as [IMAGE:<file>] markers, the same markers the EPUB extractor writes.
  *
- * Usage: npx tsx scripts/ocr/ocr-pages.ts <image-dir> [--out-dir <dir>] [--model gemini-3.5-flash] [--concurrency <n>]
+ * Usage: npx tsx scripts/ocr/ocr-pages.ts <image-dir> [options]; --help lists the options and their defaults.
  *
- * Output (the out dir defaults to "<image-dir>-ocr" next to the image folder):
+ * Output:
  *   <out-dir>/pages/<image-stem>.txt   one per image (0001.png -> 0001.txt); delete one to transcribe that page again
  *   <out-dir>/images/<image-stem>-<n>.png  figures cropped from that page
  *   <out-dir>/<image-dir-name>.txt     all pages joined
@@ -24,7 +24,6 @@
  * Then `npx tsx scripts/epub-to-book.ts <out-dir>` makes the book from this folder, figures included.
  */
 
-import { parseArgs } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -33,6 +32,7 @@ import type { GoogleGenAI } from '@google/genai';
 import sharp from 'sharp';
 import { CONTINUATION_MARKER, findStrayMarker } from './page-markers';
 import { isEntryPoint } from '../shared/entryPoint';
+import { formatHelp, isHelpRequested, numberFlag, parseCommandLine, textFlag } from '../shared/cliSchema';
 import { loadRepoEnv } from '../shared/repoPaths';
 import { AI_MODELS } from '../../lib/constants';
 import {
@@ -46,7 +46,6 @@ import {
   type KeyPool,
 } from '../shared/geminiKeyPool';
 
-const DEFAULT_MODEL = AI_MODELS.GEMINI_3_5_FLASH;
 const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -120,30 +119,41 @@ interface PageText {
   text: string;
 }
 
-function parseCliOptions(): CliOptions {
-  const { values, positionals } = parseArgs({
-    allowPositionals: true,
-    options: {
-      'out-dir': { type: 'string' },
-      model: { type: 'string', default: DEFAULT_MODEL },
-      concurrency: { type: 'string' },
-    },
-  });
-  const imageDir = positionals[0];
-  if (!imageDir) {
-    throw new Error('Usage: npx tsx scripts/ocr/ocr-pages.ts <image-dir> [--out-dir <dir>] [--model <name>] [--concurrency <n>]');
-  }
+export const OCR_FLAGS = {
+  outDir: textFlag({
+    name: 'out-dir',
+    valueName: 'dir',
+    defaultLabel: '<image-dir>-ocr, next to the image folder',
+    description: 'Where the page texts, figures and joined text go',
+  }),
+  model: textFlag({ name: 'model', valueName: 'name', defaultValue: AI_MODELS.GEMINI_3_5_FLASH, description: 'Gemini model' }),
+  concurrency: numberFlag({
+    name: 'concurrency',
+    valueName: 'n',
+    isInteger: true,
+    min: 1,
+    defaultLabel: 'one per free key',
+    description: 'Pages transcribed at once',
+  }),
+};
+
+export const HELP_TEXT = formatHelp(OCR_FLAGS, {
+  summary: 'OCR a folder of book page images into plain text with Gemini',
+  usage: ['npx tsx scripts/ocr/ocr-pages.ts <image-dir> [options]'],
+});
+
+export function parseCliOptions(args: string[]): CliOptions {
+  const { flags, positionals } = parseCommandLine(OCR_FLAGS, args);
+  const [imageDir] = positionals;
+  if (!imageDir) throw new Error('Pass the folder of page images (see --help).');
   if (!existsSync(imageDir)) throw new Error(`Image folder not found: ${imageDir}`);
-  const concurrency = values.concurrency === undefined ? undefined : Number(values.concurrency);
-  const isValidConcurrency = concurrency === undefined || (Number.isInteger(concurrency) && concurrency > 0);
-  if (!isValidConcurrency) throw new Error(`--concurrency must be a positive integer, got "${values.concurrency}"`);
   const resolvedImageDir = path.resolve(imageDir);
   return {
     imageDir: resolvedImageDir,
     // Kept next to the image folder, not inside it, so a page-turner.ts screenshot folder holds only page images.
-    outDir: path.resolve(values['out-dir'] ?? `${resolvedImageDir}-ocr`),
-    model: values.model,
-    concurrency,
+    outDir: path.resolve(flags.outDir ?? `${resolvedImageDir}-ocr`),
+    model: flags.model,
+    concurrency: flags.concurrency,
   };
 }
 
@@ -297,8 +307,7 @@ function joinPages(pages: PageText[]): string {
   }, '');
 }
 
-async function main(): Promise<void> {
-  const options = parseCliOptions();
+async function main(options: CliOptions): Promise<void> {
   const keyPool = createKeyPool();
   const pagesDir = path.join(options.outDir, 'pages');
   await mkdir(pagesDir, { recursive: true });
@@ -326,9 +335,17 @@ async function main(): Promise<void> {
   throw new Error(`${failedImageNames.length} page(s) failed and are missing from the text: ${failedImageNames.join(', ')}. Rerun to retry them.`);
 }
 
+async function runCli(args: string[]): Promise<void> {
+  if (args.length === 0 || isHelpRequested(args)) {
+    console.log(HELP_TEXT);
+    return;
+  }
+  await main(parseCliOptions(args));
+}
+
 if (isEntryPoint(import.meta.url)) {
   loadRepoEnv();
-  main().catch((error: unknown) => {
+  runCli(process.argv.slice(2)).catch((error: unknown) => {
     console.error(describeError(error));
     // process.exit() while Gemini's sockets are still closing trips a libuv assertion on Windows; let the event loop drain instead.
     process.exitCode = 1;
