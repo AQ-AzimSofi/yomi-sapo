@@ -1,8 +1,15 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { ApiError, fetchRubyRegistry, removeRubyRegistryItem, saveRubyEntry } from '@/lib/api/client';
+import {
+  ApiError,
+  fetchRubyRegistry,
+  isRubyRegistryUnavailable,
+  removeRubyRegistryItem,
+  saveRubyEntry,
+} from '@/lib/api/client';
 import type { RubyRegistry, RubyEntry } from '@/lib/types';
+import type { RubyEntrySource } from '@/lib/rubyEntrySource';
 import type { RubyRegistryResponse } from '@/lib/api/contracts';
 
 interface UseRubyRegistryOptions {
@@ -15,7 +22,9 @@ interface UseRubyRegistryReturn {
   registry: RubyRegistry | null;
   isLoading: boolean;
   error: Error | null;
-  addEntry: (entry: Omit<RubyEntry, 'source'> & { source?: 'epub' | 'user' }) => Promise<void>;
+  // The server has no registry yet (production before the move to Aurora DSQL): not an error to show.
+  isUnavailable: boolean;
+  addEntry: (entry: Omit<RubyEntry, 'source'> & { source?: RubyEntrySource }) => Promise<void>;
   deleteEntry: (kanji: string) => Promise<void>;
   ignoreSuggestion: (kanji: string) => Promise<void>;
   refetch: () => Promise<void>;
@@ -37,6 +46,7 @@ export function useRubyRegistry({
   const [registry, setRegistry] = useState<RubyRegistry | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
+  const [isUnavailable, setIsUnavailable] = useState<boolean>(false);
 
   const fetchRegistry = useCallback(async () => {
     if (!directory || !bookName) {
@@ -46,6 +56,7 @@ export function useRubyRegistry({
 
     setIsLoading(true);
     setError(null);
+    setIsUnavailable(false);
 
     try {
       const data = await fetchRubyRegistry({ directory, bookName });
@@ -53,6 +64,10 @@ export function useRubyRegistry({
         setRegistry(data.registry);
       }
     } catch (err) {
+      if (isRubyRegistryUnavailable(err)) {
+        setIsUnavailable(true);
+        return;
+      }
       const error = toRegistryError(err, 'Failed to load registry');
       setError(error);
       console.error('Error fetching ruby registry:', error);
@@ -79,7 +94,7 @@ export function useRubyRegistry({
     }
   };
 
-  const addEntry = (entry: Omit<RubyEntry, 'source'> & { source?: 'epub' | 'user' }) =>
+  const addEntry = (entry: Omit<RubyEntry, 'source'> & { source?: RubyEntrySource }) =>
     changeRegistry('Failed to save entry', () =>
       saveRubyEntry({
         directory,
@@ -122,6 +137,7 @@ export function useRubyRegistry({
     registry,
     isLoading,
     error,
+    isUnavailable,
     addEntry,
     deleteEntry,
     ignoreSuggestion,

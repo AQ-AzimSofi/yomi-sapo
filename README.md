@@ -31,8 +31,8 @@ https://github.com/user-attachments/assets/16d81533-e417-4123-b764-a0066d0b6c84
 *   **Text-to-speech & audiobook mode** — read pages aloud with adjustable speed and voice, continuous playback, keyboard controls on desktop, and a replay-current-sentence button on mobile (Google Cloud TTS).
 
 ### Study
-*   **Vocabulary list** — browse, search and delete saved words, and open the book each word came from. Saving words from the reader returns in a later update.
-*   **Ruby lookup** — per-book kanji→reading registry.
+*   **Vocabulary list** — select a word while reading to save it with its reading and sentence; browse, search and delete saved words, and jump back to the page each word came from.
+*   **Ruby lookup** — per-book kanji→reading registry, stored in the `ruby_registry_entries` table and loaded from each book's `ruby-registry.json` with `scripts/db/import-ruby-registry.ts`. Production on Neon has no such table, so the panel says the word list is not available there until the move to Aurora DSQL.
 
 ### Access
 *   **Password login** for the full library, plus a **guest preview**: a few books are readable without signing in, capped to the first few pages (copyright-safe). In guest mode, AI explanation / TTS / translation run on the visitor's **own** API keys, stored only in their browser.
@@ -103,7 +103,7 @@ Files are created in: `public/bookv2-furigana/[book-name]/`
 
 ### Using processed books in the app:
 
-The library lists books from the database, so load the text there to read it in the app: run with `--output-mode api` (see below) or use the all-in-one `scripts/epub-to-book.ts` pipeline.
+The library lists books from the database, so load the text there to read it in the app: use the all-in-one `scripts/epub-to-book.ts` pipeline (see [scripts/README.md](./scripts/README.md)).
 
 ---
 
@@ -131,7 +131,7 @@ Sources, in order: an override in `scripts/covers/overrides.json`, the cover dec
 
 Illustrations inside a book (`[IMAGE:...]` markers in the text) and the book's image metadata JSON are copyrighted too, so they live in the private `BookImages` S3 bucket with the same layout they have under `public/`, for example `bookv2-furigana/<book>/images/illustration-001.jpg`. The reader loads them through `/api/book-assets?path=...`, which serves any book to a signed-in reader and only the preview books to guests, with `Cache-Control: private` so CloudFront never shares them between users. An illustration that fails to load is skipped.
 
-`scripts/epub-to-book.ts` uploads a new book's illustrations automatically (step 3) when `BOOK_IMAGES_BUCKET` is set in `.env.local`. To upload everything already on disk:
+`scripts/epub-to-book.ts` uploads a new book's illustrations automatically (its illustration upload step) when `BOOK_IMAGES_BUCKET` is set in `.env.local`. To upload everything already on disk:
 
 ```bash
 BUCKET=$(aws s3api list-buckets --query "Buckets[?starts_with(Name, 'yomi-sapo-production-bookimagesbucket')].Name" --output text)
@@ -167,10 +167,9 @@ npm run db:migrate  # Create or update the tables (refuses any database that is 
 
 3. **Add books** (choose one method):
 
-**Option A: Via EPUB Script** (Recommended for EPUB files)
+**Option A: Via the Book Pipeline** (Recommended for EPUB files)
 ```bash
-export ADMIN_API_KEY=your_key_here
-python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
+npx tsx scripts/epub-to-book.ts book.epub
 ```
 
 **Option B: Via Direct API Call**
@@ -198,6 +197,8 @@ Upload or update a single text entry.
   "content": "< 今日は良い天気です。>> Today is nice weather. >> ..."
 }
 ```
+
+A book must fit in one Aurora DSQL value, which holds at most 1 MiB after compression. Text estimated to need more (`lib/db/bookTextSize.ts`) is refused with `413 text_too_large` here, in `bulk-seed` and by `PUT /api/text-entries`. The pipeline's database sync (`scripts/db/sync-text-entry.ts`) refuses it too and prints `Database sync failed:` with the reason. Split such a book into parts. Today's largest book (3.61 MB) fits; how much raw text fits depends on how well it compresses, from about 2.3 MB to 3.7 MB for the current books.
 
 #### `POST /api/admin?action=bookmarks`
 Set a bookmark position for a file.
@@ -232,29 +233,6 @@ Upload multiple text entries at once.
 }
 ```
 
-### EPUB Script API Mode
-
-The EPUB processing script supports direct upload to the database:
-
-```bash
-# Set your API key
-export ADMIN_API_KEY=your_key_here
-
-# Process and upload directly to database (no files created)
-python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
-
-# Optional: target another local/LAN dev server (defaults to http://localhost:3333).
-# Production rejects API mode: it has no ADMIN_API_KEY.
-export API_URL=http://192.168.1.15:3001
-python3 scripts/core/epub-to-text-furigana.py book.epub --output-mode api
-```
-
-**API Mode Features:**
-- Uploads text content directly to database
-- Images still saved to `public/bookv2-furigana/[book-name]/images/`
-- Metadata JSON still created for image references
-- No text files created (database-only)
-
 ### Local Development Workflow
 
 1. **Start services**:
@@ -277,7 +255,9 @@ Production runs at https://yomi-sapo.click on AWS (Lambda + CloudFront via SST, 
 
 2. **Secrets** live in AWS SSM Parameter Store (`ap-northeast-1`) as SecureString parameters named `yomi-sapo-production-<KEY>` (e.g. `GEMINI_API_KEY`, `DATABASE_URL`, `SESSION_SECRET`).
 
-3. **Add books** to production: process them locally, then push the new rows with `npm run db:sync` and choose `[2] Push missing to prod` (the startup/shutdown sync in `npm run dev` does the same). Both need `PROD_DATABASE_URL` (the Neon connection string) in `.env.local`. The sync covers database rows only (text, bookmarks, vocabulary); illustrations and metadata JSON under `public/bookv2-furigana/` are gitignored, so they never reach production. The admin API is local-only: production has no `ADMIN_API_KEY`, so `/api/admin` returns 401 there.
+3. **Add books** to production: process them locally, then push the new rows with `npm run db:sync` and choose `[2] Push missing to prod` (the startup/shutdown sync in `npm run dev` does the same). Both need the production database in `.env.local`: `PROD_DATABASE_URL` (the Neon connection string) today, or, once production runs on Aurora DSQL, `PROD_DSQL_ENDPOINT` (`<cluster id>.dsql.ap-northeast-1.on.aws`). The endpoint wins when both are set; the tools then sign an IAM token with the local AWS profile, as `admin` unless `PROD_DSQL_USER` names another role. The sync covers database rows only (text, bookmarks, vocabulary); illustrations and metadata JSON under `public/bookv2-furigana/` are gitignored, so they never reach production. The admin API is local-only: production has no `ADMIN_API_KEY`, so `/api/admin` returns 401 there.
+
+4. **Aurora DSQL (prepared, not live)**: `lib/db/connection.ts` connects to Aurora DSQL only when `DSQL_ENDPOINT` is set, as `DSQL_USER` (default `yomi_app`) with an IAM token per connection, in `DSQL_REGION` (or `AWS_REGION`). Otherwise it uses `DATABASE_URL` exactly as before. Setting `PRODUCTION_DSQL_CLUSTER_ID` in `sst.config.ts` grants the production server function `dsql:DbConnect` on that cluster and sets those variables; it is empty, so production stays on Neon. The schema is applied with `scripts/db/apply-schema-dsql.ts`, and `scripts/db/copy-to-dsql.ts` copies the data and compares every row (see [scripts/db/README.md](scripts/db/README.md)). [docs/dsql-cutover.md](docs/dsql-cutover.md) is the runbook for the move, from creating the cluster to rollback. On DSQL the library lists books from the covering index `idx_text_entries_library` and recounts only books whose `content_bytes` is NULL, so anything that writes book text must clear `content_bytes`, as `upsertTextEntry` and `clean-book-text` do.
 
 ### Important Notes
 
@@ -286,4 +266,6 @@ Production runs at https://yomi-sapo.click on AWS (Lambda + CloudFront via SST, 
 - **Database is the source of truth** - all text content stored in PostgreSQL
 - **Directory structure preserved** - `.gitkeep` files maintain folder structure
 - **ADMIN_API_KEY** - needed locally for the admin API and EPUB API mode; intentionally not set in production
-- **Database backup** - recommended for production (Neon PG17); before risky changes run `docker run --rm postgres:17-alpine pg_dump '<NEON_URL>' --no-owner --no-acl > backup.sql` (the local PG15 tools refuse a newer server)
+- **Database backup** - Production runs on Neon (PG17) until the move to Aurora DSQL. Until then, before risky changes run `docker run --rm postgres:17-alpine pg_dump '<NEON_URL>' --no-owner --no-acl > backup.sql` (the local PG15 tools refuse a newer server). `pg_dump` does not work against Aurora DSQL (it stops at once with `setting configuration parameter "synchronize_seqscans" not supported`), so once production runs there:
+  - **Backups** come from the AWS Backup plan `yomi-sapo-dsql`: daily at 04:00 JST into the vault `yomi-sapo-dsql`, kept 35 days (created in step 2 of [docs/dsql-cutover.md](docs/dsql-cutover.md)). Before a risky change, take one on demand: `aws backup start-backup-job --region ap-northeast-1 --backup-vault-name yomi-sapo-dsql --resource-arn <cluster ARN> --iam-role-arn arn:aws:iam::<account>:role/yomi-sapo-backup`. A restore creates a new cluster from a recovery point (in the AWS Backup console, or `aws backup get-recovery-point-restore-metadata` and then `aws backup start-restore-job`). To switch to it, check the `yomi_app` role and grants on it (runbook step 4) and set `PRODUCTION_DSQL_CLUSTER_ID` to the new cluster id.
+  - **A local copy** of production comes from the dev sync: with `PROD_DSQL_ENDPOINT` in `.env.local`, run `npm run db:sync` and choose `[1] Pull all from prod -> local`. It copies bookmarks, vocabulary and book text; narration is loaded from its build file with `scripts/db/sync-narration.ts`.

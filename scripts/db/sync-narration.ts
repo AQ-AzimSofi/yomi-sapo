@@ -16,14 +16,14 @@
 import * as fs from 'fs';
 import { upsertNarration } from '@/lib/db/narrationQueries.sql';
 import type { NarrationCue } from '@/lib/types';
+import { isEntryPoint } from '../shared/entryPoint';
 
 function readArg(name: string): string | null {
   const index = process.argv.indexOf(`--${name}`);
   if (index === -1 || index + 1 >= process.argv.length) return null;
   const value = process.argv[index + 1];
   if (value.startsWith('--')) {
-    console.error(`--${name} needs a value, found "${value}".`);
-    process.exit(1);
+    throw new Error(`--${name} needs a value, found "${value}".`);
   }
   return value;
 }
@@ -31,17 +31,14 @@ function readArg(name: string): string | null {
 function parseBuild(path: string): { unitCount: number; cues: (NarrationCue | null)[] } {
   const parsed: unknown = JSON.parse(fs.readFileSync(path, 'utf8'));
   if (!parsed || typeof parsed !== 'object') {
-    console.error(`${path} is not an object.`);
-    process.exit(1);
+    throw new Error(`${path} is not an object.`);
   }
   const { unitCount, cues } = parsed as Record<string, unknown>;
   if (typeof unitCount !== 'number' || !Number.isInteger(unitCount) || unitCount <= 0) {
-    console.error(`${path} has no usable unitCount.`);
-    process.exit(1);
+    throw new Error(`${path} has no usable unitCount.`);
   }
   if (!Array.isArray(cues) || cues.length !== unitCount) {
-    console.error(`${path} declares ${unitCount} units but has ${Array.isArray(cues) ? cues.length : 0} cues.`);
-    process.exit(1);
+    throw new Error(`${path} declares ${unitCount} units but has ${Array.isArray(cues) ? cues.length : 0} cues.`);
   }
   return { unitCount, cues: cues as (NarrationCue | null)[] };
 }
@@ -53,8 +50,7 @@ async function main(): Promise<void> {
   const fileName = readArg('file-name');
 
   if (!manifestPath || !audioKey || !directory || !fileName) {
-    console.error('Usage: --manifest <file> --audio-key <key> --directory <dir> --file-name <name>');
-    process.exit(1);
+    throw new Error('Usage: --manifest <file> --audio-key <key> --directory <dir> --file-name <name>');
   }
 
   const { unitCount, cues } = parseBuild(manifestPath);
@@ -67,7 +63,9 @@ async function main(): Promise<void> {
   console.log(`  covered   : ${covered} (${((covered / unitCount) * 100).toFixed(1)}%)`);
 }
 
-main().catch((error) => {
-  console.error('sync failed:', error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+if (isEntryPoint(import.meta.url)) {
+  main().catch((error) => {
+    console.error('sync failed:', error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}

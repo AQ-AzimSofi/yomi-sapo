@@ -7,7 +7,7 @@
  *   npm run db:sync
  */
 
-import pg from 'pg';
+import type pg from 'pg';
 import readline from 'readline';
 import dotenv from 'dotenv';
 import {
@@ -18,21 +18,14 @@ import {
   type DiffResult,
   type SyncResult,
 } from '../../lib/db/sync-core';
+import { createPgClient } from '../../lib/db/pgClient';
+import { PROD_DATABASE_VARIABLES, prodClientConfig, prodHostOf, readProdDatabase } from '../../lib/db/prodDatabase';
+import { isEntryPoint } from '../shared/entryPoint';
 
-dotenv.config({ path: '.env.local' });
-
-const PROD_URL = process.env.PROD_DATABASE_URL;
-const LOCAL_URL = process.env.DATABASE_URL;
-
-if (!PROD_URL || !LOCAL_URL) {
-  console.error('Missing PROD_DATABASE_URL or DATABASE_URL in .env.local');
-  process.exit(1);
-}
-
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
-function ask(question: string): Promise<string> {
-  return new Promise(resolve => rl.question(question, resolve));
+interface SyncSession {
+  prod: pg.Client;
+  local: pg.Client;
+  ask: (question: string) => Promise<string>;
 }
 
 function pad(str: string, len: number): string {
@@ -92,7 +85,7 @@ async function pullFromProd(prod: pg.Client, local: pg.Client) {
   console.log('Done.\n');
 }
 
-async function pushToProd(prod: pg.Client, local: pg.Client, diffs: DiffResult[]) {
+async function pushToProd({ prod, local, ask }: SyncSession, diffs: DiffResult[]) {
   const pending = diffs.filter(d => d.onlyLocal.length + d.localNewer > 0);
   if (pending.length === 0) {
     console.log('\nNothing to push - prod is up to date.\n');
@@ -147,7 +140,7 @@ async function showDiff(diffs: DiffResult[]) {
   }
 }
 
-async function fullSyncInteractive(prod: pg.Client, local: pg.Client, diffs: DiffResult[]) {
+async function fullSyncInteractive({ prod, local, ask }: SyncSession, diffs: DiffResult[]) {
   const hasToPull = diffs.some(d => d.onlyProd.length + d.prodNewer > 0);
   const hasToPush = diffs.some(d => d.onlyLocal.length + d.localNewer > 0);
 
@@ -172,10 +165,21 @@ async function fullSyncInteractive(prod: pg.Client, local: pg.Client, diffs: Dif
 }
 
 async function main() {
-  console.log('=== Database Sync Tool ===\n');
+  const prodDatabase = readProdDatabase(process.env);
+  const localUrl = process.env.DATABASE_URL;
+  if (!prodDatabase || !localUrl) {
+    console.error(`Missing ${PROD_DATABASE_VARIABLES}, or DATABASE_URL, in .env.local`);
+    process.exit(1);
+  }
 
-  const prod = new pg.Client({ connectionString: PROD_URL, ssl: { rejectUnauthorized: false } });
-  const local = new pg.Client({ connectionString: LOCAL_URL });
+  console.log('=== Database Sync Tool ===\n');
+  console.log(`Prod: ${prodHostOf(prodDatabase)}`);
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (question: string) => new Promise<string>(resolve => rl.question(question, resolve));
+  const prod = createPgClient(prodClientConfig(prodDatabase), 'prod');
+  const local = createPgClient({ connectionString: localUrl }, 'local');
+  const session: SyncSession = { prod, local, ask };
 
   try {
     await prod.connect();
@@ -203,7 +207,7 @@ async function main() {
           printDashboard(diffs);
           break;
         case '2':
-          await pushToProd(prod, local, diffs);
+          await pushToProd(session, diffs);
           diffs = await computeDiffs(prod, local);
           printDashboard(diffs);
           break;
@@ -211,7 +215,7 @@ async function main() {
           await showDiff(diffs);
           break;
         case '4':
-          await fullSyncInteractive(prod, local, diffs);
+          await fullSyncInteractive(session, diffs);
           diffs = await computeDiffs(prod, local);
           printDashboard(diffs);
           break;
@@ -237,4 +241,7 @@ async function main() {
   }
 }
 
-main();
+if (isEntryPoint(import.meta.url)) {
+  dotenv.config({ path: '.env.local' });
+  main();
+}

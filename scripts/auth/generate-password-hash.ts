@@ -1,12 +1,7 @@
 import bcrypt from 'bcryptjs';
+import { isEntryPoint } from '../shared/entryPoint';
 
-const password = process.argv[2];
-if (!password) {
-  console.error('Usage: npx tsx scripts/generate-password-hash.ts <password>');
-  process.exit(1);
-}
-
-async function generateHash() {
+async function generateHash(password: string) {
   const hash = await bcrypt.hash(password, 10);
   console.log('\nAdd this to your .env.local:');
   console.log(`AUTH_PASSWORD_HASH="${hash}"`);
@@ -14,4 +9,13 @@ async function generateHash() {
   console.log(`SESSION_SECRET="<generate-a-random-32-character-string>"`);
 }
 
-generateHash();
+async function main() {
+  const password = process.argv[2];
+  if (!password) {
+    console.error('Usage: npx tsx scripts/generate-password-hash.ts <password>');
+    process.exit(1);
+  }
+  await generateHash(password);
+}
+
+if (isEntryPoint(import.meta.url)) main();

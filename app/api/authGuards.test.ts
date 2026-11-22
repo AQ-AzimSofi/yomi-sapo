@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ownerSessionHeaders, TEST_SESSION_SECRET } from '@/lib/auth/testSession';
 import { sql } from '@/lib/db/connection';
-import { CREATE_TABLES_SQL, MIGRATIONS_SQL } from '@/lib/db/schema';
+import { applySchema } from '@/lib/db/schemaRunner';
 import {
   deleteVocabularyEntry,
   getVocabularyEntryById,
   updateVocabularyEntry,
 } from '@/lib/db/vocabularyQueries.sql';
 import { getBookmark, upsertTextEntry } from '@/lib/db/queries';
+import { BookTextTooLargeError } from '@/lib/db/bookTextSize';
 import { getNarration } from '@/lib/db/narrationQueries.sql';
 import { readTextFile } from '@/lib/services/fileService';
 import { GET as initDb } from './init-db/route';
@@ -20,7 +21,8 @@ import {
 } from './vocabulary/[id]/route';
 import { PUT as putTextEntry } from './text-entries/route';
 
-vi.mock('@/lib/db/connection', () => ({ sql: { unsafe: vi.fn() } }));
+vi.mock('@/lib/db/connection', () => ({ sql: { unsafe: vi.fn() }, databaseKind: 'postgres' }));
+vi.mock('@/lib/db/schemaRunner', () => ({ applySchema: vi.fn() }));
 vi.mock('@/lib/db/vocabularyQueries.sql', () => ({
   getVocabularyEntryById: vi.fn(),
   updateVocabularyEntry: vi.fn(),
@@ -62,7 +64,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest());
 
     expect(response.status).toBe(401);
-    expect(sql.unsafe).not.toHaveBeenCalled();
+    expect(applySchema).not.toHaveBeenCalled();
   });
 
   it('runs the schema SQL for a signed-in owner in production', async () => {
@@ -71,7 +73,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest(OWNER_HEADERS));
 
     expect(response.status).toBe(200);
-    expect(vi.mocked(sql.unsafe).mock.calls).toEqual([[CREATE_TABLES_SQL], [MIGRATIONS_SQL]]);
+    expect(applySchema).toHaveBeenCalledWith(sql, 'postgres');
   });
 
   it.each(['test', 'staging'])('rejects a guest when NODE_ENV is %s', async (nodeEnv) => {
@@ -80,7 +82,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest());
 
     expect(response.status).toBe(401);
-    expect(sql.unsafe).not.toHaveBeenCalled();
+    expect(applySchema).not.toHaveBeenCalled();
   });
 
   it('runs the schema SQL without a session on the local dev server', async () => {
@@ -89,7 +91,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest());
 
     expect(response.status).toBe(200);
-    expect(vi.mocked(sql.unsafe).mock.calls).toEqual([[CREATE_TABLES_SQL], [MIGRATIONS_SQL]]);
+    expect(applySchema).toHaveBeenCalledWith(sql, 'postgres');
   });
 });
 
@@ -239,5 +241,19 @@ describe('PUT /api/text-entries', () => {
     expect(response.status).toBe(200);
     expect(readTextFile).toHaveBeenCalledWith('bookv2-furigana/ほん/ほん-rephrase-furigana');
     expect(upsertTextEntry).toHaveBeenCalledWith(BOOK.fileName, '< 本文\n>> やさしい文', BOOK.directory);
+  });
+
+  it('answers 413 naming the book when its text is too large to store', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.mocked(readTextFile).mockResolvedValue('< 本文');
+    const tooLarge = new BookTextTooLargeError(1_100_000);
+    vi.mocked(upsertTextEntry).mockRejectedValue(tooLarge);
+
+    const response = await putTextEntry(jsonRequest('PUT', BOOK));
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toStrictEqual({
+      error: { code: 'text_too_large', message: `bookv2-furigana/ほん/ほん-rephrase-furigana: ${tooLarge.message}` },
+    });
   });
 });

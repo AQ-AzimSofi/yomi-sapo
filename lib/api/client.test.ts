@@ -14,6 +14,7 @@ import {
   fetchLibraryProgress,
   fetchNarration,
   fetchRubyRegistry,
+  isRubyRegistryUnavailable,
   fetchSession,
   fetchVocabulary,
   listTextFiles,
@@ -25,6 +26,7 @@ import {
   runDbSync,
   saveBookmark,
   saveRubyEntry,
+  saveVocabularyEntry,
   synthesizeSpeech,
   translate,
 } from './client';
@@ -556,6 +558,20 @@ describe('ruby registry calls', () => {
     );
     expect(lastCall().init).toMatchObject({ method: 'DELETE', headers: {}, body: undefined });
   });
+
+  it('tells a server without the registry table apart from any other failure', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: { code: 'registry_unavailable', message: 'The ruby registry is not available on this server yet' } }, 503)
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: { code: 'internal_error', message: 'Internal server error' } }, 500));
+
+    const unavailable = await fetchRubyRegistry(KEY).catch((error: unknown) => error);
+    const failed = await fetchRubyRegistry(KEY).catch((error: unknown) => error);
+
+    expect(isRubyRegistryUnavailable(unavailable)).toBe(true);
+    expect(isRubyRegistryUnavailable(failed)).toBe(false);
+    expect(isRubyRegistryUnavailable(new Error('network down'))).toBe(false);
+  });
 });
 
 describe('library calls', () => {
@@ -585,6 +601,20 @@ describe('vocabulary calls', () => {
     expect(await fetchVocabulary()).toEqual(list);
     expect(lastCall().url).toBe('/api/vocabulary');
     expect(lastCall().init).toMatchObject({ method: 'GET', headers: {} });
+  });
+
+  it('posts a word to save as JSON and returns whether it was new', async () => {
+    const draft = { ...BOOK, word: '言葉', reading: 'ことば', sentence: '言葉を選ぶ。', paragraphText: '言葉を選ぶ。' };
+    const saved = { success: true, message: 'Vocabulary entry already saved', entry: { id: 'entry-1', ...draft }, created: false };
+    fetchMock.mockResolvedValue(jsonResponse(saved));
+
+    expect(await saveVocabularyEntry(draft)).toEqual(saved);
+    expect(lastCall().url).toBe('/api/vocabulary');
+    expect(lastCall().init).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    });
   });
 
   it('deletes one entry by id', async () => {

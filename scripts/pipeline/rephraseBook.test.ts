@@ -1,0 +1,514 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
+import { splitParagraphs } from '../utils/claude-rephrase';
+import { getBookFiles } from './chunkFiles';
+import { chunkText, stripRubyTags } from './chunking';
+import {
+  GEMINI_CHUNKS, GEMINI_CHUNK_SIZE, GEMINI_READER_CHUNKS, GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD, GEMINI_REPLIES, GEMINI_REPLIES_WITH_UNMATCHED_HEAD,
+} from './fixtures/geminiV1Book';
+import { createProgress, type ProgressFile, type ProgressFileV1, type ProgressSettings } from './progress';
+import type { FuriganaResult } from './furigana';
+import { batchRephrase, type RephraseDeps, type RephraseOptions } from './rephraseBook';
+import { FALLBACK_ERROR, type ChunkOutput } from './rephraseChunk';
+import type { TextEntryTarget } from './textEntrySync';
+
+const BOOK_NAME = 'book';
+const SOURCE_TEXT = [
+  '<ruby>吾輩<rt>わがはい</rt></ruby>は猫である。',
+  '名前はまだ無い。',
+  'どこで生れたかとんと見当がつかぬ。',
+  '何でも薄暗いじめじめした所で泣いていた事だけは記憶している。',
+  '吾輩はここで始めて人間というものを見た。',
+].join('\n\n');
+const OPTIONS: RephraseOptions = {
+  outputDir: 'bookv2-furigana',
+  chunkSize: 30,
+  delaySeconds: 0,
+  model: 'sonnet',
+  reset: false,
+  dryRun: false,
+};
+const CHUNK_COUNT = chunkText(SOURCE_TEXT, OPTIONS.chunkSize).chunks.length;
+// Two full runs per write the book makes, which a loaded machine can take well over the default 5s for.
+const KILL_LOOP_TIMEOUT_MS = 60_000;
+
+class KillSignal extends Error {}
+
+type ReplyToChunk = (chunk: string, chunkIndex: number) => ChunkOutput | Promise<ChunkOutput>;
+
+function rephraseOf(chunk: string): string {
+  return splitParagraphs(stripRubyTags(chunk)).map((line) => `< ${line}\n>> ${line}（やさしく）`).join('\n\n');
+}
+
+function fallbackOf(chunk: string): string {
+  return splitParagraphs(stripRubyTags(chunk)).map((line) => `< ${line}\n>> ${line}`).join('\n\n');
+}
+
+const rephraseEveryChunk = (chunk: string, chunkIndex: number): ChunkOutput => ({
+  rawText: `Chunk ${chunkIndex} reply\n${rephraseOf(chunk)}`,
+  readerText: rephraseOf(chunk),
+  attempts: 1,
+  isFallback: false,
+});
+
+// Like the Python step on Windows: CRLF and ruby on every 猫.
+function addFakeFurigana(text: string): FuriganaResult {
+  return { text: text.replace(/\n/g, '\r\n').replace(/猫/g, '<ruby>猫<rt>ねこ</rt></ruby>') };
+}
+
+interface FakeDeps {
+  deps: RephraseDeps;
+  rephrasedChunkIndexes: number[];
+  writtenPaths: string[];
+}
+
+interface FakeOverrides extends Partial<RephraseDeps> {
+  replyToChunk?: ReplyToChunk;
+  maxConcurrency?: number;
+}
+
+function createFakeDeps(overrides: FakeOverrides = {}): FakeDeps {
+  const rephrasedChunkIndexes: number[] = [];
+  const writtenPaths: string[] = [];
+  const replyToChunk = overrides.replyToChunk ?? rephraseEveryChunk;
+  const writeFile = overrides.writeFile ?? writeFileAtomic;
+  const deps: RephraseDeps = {
+    createRephraser: () => ({
+      maxConcurrency: overrides.maxConcurrency ?? 1,
+      rephraseChunk: async (chunk, { chunkIndex }) => {
+        rephrasedChunkIndexes.push(chunkIndex);
+        return replyToChunk(chunk, chunkIndex);
+      },
+    }),
+    addFurigana: overrides.addFurigana ?? addFakeFurigana,
+    syncToDatabase: overrides.syncToDatabase ?? (async () => true),
+    stopSignal: overrides.stopSignal ?? new AbortController().signal,
+    writeFile: (filePath, content) => {
+      writtenPaths.push(filePath);
+      writeFile(filePath, content);
+    },
+  };
+  return { deps, rephrasedChunkIndexes, writtenPaths };
+}
+
+// Writes the first writeCount files, then dies part-way into the next one, leaving a torn temp file.
+function createKillingWriter(writeCount: number): WriteFile {
+  const completedWrites: string[] = [];
+  return (filePath, content) => {
+    if (completedWrites.length >= writeCount) {
+      fs.writeFileSync(`${filePath}.killed.tmp`, content.slice(0, content.length / 2));
+      throw new KillSignal(`killed before writing ${path.basename(filePath)}`);
+    }
+    writeFileAtomic(filePath, content);
+    completedWrites.push(filePath);
+  };
+}
+
+describe('batchRephrase', () => {
+  const testRoot = path.join(os.tmpdir(), 'rephrase-book-test');
+  const sourceDir = path.join(testRoot, BOOK_NAME);
+  const files = getBookFiles(sourceDir, BOOK_NAME);
+  const book = { bookName: BOOK_NAME, sourceDir };
+
+  function writeSource(): void {
+    fs.rmSync(testRoot, { recursive: true, force: true });
+    fs.mkdirSync(sourceDir, { recursive: true });
+    fs.writeFileSync(files.sourcePath, SOURCE_TEXT);
+  }
+
+  function readOutputs() {
+    const chunkFiles = fs.readdirSync(files.chunksDir).filter((name) => !name.endsWith('.tmp'));
+    return {
+      rawText: fs.readFileSync(files.rawPath, 'utf-8'),
+      furiganaText: fs.readFileSync(files.furiganaPath, 'utf-8'),
+      chunkFiles: Object.fromEntries(chunkFiles.map((name) => [name, fs.readFileSync(path.join(files.chunksDir, name), 'utf-8')])),
+    };
+  }
+
+  function readProgress(): ProgressFile {
+    return JSON.parse(fs.readFileSync(files.progressPath, 'utf-8')) as ProgressFile;
+  }
+
+  async function runUninterrupted() {
+    writeSource();
+    await batchRephrase(book, OPTIONS, createFakeDeps().deps);
+    return readOutputs();
+  }
+
+  // What the version 1 pipeline left when it was stopped in chunk 1 after appending its raw reply only.
+  function writeV1StoppedInSecondChunk(): void {
+    writeSource();
+    const chunking = chunkText(SOURCE_TEXT, OPTIONS.chunkSize);
+    const v2 = createProgress({
+      bookName: BOOK_NAME, directory: `bookv2-furigana/${BOOK_NAME}`, sourceText: SOURCE_TEXT, chunking,
+      settings: { chunkSize: OPTIONS.chunkSize, delaySeconds: 0, model: 'sonnet' },
+    });
+    const statuses = ['completed', 'processing', ...Array(CHUNK_COUNT - 2).fill('pending')];
+    const v1: ProgressFileV1 = {
+      ...v2,
+      version: 1,
+      chunks: {
+        ...v2.chunks,
+        completed: 1,
+        items: v2.chunks.items.map(({ index, startChar, endChar, attempts }) => ({ index, startChar, endChar, attempts, status: statuses[index] })),
+      },
+    };
+    const replies = chunking.chunks.map(rephraseEveryChunk);
+    fs.writeFileSync(files.progressPath, JSON.stringify(v1));
+    fs.writeFileSync(files.rawPath, replies.slice(0, 2).map((reply) => reply.rawText).join('\n\n'));
+    fs.writeFileSync(files.furiganaPath, addFakeFurigana(replies[0].readerText).text);
+  }
+
+  // What the version 1 pipeline left for the Gemini book of fixtures/geminiV1Book, stopped in its last chunk.
+  function writeGeminiV1StoppedInLastChunk(outputs = { replies: GEMINI_REPLIES, readerChunks: GEMINI_READER_CHUNKS }): void {
+    fs.rmSync(testRoot, { recursive: true, force: true });
+    fs.mkdirSync(sourceDir, { recursive: true });
+    const sourceText = GEMINI_CHUNKS.join('');
+    fs.writeFileSync(files.sourcePath, sourceText);
+    const v2 = createProgress({
+      bookName: BOOK_NAME, directory: `bookv2-furigana/${BOOK_NAME}`, sourceText, chunking: chunkText(sourceText, GEMINI_CHUNK_SIZE),
+      settings: { chunkSize: GEMINI_CHUNK_SIZE, delaySeconds: 0, model: 'gemini-3-flash-preview' },
+    });
+    const statuses = ['completed', 'completed', 'completed', 'processing'] as const;
+    const v1: ProgressFileV1 = {
+      ...v2,
+      version: 1,
+      chunks: {
+        ...v2.chunks,
+        completed: 3,
+        items: v2.chunks.items.map(({ index, startChar, endChar, attempts }) => ({ index, startChar, endChar, attempts, status: statuses[index] })),
+      },
+    };
+    fs.writeFileSync(files.progressPath, JSON.stringify(v1));
+    fs.writeFileSync(files.rawPath, outputs.replies.join('\n\n'));
+    fs.writeFileSync(files.furiganaPath, outputs.readerChunks.join('\n\n'));
+  }
+
+  function readSetAsideReplies(): string {
+    return fs.readFileSync(`${files.rawPath}.bak`, 'utf-8');
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(testRoot, { recursive: true, force: true });
+  });
+
+  it('Test_batchRephrase_SyncsTheReaderFileAfterEachChunk', async () => {
+    writeSource();
+    const syncedTargets: TextEntryTarget[] = [];
+    const { deps } = createFakeDeps({
+      syncToDatabase: async (target) => {
+        syncedTargets.push(target);
+        return true;
+      },
+    });
+
+    await batchRephrase(book, OPTIONS, deps);
+
+    const readerFileTarget = { directory: `bookv2-furigana/${BOOK_NAME}`, fileName: `${BOOK_NAME}-rephrase-furigana`, filePath: files.furiganaPath };
+    expect(syncedTargets).toEqual(Array(CHUNK_COUNT).fill(readerFileTarget));
+  });
+
+  it('Test_batchRephrase_OutputsAreChunksInOrder', async () => {
+    const outputs = await runUninterrupted();
+    const { chunks } = chunkText(SOURCE_TEXT, OPTIONS.chunkSize);
+    expect(CHUNK_COUNT).toBeGreaterThan(2);
+    expect(outputs.furiganaText).toBe(chunks.map((chunk) => addFakeFurigana(rephraseOf(chunk)).text).join('\n\n'));
+  });
+
+  it('Test_batchRephrase_KillBetweenAnyTwoWritesResumesToIdenticalOutput', async () => {
+    const reference = await runUninterrupted();
+    writeSource();
+    const { deps, writtenPaths } = createFakeDeps();
+    await batchRephrase(book, OPTIONS, deps);
+    expect(writtenPaths.length).toBeGreaterThan(CHUNK_COUNT * 4);
+
+    for (const writeCount of writtenPaths.keys()) {
+      writeSource();
+      const killed = batchRephrase(book, OPTIONS, createFakeDeps({ writeFile: createKillingWriter(writeCount) }).deps);
+      await expect(killed).rejects.toBeInstanceOf(KillSignal);
+      expect(await batchRephrase(book, OPTIONS, createFakeDeps().deps)).toBe(true);
+      expect(readOutputs(), `killed after ${writeCount} writes`).toEqual(reference);
+    }
+  }, KILL_LOOP_TIMEOUT_MS);
+
+  it('Test_batchRephrase_ResumeSkipsSavedChunks', async () => {
+    writeSource();
+    const failOnSecondChunk = createFakeDeps({
+      replyToChunk: (chunk, chunkIndex) => {
+        if (chunkIndex === 1) throw new Error('claude -p exited with 1: usage limit');
+        return rephraseEveryChunk(chunk, chunkIndex);
+      },
+    });
+    await expect(batchRephrase(book, OPTIONS, failOnSecondChunk.deps)).rejects.toThrow('usage limit');
+    const resumed = createFakeDeps();
+    await batchRephrase(book, OPTIONS, resumed.deps);
+    expect(resumed.rephrasedChunkIndexes).toEqual([...Array(CHUNK_COUNT).keys()].slice(1));
+  });
+
+  it('Test_batchRephrase_ResumeKeepsTheModelTheBookStartedWith', async () => {
+    writeSource();
+    const failOnSecondChunk = createFakeDeps({
+      replyToChunk: (chunk, chunkIndex) => {
+        if (chunkIndex === 1) throw new Error('No Gemini key has quota left');
+        return rephraseEveryChunk(chunk, chunkIndex);
+      },
+    });
+    await expect(batchRephrase(book, { ...OPTIONS, model: 'gemini-3-flash-preview', delaySeconds: 5 }, failOnSecondChunk.deps)).rejects.toThrow('quota');
+
+    const { deps } = createFakeDeps();
+    const createdFor: ProgressSettings[] = [];
+    const recordingDeps: RephraseDeps = {
+      ...deps,
+      createRephraser: (settings) => {
+        createdFor.push(settings);
+        return deps.createRephraser(settings);
+      },
+    };
+    await batchRephrase(book, { ...OPTIONS, model: 'sonnet', delaySeconds: 0 }, recordingDeps);
+    expect(createdFor).toEqual([expect.objectContaining({ model: 'gemini-3-flash-preview', delaySeconds: 5 })]);
+  });
+
+  it('Test_batchRephrase_FallbackChunkIsMarkedAndRetriedNextRun', async () => {
+    const reference = await runUninterrupted();
+    writeSource();
+    const withFallback = createFakeDeps({
+      replyToChunk: (chunk, chunkIndex) => {
+        if (chunkIndex !== 1) return rephraseEveryChunk(chunk, chunkIndex);
+        return { rawText: fallbackOf(chunk), readerText: fallbackOf(chunk), attempts: 4, isFallback: true, error: FALLBACK_ERROR };
+      },
+    });
+    expect(await batchRephrase(book, OPTIONS, withFallback.deps)).toBe(false);
+    expect(readProgress().chunks.items.map((item) => item.status)).toEqual(['completed', 'fallback', ...Array(CHUNK_COUNT - 2).fill('completed')]);
+    expect(console.log).toHaveBeenCalledWith('Kept the original text (retried on the next run): chunk 2');
+
+    const retry = createFakeDeps();
+    expect(await batchRephrase(book, OPTIONS, retry.deps)).toBe(true);
+    expect(retry.rephrasedChunkIndexes).toEqual([1]);
+    expect(readOutputs()).toEqual(reference);
+  });
+
+  it('Test_batchRephrase_FuriganaFailureIsRecordedAndRedoneWithoutTheModel', async () => {
+    const reference = await runUninterrupted();
+    writeSource();
+    const failingFurigana = createFakeDeps({
+      addFurigana: (text) => (text.includes('名前') ? { text, error: 'MeCab crashed' } : addFakeFurigana(text)),
+    });
+    expect(await batchRephrase(book, OPTIONS, failingFurigana.deps)).toBe(false);
+    const failedChunk = readProgress().chunks.items.find((item) => item.furiganaError !== undefined);
+    expect(failedChunk).toMatchObject({ status: 'completed', furiganaError: 'MeCab crashed' });
+
+    const redo = createFakeDeps();
+    expect(await batchRephrase(book, OPTIONS, redo.deps)).toBe(true);
+    expect(redo.rephrasedChunkIndexes).toEqual([]);
+    expect(readOutputs()).toEqual(reference);
+  });
+
+  it('Test_batchRephrase_StopAsAChunkFinishesKeepsItAndStartsNoOther', async () => {
+    writeSource();
+    const stopController = new AbortController();
+    const { deps, rephrasedChunkIndexes } = createFakeDeps({
+      stopSignal: stopController.signal,
+      replyToChunk: (chunk, chunkIndex) => {
+        stopController.abort();
+        return rephraseEveryChunk(chunk, chunkIndex);
+      },
+    });
+    expect(await batchRephrase(book, { ...OPTIONS, model: 'gemini-3.5-flash' }, deps)).toBe(false);
+    expect(rephrasedChunkIndexes).toEqual([0]);
+    expect(readProgress().chunks.items.map((item) => item.status)).toEqual(['completed', ...Array(CHUNK_COUNT - 1).fill('pending')]);
+  });
+
+  it('Test_batchRephrase_StopDuringAChunkDropsItAndKeepsTheSavedOnes', async () => {
+    const reference = await runUninterrupted();
+    writeSource();
+    const stopController = new AbortController();
+    const stopInSecondChunk = createFakeDeps({
+      stopSignal: stopController.signal,
+      replyToChunk: (chunk, chunkIndex) => {
+        if (chunkIndex === 0) return rephraseEveryChunk(chunk, chunkIndex);
+        stopController.abort();
+        throw new Error('claude -p exited with null: killed by Ctrl+C');
+      },
+    });
+    expect(await batchRephrase(book, OPTIONS, stopInSecondChunk.deps)).toBe(false);
+    expect(readProgress().chunks.items.map((item) => item.status)).toEqual(['completed', ...Array(CHUNK_COUNT - 1).fill('pending')]);
+
+    expect(await batchRephrase(book, OPTIONS, createFakeDeps().deps)).toBe(true);
+    expect(readOutputs()).toEqual(reference);
+  });
+
+  it('Test_batchRephrase_DryRunWritesNothing', async () => {
+    writeSource();
+    expect(await batchRephrase(book, { ...OPTIONS, dryRun: true }, createFakeDeps().deps)).toBe(true);
+    expect(fs.readdirSync(sourceDir)).toEqual([`${BOOK_NAME}.txt`]);
+  });
+
+  it('Test_batchRephrase_ChangedSourceRefusesToResume', async () => {
+    await runUninterrupted();
+    fs.appendFileSync(files.sourcePath, '\n\n続き。');
+    expect(await batchRephrase(book, OPTIONS, createFakeDeps().deps)).toBe(false);
+  });
+
+  it('Test_batchRephrase_ResetSetsEarlierOutputAside', async () => {
+    await runUninterrupted();
+    await batchRephrase(book, { ...OPTIONS, reset: true }, createFakeDeps().deps);
+    expect(fs.existsSync(`${files.chunksDir}.bak`)).toBe(true);
+    expect(fs.existsSync(`${files.furiganaPath}.bak`)).toBe(true);
+  });
+
+  describe('with several workers', () => {
+    // Later chunks answer sooner, so chunks finish in the reverse of the order they start in.
+    const replyLaterChunksFirst: ReplyToChunk = async (chunk, chunkIndex) => {
+      await sleep((CHUNK_COUNT - chunkIndex) * 5);
+      return rephraseEveryChunk(chunk, chunkIndex);
+    };
+
+    it('Test_batchRephrase_ChunksFinishingOutOfOrderGiveTheSameOutputs', async () => {
+      const reference = await runUninterrupted();
+      writeSource();
+      const parallel = createFakeDeps({ maxConcurrency: 3, replyToChunk: replyLaterChunksFirst });
+      expect(await batchRephrase(book, OPTIONS, parallel.deps)).toBe(true);
+      expect(readOutputs()).toEqual(reference);
+    });
+
+    it('Test_batchRephrase_RunsUpToMaxConcurrencyChunksAtOnce', async () => {
+      writeSource();
+      const inFlightCounts: number[] = [];
+      const inFlight = new Set<number>();
+      const tracked = createFakeDeps({
+        maxConcurrency: 2,
+        replyToChunk: async (chunk, chunkIndex) => {
+          inFlight.add(chunkIndex);
+          inFlightCounts.push(inFlight.size);
+          await sleep(5);
+          inFlight.delete(chunkIndex);
+          return rephraseEveryChunk(chunk, chunkIndex);
+        },
+      });
+      await batchRephrase(book, OPTIONS, tracked.deps);
+      expect(Math.max(...inFlightCounts)).toBe(2);
+      expect(tracked.rephrasedChunkIndexes).toEqual([...Array(CHUNK_COUNT).keys()]);
+    });
+
+    it('Test_batchRephrase_SyncsRunOneAtATimeAndTheLastHasTheWholeBook', async () => {
+      writeSource();
+      const syncedTexts: string[] = [];
+      const activeSyncs = new Set<number>();
+      const overlaps: number[] = [];
+      const { deps } = createFakeDeps({
+        maxConcurrency: 3,
+        replyToChunk: replyLaterChunksFirst,
+        syncToDatabase: async (target) => {
+          const syncNumber = syncedTexts.length;
+          overlaps.push(activeSyncs.size);
+          activeSyncs.add(syncNumber);
+          syncedTexts.push(fs.readFileSync(target.filePath, 'utf-8'));
+          await sleep(3);
+          activeSyncs.delete(syncNumber);
+          return true;
+        },
+      });
+      await batchRephrase(book, OPTIONS, deps);
+      expect(syncedTexts).toHaveLength(CHUNK_COUNT);
+      expect(new Set(overlaps)).toEqual(new Set([0]));
+      expect(syncedTexts.at(-1)).toBe(readOutputs().furiganaText);
+    });
+
+    it('Test_batchRephrase_FailureLetsChunksInFlightFinishAndStartsNoOther', async () => {
+      writeSource();
+      const failFirstChunk = createFakeDeps({
+        maxConcurrency: 2,
+        replyToChunk: async (chunk, chunkIndex) => {
+          if (chunkIndex === 0) throw new Error('No Gemini key has quota left');
+          await sleep(10);
+          return rephraseEveryChunk(chunk, chunkIndex);
+        },
+      });
+      await expect(batchRephrase(book, OPTIONS, failFirstChunk.deps)).rejects.toThrow('No Gemini key has quota left');
+      expect(failFirstChunk.rephrasedChunkIndexes).toEqual([0, 1]);
+      expect(readProgress().chunks.items.map((item) => item.status)).toEqual(['pending', 'completed', ...Array(CHUNK_COUNT - 2).fill('pending')]);
+    });
+  });
+
+  describe('a version 1 progress file', () => {
+    it('Test_batchRephrase_V1ProgressResumesToIdenticalOutput', async () => {
+      const reference = await runUninterrupted();
+      writeV1StoppedInSecondChunk();
+      const resumed = createFakeDeps();
+      expect(await batchRephrase(book, OPTIONS, resumed.deps)).toBe(true);
+      expect(resumed.rephrasedChunkIndexes).toEqual([...Array(CHUNK_COUNT).keys()].slice(1));
+      expect(readOutputs().rawText).toBe(reference.rawText);
+      expect(readOutputs().furiganaText).toBe(reference.furiganaText);
+    });
+
+    it('Test_batchRephrase_V1ProgressKilledWhileMovingOverResumesToIdenticalOutput', async () => {
+      const reference = await runUninterrupted();
+      writeV1StoppedInSecondChunk();
+      const { deps, writtenPaths } = createFakeDeps();
+      expect(await batchRephrase(book, OPTIONS, deps)).toBe(true);
+      expect(writtenPaths.length).toBeGreaterThan(CHUNK_COUNT * 4);
+
+      for (const writeCount of writtenPaths.keys()) {
+        writeV1StoppedInSecondChunk();
+        const killed = batchRephrase(book, OPTIONS, createFakeDeps({ writeFile: createKillingWriter(writeCount) }).deps);
+        await expect(killed).rejects.toBeInstanceOf(KillSignal);
+        await batchRephrase(book, OPTIONS, createFakeDeps().deps);
+        const { rawText, furiganaText } = readOutputs();
+        expect({ rawText, furiganaText }, `killed after ${writeCount} writes`).toEqual({ rawText: reference.rawText, furiganaText: reference.furiganaText });
+      }
+    }, KILL_LOOP_TIMEOUT_MS);
+
+    it('Test_batchRephrase_V1GeminiProgressMovesOverAndSetsTheRepliesAside', async () => {
+      writeGeminiV1StoppedInLastChunk();
+      const resumed = createFakeDeps();
+      expect(await batchRephrase(book, OPTIONS, resumed.deps)).toBe(true);
+      expect(resumed.rephrasedChunkIndexes).toEqual([3]);
+      const lastChunk = addFakeFurigana(rephraseOf(GEMINI_CHUNKS[3])).text;
+      expect(readOutputs().furiganaText).toBe([...GEMINI_READER_CHUNKS, lastChunk].join('\n\n'));
+      expect(readSetAsideReplies()).toBe(GEMINI_REPLIES.join('\n\n'));
+    });
+
+    it('Test_batchRephrase_V1GeminiProgressWithAnUnmatchedHeadResumesTheLastChunk', async () => {
+      writeGeminiV1StoppedInLastChunk({ replies: GEMINI_REPLIES_WITH_UNMATCHED_HEAD, readerChunks: GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD });
+      const resumed = createFakeDeps();
+      expect(await batchRephrase(book, OPTIONS, resumed.deps)).toBe(true);
+      expect(resumed.rephrasedChunkIndexes).toEqual([3]);
+      const lastChunk = addFakeFurigana(rephraseOf(GEMINI_CHUNKS[3])).text;
+      expect(readOutputs().furiganaText).toBe([...GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD, lastChunk].join('\n\n'));
+      expect(readSetAsideReplies()).toBe(GEMINI_REPLIES_WITH_UNMATCHED_HEAD.join('\n\n'));
+    });
+
+    it('Test_batchRephrase_V1GeminiProgressKilledWhileMovingOverKeepsTheReplies', async () => {
+      writeGeminiV1StoppedInLastChunk();
+      const { deps, writtenPaths } = createFakeDeps();
+      await batchRephrase(book, OPTIONS, deps);
+      const reference = readOutputs().furiganaText;
+
+      for (const writeCount of writtenPaths.keys()) {
+        writeGeminiV1StoppedInLastChunk();
+        const killed = batchRephrase(book, OPTIONS, createFakeDeps({ writeFile: createKillingWriter(writeCount) }).deps);
+        await expect(killed).rejects.toBeInstanceOf(KillSignal);
+        await batchRephrase(book, OPTIONS, createFakeDeps().deps);
+        const resumed = { furiganaText: readOutputs().furiganaText, replies: readSetAsideReplies() };
+        expect(resumed, `killed after ${writeCount} writes`).toEqual({ furiganaText: reference, replies: GEMINI_REPLIES.join('\n\n') });
+      }
+    }, KILL_LOOP_TIMEOUT_MS);
+
+    it('Test_batchRephrase_V1ProgressThatCannotBeSplitIsLeftAlone', async () => {
+      writeV1StoppedInSecondChunk();
+      fs.writeFileSync(files.furiganaPath, '< 別の本。\r\n>> 別。');
+      expect(await batchRephrase(book, OPTIONS, createFakeDeps().deps)).toBe(false);
+      expect(JSON.parse(fs.readFileSync(files.progressPath, 'utf-8')).version).toBe(1);
+      expect(fs.existsSync(files.chunksDir)).toBe(false);
+    });
+  });
+});

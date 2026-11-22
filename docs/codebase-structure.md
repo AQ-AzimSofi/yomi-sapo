@@ -42,7 +42,7 @@ yomi-sapo/
 | `/api/text-entries` | PUT | Copy a local book file into text_entries (dev server only) |
 | `/api/explain-sentence` | POST | Sentence explanations |
 | `/api/tts` | POST | Text-to-speech |
-| `/api/ruby-registry` | GET, POST | Furigana registry |
+| `/api/ruby-registry` | GET, POST, DELETE | A book's ruby registry from `ruby_registry_entries`; 503 `registry_unavailable` where the table does not exist (Neon) |
 | `/api/init-db` | GET | Initialize database tables |
 | `/api/health` | GET | Health check |
 | `/api/auth` | POST | Authentication |
@@ -58,6 +58,8 @@ Every handler is declared as `export const GET = withAuth(policy, handler)` (`li
 
 `read-public-txt`, `read-bookmark`, `write-bookmark`, `narration`, `covers` and `text-entries` read their book as a `BookRef` (`lib/books/bookRef.ts`) from separate `directory` and `fileName` params (`write-bookmark` and `text-entries`: body fields), and reject one that fails `isSafeBookRef` with 400. `ruby-registry` checks its `directory` and `bookName` the same way. `vocabulary` and `admin` still take a raw `fileName` and `directory` with no check; both only pass them to parameterized SQL. `read-public-txt`, `read-bookmark` and `write-bookmark` still accept the combined form (`fileName=dir/file`, or `target` in the bookmark body), because a browser can hold the reader from before a deploy. `read-public-txt` keeps its old lookup for that form: every directory/file split, most nested first, then the legacy `public` folder.
 
+`POST /api/vocabulary` answers `created: false` with the stored entry when the same word was already saved from the same sentence of the same book (`isSameSavedWord` in `lib/vocabulary/duplicates.ts`, sentences compared without furigana), so saving twice never makes a copy. There is no unique index behind it: two saves sent at the same moment could still both be stored.
+
 Errors are `{ error: { code, message } }` from `apiError()` (`lib/api/respond.ts`), plus any field a client reads (`requiresGuestKey`, the top-level `message` of the login and vocabulary list errors). Request and response bodies are typed in `lib/api/contracts.ts`, which both the handlers and the browser client import. `parseJsonBody(request, check, requirement)` answers 400 for a body that is not JSON or fails `check`. An error a handler does not handle is logged and answered with a generic 500.
 
 ### Components (`/app/components`)
@@ -71,11 +73,12 @@ components/
 │   ├── StartHereIcon.tsx
 │   └── TranslateIcon.tsx
 ├── reading/            # Reader components
-│   ├── CollapsibleItem.tsx     # Collapsible text with rephrasing
+│   ├── ReaderItem.tsx          # One reading unit: rephrase head with やさしく sub-items, or a paragraph
+│   ├── ParagraphText.tsx       # Book text with furigana, optionally one clickable span per sentence
+│   ├── IconButton.tsx          # 32px item action button
 │   ├── ExplanationSidebar.tsx  # AI explanations panel
-│   ├── ParagraphItem.tsx       # Individual paragraph
 │   ├── RubyLookupSidebar.tsx   # Furigana lookup
-│   ├── TTSButton.tsx           # Text-to-speech button
+│   ├── TTSButton.tsx           # Read-aloud button, drawn from the reader's one player
 │   ├── GuestApiKeyModal.tsx    # Guest Gemini key prompt
 │   └── BookImage.tsx           # Book illustration
 └── ui/                 # Shared UI components
@@ -170,12 +173,13 @@ import { getVocabularyEntries } from '@/lib/db/vocabularyQueries.sql';
 
 ```
 services/
-└── fileService.ts      # Book files and ruby registries on disk
+└── fileService.ts      # Book files on disk
 ```
 
 **fileService functions:**
 - `readTextFile(fileName)`
-- `readRubyRegistry`, `writeRubyRegistry`, `upsertRubyEntry`, `deleteRubyEntry`, `ignoreSuggestion`
+
+Ruby registries live in the `ruby_registry_entries` table (`lib/db/rubyRegistryQueries.sql.ts`), loaded from the `ruby-registry.json` files by `scripts/db/import-ruby-registry.ts`.
 
 ### API client (`/lib/api`)
 
@@ -265,20 +269,21 @@ lib/
 
 ## Scripts Directory (`/scripts`)
 
-Utility scripts for data processing:
+Offline tools that run on the owner's machine, never in the deployed app. [scripts/README.md](../scripts/README.md) describes each one and how to run it.
 
-| Script | Language | Purpose |
-|--------|----------|---------|
-| `add-furigana.js` | JavaScript | Add furigana to text |
-| `add-furigana-improved.js` | JavaScript | Improved furigana processing |
-| `add-furigana-final.js` | JavaScript | Final furigana version |
-| `clean-and-add-furigana.js` | JavaScript | Clean text + add furigana |
-| `epub-to-text.py` | Python | Convert EPUB to text |
-| `epub-to-text-furigana.py` | Python | EPUB to text with furigana |
-| `extract-ruby-from-epub.py` | Python | Extract ruby annotations |
-| `add-furigana-to-text.py` | Python | Python furigana processor |
-| `batch-rephrase.ts` | TypeScript | Batch AI rephrasing |
-| `migrate-ruby-registry.py` | Python | Ruby registry migration |
+| Path | Language | Purpose |
+|------|----------|---------|
+| `epub-to-book.ts` | TypeScript | Book pipeline: extract an EPUB, build its ruby registry, upload illustrations, rephrase (Claude by default, Gemini as the alternative), add furigana, sync each chunk to the local database |
+| `core/` | Python | Pipeline steps: EPUB to text with furigana, ruby registry, MeCab furigana for rephrased text |
+| `utils/` | TypeScript | Claude rephraser and Gemini reply alignment, used by the pipeline |
+| `prompts/` | Markdown | System prompt of the Claude rephraser |
+| `ocr/` | TypeScript | OCR page images into text with Gemini |
+| `kindle/` | TypeScript | Kindle Cloud Reader page turner and screenshots |
+| `covers/` | Python | Collect book covers for the BookCovers bucket |
+| `audio/` | Python, TypeScript | Align an audiobook to its transcript and build the narration manifest |
+| `db/` | TypeScript | Local schema migration, local and production sync, narration loading, stored text cleanup |
+| `auth/` | TypeScript | Password hash for `AUTH_PASSWORD_HASH` |
+| `dev-with-sync.ts` | TypeScript | `npm run dev`: start the database container and sync with production on start and stop |
 
 ---
 

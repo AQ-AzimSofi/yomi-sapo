@@ -14,30 +14,38 @@
  * Illustrations, photos, diagrams and tables are cropped out of the page image and left in the
  * text as [IMAGE:<file>] markers, the same markers the EPUB extractor writes.
  *
- * Usage: npx tsx scripts/ocr/ocr-pages.ts <image-dir> [--out-dir <dir>] [--model gemini-3.5-flash] [--concurrency <n>]
+ * Usage: npx tsx scripts/ocr/ocr-pages.ts <image-dir> [options]; --help lists the options and their defaults.
  *
- * Output (the out dir defaults to "<image-dir>-ocr" next to the image folder):
+ * Output:
  *   <out-dir>/pages/<image-stem>.txt   one per image (0001.png -> 0001.txt); delete one to transcribe that page again
- *   <out-dir>/images/<image-stem>-<n>.png  figures cropped from that page; copy the folder next to the book's text
- *                                      (public/bookv2-furigana/<book>/images) so epub-to-book.ts uploads it
+ *   <out-dir>/images/<image-stem>-<n>.png  figures cropped from that page
  *   <out-dir>/<image-dir-name>.txt     all pages joined
+ *
+ * Then `npx tsx scripts/epub-to-book.ts <out-dir>` makes the book from this folder, figures included.
  */
 
-import { parseArgs } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { ApiError, GoogleGenAI } from '@google/genai';
-import * as dotenv from 'dotenv';
+import type { GoogleGenAI } from '@google/genai';
 import sharp from 'sharp';
 import { CONTINUATION_MARKER, findStrayMarker } from './page-markers';
+import { isEntryPoint } from '../shared/entryPoint';
+import { formatHelp, isHelpRequested, numberFlag, parseCommandLine, textFlag } from '../shared/cliSchema';
+import { loadRepoEnv } from '../shared/repoPaths';
+import { AI_MODELS } from '../../lib/constants';
+import {
+  PAID_API_KEY_ENV_NAME,
+  createKeyPool,
+  describeError,
+  describeUnusableKey,
+  isRetryable,
+  pickKey,
+  retireKey,
+  type KeyPool,
+} from '../shared/geminiKeyPool';
 
-dotenv.config({ path: [path.join(process.cwd(), '.env.local'), path.join(process.cwd(), '.env')] });
-
-const DEFAULT_MODEL = 'gemini-3.5-flash';
-const FREE_API_KEY_ENV_NAMES = ['GEMINI_API_KEY', 'GEMINI_API_KEY2', 'GEMINI_API_KEY3', 'GEMINI_API_KEY4', 'GEMINI_API_KEY5'];
-const PAID_API_KEY_ENV_NAME = 'GEMINI_API_KEY_PAID';
 const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -79,18 +87,6 @@ interface CliOptions {
   concurrency?: number;
 }
 
-interface ApiKey {
-  envName: string;
-  client: GoogleGenAI;
-}
-
-interface KeyPool {
-  freeKeys: ApiKey[];
-  paidKey?: ApiKey;
-  // Free keys out of daily quota or rejected, skipped for the rest of the run.
-  retiredFreeKeys: Set<ApiKey>;
-}
-
 interface OcrContext {
   keyPool: KeyPool;
   model: string;
@@ -123,81 +119,42 @@ interface PageText {
   text: string;
 }
 
-function parseCliOptions(): CliOptions {
-  const { values, positionals } = parseArgs({
-    allowPositionals: true,
-    options: {
-      'out-dir': { type: 'string' },
-      model: { type: 'string', default: DEFAULT_MODEL },
-      concurrency: { type: 'string' },
-    },
-  });
-  const imageDir = positionals[0];
-  if (!imageDir) {
-    throw new Error('Usage: npx tsx scripts/ocr/ocr-pages.ts <image-dir> [--out-dir <dir>] [--model <name>] [--concurrency <n>]');
-  }
+export const OCR_FLAGS = {
+  outDir: textFlag({
+    name: 'out-dir',
+    valueName: 'dir',
+    defaultLabel: '<image-dir>-ocr, next to the image folder',
+    description: 'Where the page texts, figures and joined text go',
+  }),
+  model: textFlag({ name: 'model', valueName: 'name', defaultValue: AI_MODELS.GEMINI_3_5_FLASH, description: 'Gemini model' }),
+  concurrency: numberFlag({
+    name: 'concurrency',
+    valueName: 'n',
+    isInteger: true,
+    min: 1,
+    defaultLabel: 'one per free key',
+    description: 'Pages transcribed at once',
+  }),
+};
+
+export const HELP_TEXT = formatHelp(OCR_FLAGS, {
+  summary: 'OCR a folder of book page images into plain text with Gemini',
+  usage: ['npx tsx scripts/ocr/ocr-pages.ts <image-dir> [options]'],
+});
+
+export function parseCliOptions(args: string[]): CliOptions {
+  const { flags, positionals } = parseCommandLine(OCR_FLAGS, args);
+  const [imageDir] = positionals;
+  if (!imageDir) throw new Error('Pass the folder of page images (see --help).');
   if (!existsSync(imageDir)) throw new Error(`Image folder not found: ${imageDir}`);
-  const concurrency = values.concurrency === undefined ? undefined : Number(values.concurrency);
-  const isValidConcurrency = concurrency === undefined || (Number.isInteger(concurrency) && concurrency > 0);
-  if (!isValidConcurrency) throw new Error(`--concurrency must be a positive integer, got "${values.concurrency}"`);
   const resolvedImageDir = path.resolve(imageDir);
   return {
     imageDir: resolvedImageDir,
     // Kept next to the image folder, not inside it, so a page-turner.ts screenshot folder holds only page images.
-    outDir: path.resolve(values['out-dir'] ?? `${resolvedImageDir}-ocr`),
-    model: values.model,
-    concurrency,
+    outDir: path.resolve(flags.outDir ?? `${resolvedImageDir}-ocr`),
+    model: flags.model,
+    concurrency: flags.concurrency,
   };
-}
-
-function readApiKey(envName: string): ApiKey | undefined {
-  const apiKey = process.env[envName];
-  if (!apiKey) return undefined;
-  return { envName, client: new GoogleGenAI({ apiKey }) };
-}
-
-function createKeyPool(): KeyPool {
-  const freeKeys = FREE_API_KEY_ENV_NAMES.map(readApiKey).filter((key): key is ApiKey => key !== undefined);
-  const paidKey = readApiKey(PAID_API_KEY_ENV_NAME);
-  if (freeKeys.length === 0 && !paidKey) {
-    throw new Error(`No Gemini API key found. Set ${FREE_API_KEY_ENV_NAMES.join(' / ')} in .env.local or ${PAID_API_KEY_ENV_NAME}.`);
-  }
-  return { freeKeys, paidKey, retiredFreeKeys: new Set() };
-}
-
-function pickKey(keyPool: KeyPool, spreadIndex: number): ApiKey | undefined {
-  const availableFreeKeys = keyPool.freeKeys.filter((key) => !keyPool.retiredFreeKeys.has(key));
-  if (availableFreeKeys.length === 0) return keyPool.paidKey;
-  return availableFreeKeys[spreadIndex % availableFreeKeys.length];
-}
-
-/** Why the key that made the request can serve nothing more this run, or undefined when the error is not about the key. */
-function describeUnusableKey(error: unknown, model: string): string | undefined {
-  if (!(error instanceof ApiError)) return undefined;
-  // A per-minute limit clears by itself; a per-day quota or a rejected key does not.
-  if (error.status === 429 && error.message.includes('PerDay')) return `out of daily quota for ${model}`;
-  if (error.status === 403 || error.message.includes('API_KEY_INVALID')) return `rejected (${describeError(error)})`;
-  return undefined;
-}
-
-function isRetryable(error: unknown): boolean {
-  // Network failures and blocked (empty) replies are not ApiErrors and can pass on a retry; any other 4xx, such as an unknown model, cannot.
-  if (!(error instanceof ApiError)) return true;
-  return error.status === 429 || error.status >= 500;
-}
-
-function describeFallback(keyPool: KeyPool): string {
-  const remainingFreeKeyCount = keyPool.freeKeys.length - keyPool.retiredFreeKeys.size;
-  if (remainingFreeKeyCount > 0) return `${remainingFreeKeyCount} free key(s) left`;
-  if (keyPool.paidKey) return `switching to ${keyPool.paidKey.envName}`;
-  return `no ${PAID_API_KEY_ENV_NAME} to fall back to`;
-}
-
-function retireKey(keyPool: KeyPool, key: ApiKey, reason: string): void {
-  // Concurrent workers can hit the same key; report it once.
-  if (keyPool.retiredFreeKeys.has(key)) return;
-  keyPool.retiredFreeKeys.add(key);
-  console.log(`  ${key.envName} is ${reason}; ${describeFallback(keyPool)}`);
 }
 
 async function listImageNames(imageDir: string): Promise<string[]> {
@@ -214,12 +171,6 @@ async function listImageNames(imageDir: string): Promise<string[]> {
 
 function pageTextPath(pagesDir: string, imageName: string): string {
   return path.join(pagesDir, `${path.parse(imageName).name}.txt`);
-}
-
-function describeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  // Gemini API errors are a JSON body; the first line of its "message" field is the readable part.
-  return /"message":"([^"\\]*)/.exec(message)?.[1]?.trim() ?? message;
 }
 
 async function transcribeImage(client: GoogleGenAI, model: string, imagePath: string): Promise<string> {
@@ -356,8 +307,7 @@ function joinPages(pages: PageText[]): string {
   }, '');
 }
 
-async function main(): Promise<void> {
-  const options = parseCliOptions();
+async function main(options: CliOptions): Promise<void> {
   const keyPool = createKeyPool();
   const pagesDir = path.join(options.outDir, 'pages');
   await mkdir(pagesDir, { recursive: true });
@@ -385,8 +335,19 @@ async function main(): Promise<void> {
   throw new Error(`${failedImageNames.length} page(s) failed and are missing from the text: ${failedImageNames.join(', ')}. Rerun to retry them.`);
 }
 
-main().catch((error: unknown) => {
-  console.error(describeError(error));
-  // process.exit() while Gemini's sockets are still closing trips a libuv assertion on Windows; let the event loop drain instead.
-  process.exitCode = 1;
-});
+async function runCli(args: string[]): Promise<void> {
+  if (args.length === 0 || isHelpRequested(args)) {
+    console.log(HELP_TEXT);
+    return;
+  }
+  await main(parseCliOptions(args));
+}
+
+if (isEntryPoint(import.meta.url)) {
+  loadRepoEnv();
+  runCli(process.argv.slice(2)).catch((error: unknown) => {
+    console.error(describeError(error));
+    // process.exit() while Gemini's sockets are still closing trips a libuv assertion on Windows; let the event loop drain instead.
+    process.exitCode = 1;
+  });
+}

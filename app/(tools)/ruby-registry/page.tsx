@@ -9,12 +9,7 @@ import { toTint } from '@/lib/utils/colorTint';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
 import type { RubyEntry } from '@/lib/types';
 import { listTextFiles } from '@/lib/api/client';
-
-interface BookOption {
-  directory: string;
-  bookName: string;
-  label: string;
-}
+import { registryBookOptions, type BookOption } from './registryBookOptions';
 
 const INPUT_STYLE = {
   backgroundColor: COLORS.SURFACE,
@@ -42,6 +37,7 @@ function RubyRegistryContent() {
     registry,
     isLoading,
     error,
+    isUnavailable,
     addEntry,
     deleteEntry,
     ignoreSuggestion,
@@ -59,17 +55,7 @@ function RubyRegistryContent() {
   const fetchBooks = async () => {
     try {
       const data = await listTextFiles();
-
-      const options: BookOption[] = [];
-      for (const [dir, files] of Object.entries(data.filesByDirectory)) {
-        for (const file of files) {
-          options.push({
-            directory: dir,
-            bookName: file,
-            label: `${dir}/${file}`,
-          });
-        }
-      }
+      const options = registryBookOptions(data.filesByDirectory);
       setBooks(options);
 
       if (!selectedBook && options.length > 0) {
@@ -170,7 +156,16 @@ function RubyRegistryContent() {
           </select>
         </div>
 
-        {selectedBook && (
+        {selectedBook && isUnavailable && (
+          <div
+            className="p-4 border text-sm"
+            style={{ borderColor: COLORS.NEUTRAL, backgroundColor: COLORS.SURFACE, color: COLORS.SECONDARY }}
+          >
+            The ruby registry is not available on this server yet.
+          </div>
+        )}
+
+        {selectedBook && !isUnavailable && (
           <>
             {/* Search and Add */}
             <div className="flex gap-4 mb-6">
@@ -314,8 +309,8 @@ function RubyRegistryContent() {
                           <span
                             className="text-xs px-2 py-0.5 border"
                             style={{
-                              borderColor: entry.source === 'epub' ? COLORS.NEUTRAL : COLORS.PRIMARY,
-                              color: entry.source === 'epub' ? COLORS.SECONDARY : COLORS.PRIMARY,
+                              borderColor: entry.source === 'user' ? COLORS.PRIMARY : COLORS.NEUTRAL,
+                              color: entry.source === 'user' ? COLORS.PRIMARY : COLORS.SECONDARY,
                             }}
                           >
                             {entry.source}

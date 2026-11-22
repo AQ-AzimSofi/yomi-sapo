@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { REPO_ROOT } from '../shared/repoPaths';
 
-const PROMPT_PATH = path.join(process.cwd(), 'scripts', 'prompts', 'claude-rephrase.md');
+const PROMPT_PATH = path.join(REPO_ROOT, 'scripts', 'prompts', 'claude-rephrase.md');
 const MAX_ATTEMPTS = 3;
 const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_ERROR_PREVIEW_CHARS = 500;
@@ -24,6 +25,8 @@ interface ClaudeReply {
 interface RewriteRound {
   paragraphs: readonly string[];
   model: string;
+  /** Ctrl+C: kills the claude -p call in flight and starts no other. */
+  signal?: AbortSignal;
   rewrites: RewritesByNumber;
   attempt: number;
   lastReply: string;
@@ -78,7 +81,7 @@ function parseReply(stdout: string): ClaudeReply | undefined {
 
 // Runs headless Claude Code, so the rephrase uses the Claude subscription rather than an API key.
 // It starts outside the repo so the project's CLAUDE.md files stay out of the prompt.
-function runClaude(input: string, model: string): Promise<string> {
+function runClaude(input: string, model: string, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'claude',
@@ -92,7 +95,7 @@ function runClaude(input: string, model: string): Promise<string> {
         '--no-session-persistence',
         '--output-format', 'json',
       ],
-      { cwd: os.tmpdir(), timeout: CLAUDE_TIMEOUT_MS },
+      { cwd: os.tmpdir(), timeout: CLAUDE_TIMEOUT_MS, signal },
     );
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
@@ -126,11 +129,12 @@ async function collectRewrites(round: RewriteRound): Promise<RewriteRound> {
     .map((_, index) => index + 1)
     .filter((number) => !round.rewrites.has(number));
   if (pendingNumbers.length === 0 || round.attempt > MAX_ATTEMPTS) return round;
+  round.signal?.throwIfAborted();
 
   if (round.attempt > 1) {
     console.log(`    Asking again for ${pendingNumbers.length} skipped paragraph(s) (attempt ${round.attempt}/${MAX_ATTEMPTS})...`);
   }
-  const response = await runClaude(numberParagraphs(round.paragraphs, pendingNumbers), round.model);
+  const response = await runClaude(numberParagraphs(round.paragraphs, pendingNumbers), round.model, round.signal);
   const found = parseRewrites(response, new Set(pendingNumbers));
   return collectRewrites({
     ...round,
@@ -142,8 +146,8 @@ async function collectRewrites(round: RewriteRound): Promise<RewriteRound> {
 
 // A reply with no numbered line at all (a refusal, a changed format) stops the run rather than
 // saving the whole chunk unrephrased as if it were done.
-export async function rephraseWithClaude(paragraphs: readonly string[], model: string): Promise<ClaudeRephrase> {
-  const finalRound = await collectRewrites({ paragraphs, model, rewrites: new Map(), attempt: 1, lastReply: '' });
+export async function rephraseWithClaude(paragraphs: readonly string[], model: string, signal?: AbortSignal): Promise<ClaudeRephrase> {
+  const finalRound = await collectRewrites({ paragraphs, model, signal, rewrites: new Map(), attempt: 1, lastReply: '' });
   if (paragraphs.length > 0 && finalRound.rewrites.size === 0) {
     const preview = finalRound.lastReply.slice(0, MAX_ERROR_PREVIEW_CHARS);
     throw new Error(`Claude returned no numbered rewrite in ${MAX_ATTEMPTS} attempts. Last reply: ${preview}`);

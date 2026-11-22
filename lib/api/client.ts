@@ -30,6 +30,8 @@ import type {
   RubyRegistryResponse,
   SaveBookmarkRequest,
   SaveRubyEntryRequest,
+  SaveVocabularyRequest,
+  SaveVocabularyResponse,
   SessionResponse,
   TextFileListResponse,
   TranslateRequest,
@@ -261,6 +263,11 @@ export async function fetchVocabulary(): Promise<VocabularyListResponse> {
   return request<VocabularyListResponse>(API_ROUTES.VOCABULARY);
 }
 
+/** Saves a word to the 単語帳; the same word from the same sentence comes back as the stored entry. */
+export async function saveVocabularyEntry(entry: SaveVocabularyRequest): Promise<SaveVocabularyResponse> {
+  return request<SaveVocabularyResponse>(API_ROUTES.VOCABULARY, { method: 'POST', body: entry });
+}
+
 export async function deleteVocabularyEntry(id: string): Promise<DeleteVocabularyResponse> {
   return request<DeleteVocabularyResponse>(API_ROUTES.VOCABULARY, { method: 'DELETE', pathSegment: id });
 }
@@ -275,6 +282,11 @@ export async function fetchRubyRegistry(key: RubyRegistryKey): Promise<RubyRegis
 
 export async function saveRubyEntry(entry: SaveRubyEntryRequest): Promise<RubyRegistryResponse> {
   return request<RubyRegistryResponse>(API_ROUTES.RUBY_REGISTRY, { method: 'POST', body: entry });
+}
+
+/** Whether a registry call failed because the server has no registry table (production before the move to Aurora DSQL). */
+export function isRubyRegistryUnavailable(error: unknown): boolean {
+  return error instanceof ApiError && error.body?.error?.code === 'registry_unavailable';
 }
 
 /** Deletes an entry, or ignores a suggestion so it is not offered again. */

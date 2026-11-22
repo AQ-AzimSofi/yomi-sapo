@@ -1,5 +1,38 @@
-import { describe, expect, it } from 'vitest';
-import { formatPairs, isClaudeModel, numberParagraphs, parseRewrites, splitParagraphs } from './claude-rephrase';
+import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { formatPairs, isClaudeModel, numberParagraphs, parseRewrites, rephraseWithClaude, splitParagraphs } from './claude-rephrase';
+
+vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
+
+afterEach(() => {
+  vi.mocked(spawn).mockReset();
+});
+
+// Like spawn with a signal: aborting it kills claude -p, which then reports an AbortError.
+function spawnClaudeThatAnswersOnlyAnAbort(_command: string, _args: readonly string[], options: { signal?: AbortSignal }) {
+  const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), stdin: { end: () => undefined } });
+  options.signal?.addEventListener('abort', () => child.emit('error', Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })));
+  return child;
+}
+
+describe('rephraseWithClaude', () => {
+  it('Test_rephraseWithClaude_StoppedBeforeTheCallStartsNoClaude', async () => {
+    await expect(rephraseWithClaude(['吾輩は猫である。'], 'sonnet', AbortSignal.abort())).rejects.toMatchObject({ name: 'AbortError' });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('Test_rephraseWithClaude_StopKillsTheClaudeInFlight', async () => {
+    vi.mocked(spawn).mockImplementation(spawnClaudeThatAnswersOnlyAnAbort as unknown as typeof spawn);
+    const stopController = new AbortController();
+    const rephrasing = rephraseWithClaude(['吾輩は猫である。'], 'sonnet', stopController.signal);
+
+    stopController.abort();
+
+    expect(spawn).toHaveBeenCalledWith('claude', expect.any(Array), expect.objectContaining({ signal: stopController.signal }));
+    await expect(rephrasing).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
 
 describe('isClaudeModel', () => {
   it('Test_isClaudeModel_ClaudeAlias', () => {

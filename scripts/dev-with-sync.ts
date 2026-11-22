@@ -13,18 +13,17 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { resolve } from 'node:path';
-import { Client } from 'pg';
 import dotenv from 'dotenv';
+import { createPgClient } from '../lib/db/pgClient';
+import { PROD_DATABASE_VARIABLES, prodClientConfig, prodHostOf, readProdDatabase } from '../lib/db/prodDatabase';
 import { fullSync, type SyncResult } from '../lib/db/sync-core';
-
-dotenv.config({ path: '.env.local' });
+import { isEntryPoint } from './shared/entryPoint';
 
 function parseTimeoutMs(raw: string | undefined, defaultMs: number): number {
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultMs;
 }
 
-const SYNC_TIMEOUT_MS = parseTimeoutMs(process.env.SYNC_TIMEOUT_MS, 60_000);
 const SHUTDOWN_GRACE_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 const DB_START_TIMEOUT_SECS = 60;
@@ -60,31 +59,25 @@ function describeError(err: unknown): string {
 }
 
 async function runSync(label: string): Promise<void> {
-  const prodUrl = process.env.PROD_DATABASE_URL;
+  const syncTimeoutMs = parseTimeoutMs(process.env.SYNC_TIMEOUT_MS, 60_000);
+  const prodDatabase = readProdDatabase(process.env);
   const localUrl = process.env.DATABASE_URL;
 
-  if (!prodUrl || !localUrl) {
-    console.log(`[sync] ${label}: skipped (PROD_DATABASE_URL or DATABASE_URL not set)`);
+  if (!prodDatabase || !localUrl) {
+    console.log(`[sync] ${label}: skipped (${PROD_DATABASE_VARIABLES}, or DATABASE_URL, not set)`);
     return;
   }
 
-  console.log(`[sync] ${label}: running full sync...`);
-  const prod = new Client({
-    connectionString: prodUrl,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-  });
-  const local = new Client({
-    connectionString: localUrl,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-  });
+  console.log(`[sync] ${label}: running full sync with ${prodHostOf(prodDatabase)}...`);
+  const prod = createPgClient({ ...prodClientConfig(prodDatabase), connectionTimeoutMillis: CONNECT_TIMEOUT_MS }, 'prod');
+  const local = createPgClient({ connectionString: localUrl, connectionTimeoutMillis: CONNECT_TIMEOUT_MS }, 'local');
 
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
     prod.end().catch(() => {});
     local.end().catch(() => {});
-  }, SYNC_TIMEOUT_MS);
+  }, syncTimeoutMs);
 
   try {
     await Promise.all([prod.connect(), local.connect()]);
@@ -92,7 +85,7 @@ async function runSync(label: string): Promise<void> {
     summarize(label, results);
   } catch (err) {
     if (timedOut) {
-      console.warn(`[sync] ${label} timed out after ${SYNC_TIMEOUT_MS}ms`);
+      console.warn(`[sync] ${label} timed out after ${syncTimeoutMs}ms`);
     } else {
       console.warn(`[sync] ${label} failed: ${describeError(err)}`);
     }
@@ -176,7 +169,10 @@ async function main() {
   });
 }
 
-main().catch(err => {
-  console.error('[dev-with-sync] fatal:', err);
-  process.exit(1);
-});
+if (isEntryPoint(import.meta.url)) {
+  dotenv.config({ path: '.env.local' });
+  main().catch(err => {
+    console.error('[dev-with-sync] fatal:', err);
+    process.exit(1);
+  });
+}

@@ -24,6 +24,8 @@ export type ApiErrorCode =
   | 'not_configured'
   | 'upstream_failed'
   | 'upstream_timeout'
+  | 'text_too_large'
+  | 'registry_unavailable'
   | 'internal_error';
 
 export interface ApiErrorBody {
@@ -174,6 +176,14 @@ export interface RubyRegistryResponse {
 }
 
 // /api/vocabulary
+export interface SaveVocabularyRequest extends BookRef {
+  word: string;
+  reading?: string;
+  sentence: string;
+  paragraphText?: string;
+  notes?: string;
+}
+
 export interface VocabularyListResponse {
   success: true;
   entries: VocabularyEntry[];
@@ -185,6 +195,12 @@ export interface VocabularyEntryResponse {
   success: true;
   message?: string;
   entry: VocabularyEntry;
+}
+
+// /api/vocabulary POST
+export interface SaveVocabularyResponse extends VocabularyEntryResponse {
+  /** False when the same word from the same sentence was already saved; `entry` is then the stored one. */
+  created: boolean;
 }
 
 export interface DeleteVocabularyResponse {
