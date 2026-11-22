@@ -11,6 +11,7 @@ const ENTRY_SCRIPTS = [
   '../db/migrate.ts',
   '../db/apply-schema-dsql.ts',
   '../db/copy-to-dsql.ts',
+  '../db/import-ruby-registry.ts',
   '../dev-with-sync.ts',
   '../auth/generate-password-hash.ts',
 ];
