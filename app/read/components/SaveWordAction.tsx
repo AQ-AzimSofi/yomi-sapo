@@ -66,7 +66,6 @@ function SaveWordAction({ unitTexts, book, isEnabled, bottomInsetPx }: SaveWordA
   const isSavedWordSelected = wordSelection === null || wordSelection === pendingSave?.selection;
   const isSaveShown = pendingSave !== null && (pendingSave.status === 'saving' || isSavedWordSelected);
   const shownSelection = isEnabled ? (isSaveShown ? pendingSave.selection : wordSelection) : null;
-  const isShown = shownSelection !== null;
 
   const close = useCallback(() => {
     setPendingSave(null);
@@ -83,8 +82,10 @@ function SaveWordAction({ unitTexts, book, isEnabled, bottomInsetPx }: SaveWordA
     return () => clearTimeout(timer);
   }, [pendingSave, isSavedWordSelected, dismiss]);
 
+  // Only the first Tab after a selection jumps to the button, so later ones move through the page as usual.
+  const tabbedSelectionRef = useRef<WordSelection | null>(null);
   useEffect(() => {
-    if (!isShown) return;
+    if (!shownSelection) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         // Captured before the reader's own Escape, which leaves the audiobook keyboard mode.
@@ -93,14 +94,16 @@ function SaveWordAction({ unitTexts, book, isEnabled, bottomInsetPx }: SaveWordA
         return;
       }
       if (event.key !== 'Tab' || event.shiftKey) return;
+      if (tabbedSelectionRef.current === shownSelection) return;
       if (groupRef.current?.contains(document.activeElement)) return;
       if (!buttonRef.current) return;
       event.preventDefault();
+      tabbedSelectionRef.current = shownSelection;
       buttonRef.current.focus();
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isShown, close]);
+  }, [shownSelection, close]);
 
   if (!shownSelection) return null;
 
