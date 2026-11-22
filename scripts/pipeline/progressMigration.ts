@@ -1,4 +1,4 @@
-import { listExpectedHeads, splitByChunkHeads } from './legacyOutputSplit';
+import { splitByChunkText } from './legacyOutputSplit';
 import { countCompletedChunks, simpleHash, type ChunkProgress, type ChunkProgressV1, type ProgressFile, type ProgressFileV1 } from './progress';
 import { FALLBACK_ERROR } from './rephraseChunk';
 
@@ -13,6 +13,11 @@ export interface MigratedProgress {
   chunkTexts: ChunkTexts[];
   /** The chunk the old run was stopped in when only -rephrase.txt got its text; it is redone. */
   droppedChunkIndex?: number;
+  /**
+   * -rephrase.txt did not split into chunks, as Gemini's replies reword the source lines. Nothing
+   * reads it, so it is kept whole as -rephrase.txt.bak and the moved-over chunks get empty replies.
+   */
+  shouldSetAsideRawOutput: boolean;
 }
 
 export type MigrationResult = { migrated: MigratedProgress } | { problem: string };
@@ -30,15 +35,15 @@ function findOutOfOrderChunk(items: readonly ChunkProgressV1[], completedCount: 
 }
 
 // A run stopped mid-chunk may have appended that chunk before it could mark it completed.
-function splitLegacyOutput(text: string, expectedHeadsByChunk: readonly string[][], chunkCounts: readonly number[]): string[] | undefined {
+function splitLegacyOutput(text: string, chunks: readonly string[], chunkCounts: readonly number[]): string[] | undefined {
   return chunkCounts
-    .map((chunkCount) => splitByChunkHeads(text, expectedHeadsByChunk.slice(0, chunkCount)))
+    .map((chunkCount) => splitByChunkText(text, chunks.slice(0, chunkCount)))
     .find((chunkTexts) => chunkTexts !== undefined);
 }
 
-function describeUnsplittable(fileSuffix: string, completedCount: number): string {
-  return `${fileSuffix} is not the ${completedCount} completed chunk(s) the progress file lists `
-    + '(each < line must match the source in order), so it cannot be split into chunk files. '
+function describeUnsplittable(completedCount: number): string {
+  return `-rephrase-furigana.txt is not the ${completedCount} completed chunk(s) the progress file lists `
+    + '(its < lines must hold the source text in order), so it cannot be split into chunk files. '
     + '--reset starts the book over.';
 }
 
@@ -56,8 +61,9 @@ function toChunkProgress(item: ChunkProgressV1, chunk: string, isFound: boolean)
 
 /**
  * Turns a version 1 progress file and the outputs it appended to into version 2 and one text per
- * chunk. A chunk counts as done only when both outputs hold it, so a chunk the old run was killed
- * in after writing only -rephrase.txt is redone, not kept twice. Gemini fallbacks become 'fallback'.
+ * chunk. A chunk counts as done only when the reader's file holds it, and also -rephrase.txt when
+ * that splits, so a chunk the old run was killed in after writing only -rephrase.txt is redone,
+ * not kept twice. Gemini fallbacks become 'fallback'.
  */
 export function migrateV1Progress(legacy: ProgressFileV1, chunks: readonly string[], outputs: ChunkTexts): MigrationResult {
   const { items } = legacy.chunks;
@@ -72,14 +78,12 @@ export function migrateV1Progress(legacy: ProgressFileV1, chunks: readonly strin
 
   const isInterrupted = items[completedCount]?.status === 'processing';
   const chunkCounts = isInterrupted ? [completedCount, completedCount + 1] : [completedCount];
-  const expectedHeadsByChunk = chunks.map(listExpectedHeads);
-  const rawChunkTexts = splitLegacyOutput(outputs.rawText, expectedHeadsByChunk, chunkCounts);
-  if (!rawChunkTexts) return { problem: describeUnsplittable('-rephrase.txt', completedCount) };
-  const furiganaChunkTexts = splitLegacyOutput(outputs.furiganaText, expectedHeadsByChunk, chunkCounts);
-  if (!furiganaChunkTexts) return { problem: describeUnsplittable('-rephrase-furigana.txt', completedCount) };
+  const furiganaChunkTexts = splitLegacyOutput(outputs.furiganaText, chunks, chunkCounts);
+  if (!furiganaChunkTexts) return { problem: describeUnsplittable(completedCount) };
+  const rawChunkTexts = splitLegacyOutput(outputs.rawText, chunks, chunkCounts);
 
-  const foundCount = Math.min(rawChunkTexts.length, furiganaChunkTexts.length);
-  const isChunkDropped = Math.max(rawChunkTexts.length, furiganaChunkTexts.length) > foundCount;
+  const foundCount = Math.min(rawChunkTexts?.length ?? furiganaChunkTexts.length, furiganaChunkTexts.length);
+  const isChunkDropped = Math.max(rawChunkTexts?.length ?? 0, furiganaChunkTexts.length) > foundCount;
   const migratedItems = items.map((item, index) => toChunkProgress(item, chunks[index], index < foundCount));
   return {
     migrated: {
@@ -88,8 +92,9 @@ export function migrateV1Progress(legacy: ProgressFileV1, chunks: readonly strin
         version: 2,
         chunks: { total: items.length, completed: countCompletedChunks(migratedItems), items: migratedItems },
       },
-      chunkTexts: rawChunkTexts.slice(0, foundCount).map((rawText, index) => ({ rawText, furiganaText: furiganaChunkTexts[index] })),
+      chunkTexts: furiganaChunkTexts.slice(0, foundCount).map((furiganaText, index) => ({ rawText: rawChunkTexts?.[index] ?? '', furiganaText })),
       droppedChunkIndex: isChunkDropped ? foundCount : undefined,
+      shouldSetAsideRawOutput: rawChunkTexts === undefined,
     },
   };
 }

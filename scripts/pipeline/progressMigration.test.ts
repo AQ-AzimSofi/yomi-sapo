@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { GEMINI_CHUNKS, GEMINI_READER_CHUNKS, GEMINI_REPLIES } from './fixtures/geminiV1Book';
 import { simpleHash, type ChunkProgressV1, type ProgressFileV1 } from './progress';
 import { migrateV1Progress, type MigrationResult } from './progressMigration';
 import { FALLBACK_ERROR } from './rephraseChunk';
@@ -50,6 +51,21 @@ describe('migrateV1Progress', () => {
       { rawText: rephraseOf(CHUNKS[0]), furiganaText: furiganaOf(CHUNKS[0]) },
       { rawText: rephraseOf(CHUNKS[1]), furiganaText: furiganaOf(CHUNKS[1]) },
     ]);
+    expect(result.shouldSetAsideRawOutput).toBe(false);
+  });
+
+  it('Test_migrateV1Progress_GeminiBookStoppedMidChunkMovesOver', () => {
+    const outputs = { rawText: GEMINI_REPLIES.join('\n\n'), furiganaText: GEMINI_READER_CHUNKS.join('\n\n') };
+    const result = migrated(migrateV1Progress(v1Progress(['completed', 'completed', 'completed', 'processing']), GEMINI_CHUNKS, outputs));
+    expect(result.progress.chunks.items.map((item) => item.status)).toEqual(['completed', 'completed', 'completed', 'pending']);
+    expect(result.chunkTexts.map((chunkTexts) => chunkTexts.furiganaText)).toEqual(GEMINI_READER_CHUNKS);
+  });
+
+  it('Test_migrateV1Progress_RepliesThatDoNotSplitAreSetAside', () => {
+    const outputs = { rawText: GEMINI_REPLIES.join('\n\n'), furiganaText: GEMINI_READER_CHUNKS.join('\n\n') };
+    const result = migrated(migrateV1Progress(v1Progress(['completed', 'completed', 'completed', 'pending']), GEMINI_CHUNKS, outputs));
+    expect(result.shouldSetAsideRawOutput).toBe(true);
+    expect(result.chunkTexts.map((chunkTexts) => chunkTexts.rawText)).toEqual(['', '', '']);
   });
 
   it('Test_migrateV1Progress_WritesVersion2WithChunkHashes', () => {
@@ -85,10 +101,10 @@ describe('migrateV1Progress', () => {
     expect(progress.chunks.completed).toBe(2);
   });
 
-  it('Test_migrateV1Progress_OutputThatDoesNotMatchIsAProblem', () => {
-    const outputs = { ...appendedOutputs({ raw: 1, furigana: 1 }), rawText: '< 別の行。\n>> 別。' };
+  it('Test_migrateV1Progress_ReaderFileThatDoesNotMatchIsAProblem', () => {
+    const outputs = { ...appendedOutputs({ raw: 1, furigana: 1 }), furiganaText: '< 別の行。\r\n>> 別。' };
     const result = migrateV1Progress(v1Progress(['completed', 'pending', 'pending']), CHUNKS, outputs);
-    expect(result).toEqual({ problem: expect.stringContaining('-rephrase.txt is not the 1 completed chunk(s)') });
+    expect(result).toEqual({ problem: expect.stringContaining('-rephrase-furigana.txt is not the 1 completed chunk(s)') });
   });
 
   it('Test_migrateV1Progress_CompletedAfterUnfinishedIsAProblem', () => {

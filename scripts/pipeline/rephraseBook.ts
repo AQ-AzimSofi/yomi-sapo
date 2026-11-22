@@ -63,6 +63,8 @@ interface RunStart {
   isFreshStart: boolean;
   /** Chunk files to write before the first save: the earlier version's outputs split per chunk. */
   migratedChunkTexts: ChunkTexts[];
+  /** The earlier version's -rephrase.txt did not split per chunk, so it is kept whole as .bak. */
+  shouldSetAsideRawOutput: boolean;
 }
 
 type RunPlan = { start: RunStart } | { problem: string };
@@ -115,7 +117,7 @@ function planFreshStart({ bookName, sourceText }: BookSource, options: RephraseO
     chunking,
     settings: { chunkSize: options.chunkSize, delaySeconds, model: options.model },
   });
-  return { progress, chunks: chunking.chunks, isFreshStart: true, migratedChunkTexts: [] };
+  return { progress, chunks: chunking.chunks, isFreshStart: true, migratedChunkTexts: [], shouldSetAsideRawOutput: false };
 }
 
 function planMigration(legacy: ProgressFileV1, chunks: string[], files: BookFiles): RunPlan {
@@ -128,7 +130,8 @@ function planMigration(legacy: ProgressFileV1, chunks: string[], files: BookFile
   if (migrated.droppedChunkIndex !== undefined) {
     console.log(`Chunk ${migrated.droppedChunkIndex + 1} was only half saved when the earlier run stopped; it is redone`);
   }
-  return { start: { progress: migrated.progress, chunks, isFreshStart: false, migratedChunkTexts: migrated.chunkTexts } };
+  const { progress, chunkTexts, shouldSetAsideRawOutput } = migrated;
+  return { start: { progress, chunks, isFreshStart: false, migratedChunkTexts: chunkTexts, shouldSetAsideRawOutput } };
 }
 
 function planRun(book: BookSource, options: RephraseOptions): RunPlan {
@@ -148,7 +151,7 @@ function planRun(book: BookSource, options: RephraseOptions): RunPlan {
   if (resetIndexes.length > 0) {
     console.log(`\nChunk(s) ${resetIndexes.map((index) => index + 1).join(', ')} no longer match the source and are redone`);
   }
-  return { start: { progress, chunks, isFreshStart: false, migratedChunkTexts: [] } };
+  return { start: { progress, chunks, isFreshStart: false, migratedChunkTexts: [], shouldSetAsideRawOutput: false } };
 }
 
 function logRunPlan(start: RunStart, rephraser: ChunkRephraser, options: RephraseOptions): void {
@@ -181,19 +184,20 @@ function printChunkPreview(chunks: readonly string[]): void {
   });
 }
 
-// A fresh start writes new chunk files, so an earlier run's output is kept aside rather than mixed in.
-function setAsideEarlierOutput(outputPaths: string[]): void {
+// The outputs are rebuilt from chunk files, so an earlier output they would not hold is kept aside rather than overwritten.
+function setAsideEarlierOutput(outputPaths: string[], reason: string): void {
   outputPaths.filter((outputPath) => fs.existsSync(outputPath)).forEach((outputPath) => {
     const asidePath = `${outputPath}.bak`;
     fs.rmSync(asidePath, { recursive: true, force: true });
     fs.renameSync(outputPath, asidePath);
-    console.log(`Starting fresh: moved the earlier output to ${path.basename(asidePath)}`);
+    console.log(`${reason}: moved the earlier output to ${path.basename(asidePath)}`);
   });
 }
 
 // Saving the progress file is the commit point: until then a rerun plans the same start again.
 function commitRunStart(files: BookFiles, start: RunStart, writeFile: WriteFile): void {
-  if (start.isFreshStart) setAsideEarlierOutput([files.rawPath, files.furiganaPath, files.chunksDir]);
+  if (start.isFreshStart) setAsideEarlierOutput([files.rawPath, files.furiganaPath, files.chunksDir], 'Starting fresh');
+  if (start.shouldSetAsideRawOutput) setAsideEarlierOutput([files.rawPath], 'The earlier replies do not split per chunk');
   fs.mkdirSync(files.chunksDir, { recursive: true });
   start.migratedChunkTexts.forEach((chunkTexts, chunkIndex) => {
     writeFile(getChunkPath(files.chunksDir, chunkIndex, 'rephrase'), chunkTexts.rawText);

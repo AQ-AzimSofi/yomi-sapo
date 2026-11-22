@@ -7,6 +7,7 @@ import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { splitParagraphs } from '../utils/claude-rephrase';
 import { getBookFiles } from './chunkFiles';
 import { chunkText, stripRubyTags } from './chunking';
+import { GEMINI_CHUNKS, GEMINI_CHUNK_SIZE, GEMINI_READER_CHUNKS, GEMINI_REPLIES } from './fixtures/geminiV1Book';
 import { createProgress, type ProgressFile, type ProgressFileV1 } from './progress';
 import type { FuriganaResult } from './furigana';
 import { batchRephrase, type RephraseDeps, type RephraseOptions } from './rephraseBook';
@@ -158,6 +159,35 @@ describe('batchRephrase', () => {
     fs.writeFileSync(files.progressPath, JSON.stringify(v1));
     fs.writeFileSync(files.rawPath, replies.slice(0, 2).map((reply) => reply.rawText).join('\n\n'));
     fs.writeFileSync(files.furiganaPath, addFakeFurigana(replies[0].readerText).text);
+  }
+
+  // What the version 1 pipeline left for the Gemini book of fixtures/geminiV1Book, stopped in its last chunk.
+  function writeGeminiV1StoppedInLastChunk(): void {
+    fs.rmSync(testRoot, { recursive: true, force: true });
+    fs.mkdirSync(sourceDir, { recursive: true });
+    const sourceText = GEMINI_CHUNKS.join('');
+    fs.writeFileSync(files.sourcePath, sourceText);
+    const v2 = createProgress({
+      bookName: BOOK_NAME, directory: `bookv2-furigana/${BOOK_NAME}`, sourceText, chunking: chunkText(sourceText, GEMINI_CHUNK_SIZE),
+      settings: { chunkSize: GEMINI_CHUNK_SIZE, delaySeconds: 0, model: 'gemini-3-flash-preview' },
+    });
+    const statuses = ['completed', 'completed', 'completed', 'processing'] as const;
+    const v1: ProgressFileV1 = {
+      ...v2,
+      version: 1,
+      chunks: {
+        ...v2.chunks,
+        completed: 3,
+        items: v2.chunks.items.map(({ index, startChar, endChar, attempts }) => ({ index, startChar, endChar, attempts, status: statuses[index] })),
+      },
+    };
+    fs.writeFileSync(files.progressPath, JSON.stringify(v1));
+    fs.writeFileSync(files.rawPath, GEMINI_REPLIES.join('\n\n'));
+    fs.writeFileSync(files.furiganaPath, GEMINI_READER_CHUNKS.join('\n\n'));
+  }
+
+  function readSetAsideReplies(): string {
+    return fs.readFileSync(`${files.rawPath}.bak`, 'utf-8');
   }
 
   beforeEach(() => {
@@ -409,6 +439,32 @@ describe('batchRephrase', () => {
         await batchRephrase(book, OPTIONS, createFakeDeps().deps);
         const { rawText, furiganaText } = readOutputs();
         expect({ rawText, furiganaText }, `killed after ${writeCount} writes`).toEqual({ rawText: reference.rawText, furiganaText: reference.furiganaText });
+      }
+    }, KILL_LOOP_TIMEOUT_MS);
+
+    it('Test_batchRephrase_V1GeminiProgressMovesOverAndSetsTheRepliesAside', async () => {
+      writeGeminiV1StoppedInLastChunk();
+      const resumed = createFakeDeps();
+      expect(await batchRephrase(book, OPTIONS, resumed.deps)).toBe(true);
+      expect(resumed.rephrasedChunkIndexes).toEqual([3]);
+      const lastChunk = addFakeFurigana(rephraseOf(GEMINI_CHUNKS[3])).text;
+      expect(readOutputs().furiganaText).toBe([...GEMINI_READER_CHUNKS, lastChunk].join('\n\n'));
+      expect(readSetAsideReplies()).toBe(GEMINI_REPLIES.join('\n\n'));
+    });
+
+    it('Test_batchRephrase_V1GeminiProgressKilledWhileMovingOverKeepsTheReplies', async () => {
+      writeGeminiV1StoppedInLastChunk();
+      const { deps, writtenPaths } = createFakeDeps();
+      await batchRephrase(book, OPTIONS, deps);
+      const reference = readOutputs().furiganaText;
+
+      for (const writeCount of writtenPaths.keys()) {
+        writeGeminiV1StoppedInLastChunk();
+        const killed = batchRephrase(book, OPTIONS, createFakeDeps({ writeFile: createKillingWriter(writeCount) }).deps);
+        await expect(killed).rejects.toBeInstanceOf(KillSignal);
+        await batchRephrase(book, OPTIONS, createFakeDeps().deps);
+        const resumed = { furiganaText: readOutputs().furiganaText, replies: readSetAsideReplies() };
+        expect(resumed, `killed after ${writeCount} writes`).toEqual({ furiganaText: reference, replies: GEMINI_REPLIES.join('\n\n') });
       }
     }, KILL_LOOP_TIMEOUT_MS);
 
