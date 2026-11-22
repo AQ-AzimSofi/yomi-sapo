@@ -15,6 +15,7 @@ import { buildPlayableUnits } from '@/lib/content/bookModel';
 import { stripFurigana } from '@/lib/utils/furiganaParser';
 import type { NarrationCue } from '@/lib/types';
 import { isEntryPoint } from '../shared/entryPoint';
+import { formatHelp, isHelpRequested, numberFlag, parseCommandLine, textFlag } from '../shared/cliSchema';
 
 /** What this script emits: cue positions only. The audio location is attached
  *  later by scripts/db/sync-narration.ts, which is what the reader reads. */
@@ -32,7 +33,6 @@ interface TimingCue {
 const SEARCH_WINDOW = 12;
 const MAX_SPAN_LENGTH_RATIO = 1.6;
 const MIN_SCORE = 0.6;
-const DEFAULT_MIN_COVERAGE = 0.9;
 const DROPPED_PATTERN = /[\s。、「」『』（）()・！？!?…‥,.]/g;
 
 function normalize(text: string): string {
@@ -82,17 +82,24 @@ function parseTimings(raw: string, path: string): TimingCue[] {
   });
 }
 
-function readArg(name: string): string | null {
-  const index = process.argv.indexOf(`--${name}`);
-  if (index === -1 || index + 1 >= process.argv.length) return null;
-  const value = process.argv[index + 1];
-  // Swallowing the next flag as a value turns a missing argument into a plausible
-  // wrong one, e.g. --audio-url --out x yielding an audioUrl of "--out".
-  if (value.startsWith('--')) {
-    throw new Error(`--${name} needs a value, found "${value}".`);
-  }
-  return value;
-}
+export const NARRATION_FLAGS = {
+  timings: textFlag({ name: 'timings', valueName: 'file', isRequired: true, description: 'The .timings.json align-transcript.py wrote' }),
+  text: textFlag({ name: 'text', valueName: 'file', isRequired: true, description: 'The book text, the same revision synced to text_entries' }),
+  out: textFlag({ name: 'out', valueName: 'file', isRequired: true, description: 'Where the manifest is written' }),
+  minCoverage: numberFlag({
+    name: 'min-coverage',
+    valueName: '0-1',
+    defaultValue: 0.9,
+    min: 0,
+    max: 1,
+    description: 'Share of reader units that must get a cue, or nothing is written',
+  }),
+};
+
+export const HELP_TEXT = formatHelp(NARRATION_FLAGS, {
+  summary: 'Build a narration manifest from aligned audiobook timings',
+  usage: ['npx tsx scripts/audio/build-narration.ts --timings <file> --text <file> --out <file> [options]'],
+});
 
 function matchCues(unitTexts: string[], cues: TimingCue[]): (NarrationCue | null)[] {
   const cueTexts = cues.map((cue) => normalize(cue.text));
@@ -139,14 +146,12 @@ function matchCues(unitTexts: string[], cues: TimingCue[]): (NarrationCue | null
   return matched;
 }
 
-function main(): void {
-  const timingsPath = readArg('timings');
-  const textPath = readArg('text');
-  const outPath = readArg('out');
-
-  if (!timingsPath || !textPath || !outPath) {
-    throw new Error('Usage: --timings <file> --text <file> --out <file> [--min-coverage <0-1>]');
+function main(args: string[]): void {
+  if (isHelpRequested(args)) {
+    console.log(HELP_TEXT);
+    return;
   }
+  const { timings: timingsPath, text: textPath, out: outPath, minCoverage } = parseCommandLine(NARRATION_FLAGS, args).flags;
 
   const cues = parseTimings(fs.readFileSync(timingsPath, 'utf8'), timingsPath);
   // The plain/furigana reader splits paragraphs on a blank LF line, so a CRLF
@@ -166,13 +171,6 @@ function main(): void {
   console.log(`cues:     ${cues.length}`);
   console.log(`covered:  ${covered} (${(coverage * 100).toFixed(1)}%)`);
 
-  const minCoverageArg = readArg('min-coverage');
-  const minCoverage = minCoverageArg === null ? DEFAULT_MIN_COVERAGE : Number(minCoverageArg);
-  // NaN would make every comparison false and silently disable the gate this flag
-  // exists to tune, so a typo has to fail rather than wave the manifest through.
-  if (!isFinite(minCoverage) || minCoverage < 0 || minCoverage > 1) {
-    throw new Error(`--min-coverage must be a number between 0 and 1, got "${minCoverageArg}".`);
-  }
   if (coverage < minCoverage) {
     throw new Error(
       `Coverage ${(coverage * 100).toFixed(1)}% is below ${(minCoverage * 100).toFixed(1)}%. ` +
@@ -188,7 +186,7 @@ function main(): void {
 
 if (isEntryPoint(import.meta.url)) {
   try {
-    main();
+    main(process.argv.slice(2));
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
