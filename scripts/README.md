@@ -8,7 +8,7 @@ Offline tools for preparing books, narration and the database. None of them run 
 |------|--------------|
 | `epub-to-book.ts` | The book pipeline, see [Book Pipeline](#book-pipeline-epub-to-bookts) |
 | `core/epub-to-text-furigana.py` | Pipeline step 1: EPUB to text with furigana, plus the images and a metadata JSON. It also runs on its own, see [README-epub-converter.md](./README-epub-converter.md) |
-| `core/extract-ruby-smart.py` | Pipeline step 2: the ruby registry (vocabulary index). It takes no arguments: it reads every `.epub` in `temp/` and writes `ruby-registry.json` into the matching book folder, so the pipeline copies the EPUB there first |
+| `core/extract-ruby-smart.py` | Pipeline step 2: the ruby registry (vocabulary index). `extract-ruby-smart.py <book.epub> --out <book folder>/ruby-registry.json`; the folder name becomes the registry's `bookTitle`, and it exits non-zero without writing when the EPUB cannot be read |
 | `core/add-furigana-to-text.py` | Pipeline step 5: furigana for the rephrased text |
 | `core/furigana_helper.py` | MeCab furigana generation shared by the three scripts above |
 | `utils/claude-rephrase.ts`, `prompts/claude-rephrase.md` | The Claude rephraser: runs `claude -p` with the prompt file as its system prompt |

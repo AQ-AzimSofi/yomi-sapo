@@ -1,10 +1,10 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import { describePython, resolvePython, runPython } from '../shared/python';
-import { CORE_SCRIPTS_DIR, REPO_ROOT } from '../shared/repoPaths';
+import { CORE_SCRIPTS_DIR } from '../shared/repoPaths';
 import type { KanjiFilter } from './runner';
 
 const EXTRACT_SCRIPT = path.join(CORE_SCRIPTS_DIR, 'epub-to-text-furigana.py');
+const RUBY_REGISTRY_SCRIPT = path.join(CORE_SCRIPTS_DIR, 'extract-ruby-smart.py');
 
 /** What epub-to-text-furigana.py prints as the last line of its stdout. */
 export interface ExtractedBook {
@@ -46,39 +46,7 @@ export function extractEpub(epubPath: string, libraryDir: string, filter: KanjiF
   return book;
 }
 
-// ============================================================================
-// Ruby Registry Extraction
-// ============================================================================
-
-export function extractRubyRegistry(epubPath: string): boolean {
-  // Create temp directory and copy EPUB there for extract-ruby-smart.py
-  const tempDir = path.join(REPO_ROOT, 'temp');
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-
-  const epubName = path.basename(epubPath);
-  const tempEpubPath = path.join(tempDir, epubName);
-
-  // Copy EPUB to temp
-  fs.copyFileSync(epubPath, tempEpubPath);
-  console.log(`Copied EPUB to: ${tempEpubPath}`);
-
-  try {
-    runPython([path.join(CORE_SCRIPTS_DIR, 'extract-ruby-smart.py')]);
-
-    // Clean up temp file
-    if (fs.existsSync(tempEpubPath)) {
-      fs.unlinkSync(tempEpubPath);
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error extracting ruby registry:', error);
-    // Clean up on error
-    if (fs.existsSync(tempEpubPath)) {
-      fs.unlinkSync(tempEpubPath);
-    }
-    return false;
-  }
+/** Writes <bookDir>/ruby-registry.json from the EPUB's ruby. Throws when the EPUB cannot be read. */
+export function extractRubyRegistry(epubPath: string, bookDir: string): void {
+  runPython([RUBY_REGISTRY_SCRIPT, epubPath, '--out', path.join(bookDir, 'ruby-registry.json')]);
 }

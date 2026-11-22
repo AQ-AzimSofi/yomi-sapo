@@ -3,12 +3,18 @@ import { uploadBookImages } from './illustrationUpload';
 import { batchRephrase, defaultRephraseDeps } from './rephraseBook';
 import type { Step } from './runner';
 
+// The reader works without a ruby registry, so a failure here warns instead of stopping the book.
 export const rubyRegistryStep: Step = {
   name: 'Ruby Registry',
   shouldRun: ({ book }) => book.epubPath !== undefined,
   run: async ({ book }) => {
     if (!book.epubPath) throw new Error('The ruby registry needs the EPUB the book came from');
-    extractRubyRegistry(book.epubPath);
+    try {
+      extractRubyRegistry(book.epubPath, book.sourceDir);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`Ruby registry not written (${reason}). The reader works without it; run the book again to retry.`);
+    }
   },
 };
 
