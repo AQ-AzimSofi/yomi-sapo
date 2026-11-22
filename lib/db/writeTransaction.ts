@@ -1,4 +1,5 @@
 import type postgres from 'postgres';
+import { errorCodeOf } from './errorCode';
 
 export interface WriteRetryPolicy {
   maxAttempts: number;
@@ -15,7 +16,7 @@ const SERIALIZATION_FAILURE = '40001';
 export type WriteWork = (tx: postgres.TransactionSql) => Promise<unknown>;
 
 function isSerializationFailure(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === SERIALIZATION_FAILURE;
+  return errorCodeOf(error) === SERIALIZATION_FAILURE;
 }
 
 /** Exponential steps, each scaled by a random factor in [0.5, 1.5) so writers that collided do not collide again. */

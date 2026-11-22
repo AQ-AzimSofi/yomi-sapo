@@ -1,6 +1,7 @@
 import type { Client } from 'pg';
 import { bookTextTooLargeError } from './bookTextSize';
 import { withCurrentContentBytes } from './contentBytes';
+import { errorCodeOf } from './errorCode';
 import { createPgClient } from './pgClient';
 import { prodClientConfig, type ProdDatabase } from './prodDatabase';
 import { retryOnSerializationFailure } from './writeTransaction';
@@ -249,11 +250,6 @@ const SCALAR_PARAMETER_BYTES = 8;
 
 // Aurora DSQL answers a message over 10 MiB with 08P01 and then drops the connection.
 const PROTOCOL_VIOLATION = '08P01';
-
-function errorCodeOf(err: unknown): string | undefined {
-  if (typeof err !== 'object' || err === null || !('code' in err)) return undefined;
-  return typeof err.code === 'string' ? err.code : undefined;
-}
 
 function isConnectionLost(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
