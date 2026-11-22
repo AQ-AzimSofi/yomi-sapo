@@ -4,6 +4,7 @@ import {
   compareRows,
   COPY_TABLES,
   deleteRowSql,
+  IMPORTED_TABLES,
   planTableShapes,
   selectRowsSql,
   setSequenceSql,
@@ -47,6 +48,10 @@ describe('COPY_TABLES', () => {
     expect(COPY_TABLES.map((spec) => spec.name)).toEqual(['bookmarks', 'text_entries', 'narration', 'vocabulary_entries']);
   });
 
+  it('leaves the ruby registry, which Neon does not have, to its import script', () => {
+    expect(IMPORTED_TABLES).toEqual([{ name: 'ruby_registry_entries', importedBy: 'npx tsx scripts/db/import-ruby-registry.ts' }]);
+  });
+
   it('copies content_bytes only while it matches the book text', () => {
     const textEntries = COPY_TABLES.find((spec) => spec.name === 'text_entries');
 
@@ -75,10 +80,16 @@ describe('planTableShapes', () => {
     });
   });
 
-  it('refuses a target table that COPY_TABLES does not list, such as a table added later', () => {
-    const target = { tables: ['bookmarks', 'ruby_registry'], columns: TARGET_BOOKMARK_COLUMNS };
+  it('refuses a target table that no list names, such as a table added later', () => {
+    const target = { tables: ['bookmarks', 'reading_log'], columns: TARGET_BOOKMARK_COLUMNS };
 
-    expect(() => planTableShapes([BOOKMARKS_SPEC], SOURCE, target)).toThrow(/ruby_registry, which COPY_TABLES/);
+    expect(() => planTableShapes([BOOKMARKS_SPEC], SOURCE, target)).toThrow(/reading_log, which neither COPY_TABLES nor IMPORTED_TABLES/);
+  });
+
+  it('leaves a table that IMPORTED_TABLES names to its import, even when the source lacks it', () => {
+    const target = { tables: ['bookmarks', 'ruby_registry_entries'], columns: TARGET_BOOKMARK_COLUMNS };
+
+    expect(planTableShapes([BOOKMARKS_SPEC], SOURCE, target).map((shape) => shape.spec.name)).toEqual(['bookmarks']);
   });
 
   it('refuses a target without the table', () => {
