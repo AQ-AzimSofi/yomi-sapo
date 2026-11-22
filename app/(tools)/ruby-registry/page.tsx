@@ -9,12 +9,7 @@ import { toTint } from '@/lib/utils/colorTint';
 import { useRubyRegistry } from '@/app/hooks/useRubyRegistry';
 import type { RubyEntry } from '@/lib/types';
 import { listTextFiles } from '@/lib/api/client';
-
-interface BookOption {
-  directory: string;
-  bookName: string;
-  label: string;
-}
+import { registryBookOptions, type BookOption } from './registryBookOptions';
 
 const INPUT_STYLE = {
   backgroundColor: COLORS.SURFACE,
@@ -59,17 +54,7 @@ function RubyRegistryContent() {
   const fetchBooks = async () => {
     try {
       const data = await listTextFiles();
-
-      const options: BookOption[] = [];
-      for (const [dir, files] of Object.entries(data.filesByDirectory)) {
-        for (const file of files) {
-          options.push({
-            directory: dir,
-            bookName: file,
-            label: `${dir}/${file}`,
-          });
-        }
-      }
+      const options = registryBookOptions(data.filesByDirectory);
       setBooks(options);
 
       if (!selectedBook && options.length > 0) {
