@@ -4,8 +4,8 @@ import path from 'node:path';
 import { isClaudeModel } from '../utils/claude-rephrase';
 import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { createKeyPool } from '../shared/geminiKeyPool';
-import { resolvePython, runPython } from '../shared/python';
-import { CORE_SCRIPTS_DIR, REPO_ROOT } from '../shared/repoPaths';
+import { runPython } from '../shared/python';
+import { CORE_SCRIPTS_DIR } from '../shared/repoPaths';
 import { getBookFiles, getChunkPath, readFileOrEmpty, rebuildOutputs, type BookFiles } from './chunkFiles';
 import { chunkText, stripRubyTags } from './chunking';
 import {
@@ -132,13 +132,10 @@ function addFuriganaWithPython(readerText: string): FuriganaResult {
     const inputPath = path.join(workDir, 'chunk.txt');
     const outputPath = path.join(workDir, 'chunk-furigana.txt');
     fs.writeFileSync(inputPath, readerText, 'utf-8');
-    const furiganaRun = runPython(resolvePython(), [path.join(CORE_SCRIPTS_DIR, 'add-furigana-to-text.py'), inputPath, '-o', outputPath], {
-      cwd: REPO_ROOT,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    if (furiganaRun.status === 0) return { text: fs.readFileSync(outputPath, 'utf-8') };
-    const reason = furiganaRun.error?.message ?? `add-furigana-to-text.py exited with ${furiganaRun.status ?? 'no code (killed)'}: ${furiganaRun.stderr}`;
+    runPython([path.join(CORE_SCRIPTS_DIR, 'add-furigana-to-text.py'), inputPath, '-o', outputPath], { isStderrCaptured: true });
+    return { text: fs.readFileSync(outputPath, 'utf-8') };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
     return { text: readerText, error: reason.slice(0, MAX_FURIGANA_ERROR_CHARS) };
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });

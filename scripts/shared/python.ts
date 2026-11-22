@@ -1,4 +1,4 @@
-import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { REPO_ROOT } from './repoPaths';
@@ -37,17 +37,41 @@ export function describePython(python: PythonCommand): string {
   return [python.command, ...python.launcherArgs].join(' ');
 }
 
-export function runPython(python: PythonCommand, args: string[], options: SpawnSyncOptions) {
-  return spawnSync(python.command, [...python.launcherArgs, ...args], options);
+export interface PythonRunOptions {
+  /** Keep stderr for the error message instead of showing it as it is written. */
+  isStderrCaptured?: boolean;
+}
+
+/**
+ * Runs the resolved Python with args from the repo root and returns its stdout. Throws when Python
+ * cannot start or exits non-zero. stdin stays the console's, and stderr is shown live unless captured.
+ */
+export function runPython(args: string[], options: PythonRunOptions = {}): string {
+  const python = resolvePython();
+  const result = spawnSync(python.command, [...python.launcherArgs, ...args], {
+    cwd: REPO_ROOT,
+    encoding: 'utf-8',
+    // A pipe gets the Windows code page by default, which garbles Japanese and fails on characters outside it.
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    stdio: ['inherit', 'pipe', options.isStderrCaptured ? 'pipe' : 'inherit'],
+  });
+  const commandLine = `${describePython(python)} ${path.basename(args[0] ?? '')}`;
+  if (result.error) throw new Error(`${commandLine} could not run: ${result.error.message}`);
+  if (result.status === 0) return result.stdout;
+  const exitReason = result.status === null ? `was stopped by ${result.signal}` : `exited with ${result.status}`;
+  const stderr = options.isStderrCaptured ? `: ${result.stderr.trim()}` : '';
+  throw new Error(`${commandLine} ${exitReason}${stderr}`);
 }
 
 // Every Python step needs MeCab; finding out before the first chunk beats a furigana step that fails hours in.
-export function assertPythonHasMeCab(python: PythonCommand): void {
-  const result = runPython(python, ['-c', 'import MeCab'], { encoding: 'utf-8' });
-  if (result.status === 0) return;
-  const reason = result.error?.message ?? String(result.stderr).trim();
-  throw new Error(
-    `${describePython(python)} cannot import MeCab (${reason}). ` +
-      'Install the Python dependencies (pip install -r scripts/requirements.txt) or set PYTHON to an interpreter that has them.',
-  );
+export function assertPythonHasMeCab(): void {
+  try {
+    runPython(['-c', 'import MeCab'], { isStderrCaptured: true });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Python cannot import MeCab (${reason}). ` +
+        'Install the Python dependencies (pip install -r scripts/requirements.txt) or set PYTHON to an interpreter that has them.',
+    );
+  }
 }
