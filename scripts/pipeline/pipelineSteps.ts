@@ -26,12 +26,30 @@ export const illustrationUploadStep: Step = {
   run: async ({ options, book }) => uploadBookImages(options.outputDir, book.bookName, options.dryRun),
 };
 
+/**
+ * Runs the task with a signal that Ctrl+C aborts. Only the first Ctrl+C is caught, so a second
+ * one kills the process the usual way should the stop itself hang.
+ */
+async function runUntilInterrupted<Result>(task: (signal: AbortSignal) => Promise<Result>): Promise<Result> {
+  const stopController = new AbortController();
+  const onInterrupt = () => {
+    console.log('\n\nCtrl+C: stopping. Saved chunks are kept; a chunk in flight is redone on the next run.');
+    stopController.abort();
+  };
+  process.once('SIGINT', onInterrupt);
+  try {
+    return await task(stopController.signal);
+  } finally {
+    process.off('SIGINT', onInterrupt);
+  }
+}
+
 export const rephraseStep: Step = {
   name: 'Rephrase',
   shouldRun: ({ options }) => !options.skipRephrase,
   run: async ({ options, book }) => {
-    const deps = { ...defaultRephraseDeps, syncToDatabase: createDatabaseSync(options.databaseUrl) };
-    const isComplete = await batchRephrase(book, options, deps);
+    const syncToDatabase = createDatabaseSync(options.databaseUrl);
+    const isComplete = await runUntilInterrupted((stopSignal) => batchRephrase(book, options, { ...defaultRephraseDeps, syncToDatabase, stopSignal }));
     if (isComplete || options.dryRun) return;
     console.log('\nRephrasing incomplete. Run again to resume.');
   },

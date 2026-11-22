@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatPairs, isClaudeModel, numberParagraphs, parseRewrites, splitParagraphs } from './claude-rephrase';
+import { formatPairs, isClaudeModel, numberParagraphs, parseRewrites, rephraseWithClaude, splitParagraphs } from './claude-rephrase';
+
+describe('rephraseWithClaude', () => {
+  it('Test_rephraseWithClaude_StoppedBeforeTheCallStartsNoClaude', async () => {
+    await expect(rephraseWithClaude(['吾輩は猫である。'], 'sonnet', AbortSignal.abort())).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
 
 describe('isClaudeModel', () => {
   it('Test_isClaudeModel_ClaudeAlias', () => {

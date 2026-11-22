@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { AI_MODELS, VN_RETRY_CONFIG } from '../../lib/constants';
 import { rephraseWithClaude, splitParagraphs } from '../utils/claude-rephrase';
 import { stripRubyTags } from './chunking';
@@ -59,10 +60,6 @@ function logRephraseCheck(sanitized: SanitizedRephrase): void {
   sanitized.readerMismatches.forEach((mismatch) => console.log(`    ! the reader reads this differently: ${mismatch}`));
 }
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 export const FALLBACK_ERROR = 'Used original text (rephrase failed)';
 const RESUME_HINT = 'Progress is saved. Run the same command again to resume from this chunk.';
 const CORRECTION_PREFIX = '回答のフォーマットが正しくありません。もう一度やり直してください。必ず下記の構成に従ってください。\n';
@@ -77,16 +74,21 @@ export interface ChunkOutput {
   error?: string;
 }
 
+export interface ChunkRequest {
+  chunkIndex: number;
+  /** Ctrl+C: ends the request in flight and every wait at once; the chunk stays unsaved. */
+  signal: AbortSignal;
+}
+
 export interface ChunkRephraser {
   /** Free keys the delay between chunks is shared over; 1 when there is no key rotation. */
   keyCount: number;
-  rephraseChunk: (chunk: string, chunkIndex: number) => Promise<ChunkOutput>;
+  rephraseChunk: (chunk: string, request: ChunkRequest) => Promise<ChunkOutput>;
 }
 
-interface ModelRequest {
+interface ModelRequest extends ChunkRequest {
   model: string;
   keyPool: KeyPool;
-  chunkIndex: number;
   cleanChunk: string;
 }
 
@@ -102,8 +104,8 @@ type ModelResult =
   | { outcome: 'out-of-keys'; requestCount: number }
   | { outcome: 'model-unavailable'; requestCount: number };
 
-async function generateText(key: ApiKey, model: string, prompt: string): Promise<string> {
-  const response = await key.client.models.generateContent({ model, contents: prompt });
+async function generateText(key: ApiKey, prompt: string, request: ModelRequest): Promise<string> {
+  const response = await key.client.models.generateContent({ model: request.model, contents: prompt, config: { abortSignal: request.signal } });
   return response.text || '';
 }
 
@@ -117,7 +119,7 @@ async function requestWithModel(request: ModelRequest, current: ModelAttempt): P
   if (!key) return { outcome: 'out-of-keys', requestCount };
 
   console.log(`    Attempt ${current.attempt}/${maxAttempts} (${key.envName})...`);
-  const outcome = await generateText(key, model, current.instruction + request.cleanChunk).then(
+  const outcome = await generateText(key, current.instruction + request.cleanChunk, request).then(
     (text) => ({ text, error: undefined }),
     (error: unknown) => ({ text: undefined, error }),
   );
@@ -129,6 +131,7 @@ async function requestWithModel(request: ModelRequest, current: ModelAttempt): P
     return requestWithModel(request, { attempt: current.attempt + 1, instruction: CORRECTION_PREFIX + ai_instructions });
   }
 
+  request.signal.throwIfAborted();
   console.error(`    API error on attempt ${current.attempt}:`, describeError(outcome.error));
   const isFreeKey = key !== keyPool.paidKey;
   const unusableKeyReason = describeUnusableKey(outcome.error, model);
@@ -147,7 +150,7 @@ async function requestWithModel(request: ModelRequest, current: ModelAttempt): P
   }
   const waitSecs = Math.min(MAX_RETRY_WAIT_SECS, current.attempt * 10);
   console.log(`    Waiting ${waitSecs}s before retry...`);
-  await sleep(waitSecs * 1000);
+  await sleep(waitSecs * 1000, undefined, { signal: request.signal });
   return requestWithModel(request, { ...current, attempt: current.attempt + 1 });
 }
 
@@ -186,14 +189,14 @@ export function createGeminiRephraser(model: string, createPool: () => KeyPool):
   };
   const requestedModelPool = getPool(model);
 
-  const rephraseChunk = async (chunk: string, chunkIndex: number): Promise<ChunkOutput> => {
+  const rephraseChunk = async (chunk: string, chunkRequest: ChunkRequest): Promise<ChunkOutput> => {
     const cleanChunk = stripRubyTags(chunk);
     const result = await listModelsToTry(model).reduce<Promise<ModelResult & { usedModel: string }>>(
       async (previous, currentModel) => {
         const earlier = await previous;
         if (earlier.outcome !== 'model-unavailable') return earlier;
         console.log(`    Trying model: ${currentModel}`);
-        const request = { model: currentModel, keyPool: getPool(currentModel), chunkIndex, cleanChunk };
+        const request = { ...chunkRequest, model: currentModel, keyPool: getPool(currentModel), cleanChunk };
         const modelResult = await requestWithModel(request, { attempt: 1, instruction: ai_instructions });
         return { ...modelResult, requestCount: earlier.requestCount + modelResult.requestCount, usedModel: currentModel };
       },
@@ -218,8 +221,8 @@ export function createGeminiRephraser(model: string, createPool: () => KeyPool):
 }
 
 // A failed claude -p call (usage limit, sign-in) stops the run; this chunk stays unfinished, so rerunning resumes it.
-async function rephraseChunkWithClaude(chunk: string, model: string): Promise<ChunkOutput> {
-  const rephrased = await rephraseWithClaude(splitParagraphs(stripRubyTags(chunk)), model).catch((error: unknown) => {
+async function rephraseChunkWithClaude(chunk: string, model: string, signal: AbortSignal): Promise<ChunkOutput> {
+  const rephrased = await rephraseWithClaude(splitParagraphs(stripRubyTags(chunk)), model, signal).catch((error: unknown) => {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`${reason}\n${RESUME_HINT}`, { cause: error });
   });
@@ -235,5 +238,5 @@ async function rephraseChunkWithClaude(chunk: string, model: string): Promise<Ch
 }
 
 export function createClaudeRephraser(model: string): ChunkRephraser {
-  return { keyCount: 1, rephraseChunk: (chunk) => rephraseChunkWithClaude(chunk, model) };
+  return { keyCount: 1, rephraseChunk: (chunk, { signal }) => rephraseChunkWithClaude(chunk, model, signal) };
 }
