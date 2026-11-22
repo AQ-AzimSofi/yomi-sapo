@@ -23,7 +23,7 @@ export const rubyRegistryStep: Step = {
 export const illustrationUploadStep: Step = {
   name: 'Illustration Upload',
   shouldRun: () => true,
-  run: async ({ options, book }) => uploadBookImages(options.outputDir, book.bookName, options.dryRun),
+  run: async ({ options, book }) => uploadBookImages(book, options.outputDir, options.dryRun),
 };
 
 /**
