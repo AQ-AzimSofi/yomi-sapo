@@ -12,9 +12,6 @@ const HEAD_PREFIX_PATTERN = /^[<＜]\s*/;
 // each chunk after CHUNK_SEPARATOR, so a separator with no CR before it is a chunk boundary.
 const BARE_SEPARATOR_PATTERN = /(?<!\r)\n\n/;
 const BARE_LINE_BREAK_PATTERN = /(?<!\r)\n/;
-// alignRephrase put the source back in every head close to it, so nearly all of a chunk comes
-// back in heads found in it word for word; a piece of another chunk holds next to none.
-const MIN_VERBATIM_HEAD_SHARE = 0.5;
 
 function findHeadLines(text: string): HeadLine[] {
   return [...text.matchAll(/^[^\n]*/gm)]
@@ -71,24 +68,34 @@ export function splitByChunkText(text: string, chunks: readonly string[]): strin
   return outputChunks;
 }
 
-function holdsMostOfChunk(piece: string, chunk: string): boolean {
-  const chunkText = normalizeForCompare(chunk);
-  const verbatimHeadLength = findHeadLines(piece)
-    .filter((headLine) => chunkText.includes(headLine.text))
-    .reduce((total, headLine) => total + headLine.text.length, 0);
-  return verbatimHeadLength > chunkText.length * MIN_VERBATIM_HEAD_SHARE;
+function sumLengths(texts: readonly string[]): number {
+  return texts.reduce((total, text) => total + text.length, 0);
+}
+
+// alignRephrase put the source back in every head close to it, so a piece of chunk i has heads
+// found word for word in chunk i, while a piece of another chunk has them in that chunk instead.
+function isPieceOfChunk(piece: string, chunkIndex: number, chunkTexts: readonly string[]): boolean {
+  const headTexts = findHeadLines(piece).map((headLine) => headLine.text);
+  const ownChunkText = chunkTexts[chunkIndex];
+  const ownHeadTexts = headTexts.filter((headText) => ownChunkText.includes(headText));
+  const strayHeadTexts = headTexts
+    .filter((headText) => !ownChunkText.includes(headText))
+    .filter((headText) => chunkTexts.some((chunkText) => chunkText.includes(headText)));
+  return sumLengths(ownHeadTexts) > sumLengths(strayHeadTexts);
 }
 
 /**
  * Splits a reader file main's pipeline wrote on Windows at the bare separators it appended each
  * chunk after. Unlike splitByChunkText, it still splits when main kept a head Gemini reworded too
  * far for alignRephrase to restore. Undefined unless there is one piece per chunk, no bare line
- * break is left in a piece (a chunk whose furigana step failed has them), and most of each
- * chunk's text is in its piece's heads word for word, which a chunk appended twice is not.
+ * break is left in a piece (a chunk whose furigana step failed has them), and each piece's heads
+ * found word for word in the chunks are mostly in its own chunk, which a chunk appended twice's
+ * are not.
  */
 export function splitByChunkSeparators(text: string, chunks: readonly string[]): string[] | undefined {
   const pieces = text.split(BARE_SEPARATOR_PATTERN);
   if (pieces.length !== chunks.length) return undefined;
   if (pieces.some((piece) => BARE_LINE_BREAK_PATTERN.test(piece))) return undefined;
-  return pieces.every((piece, index) => holdsMostOfChunk(piece, chunks[index])) ? pieces : undefined;
+  const chunkTexts = chunks.map(normalizeForCompare);
+  return pieces.every((piece, index) => isPieceOfChunk(piece, index, chunkTexts)) ? pieces : undefined;
 }

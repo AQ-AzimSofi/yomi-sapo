@@ -66,6 +66,11 @@ describe('splitByChunkSeparators', () => {
     expect(splitByChunkSeparators(readerFile, GEMINI_CHUNKS.slice(0, 3))).toEqual(GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD);
   });
 
+  it('Test_splitByChunkSeparators_UnmatchedHeadLongerThanTheRestStillSplits', () => {
+    const rewordedSecondChunk = '< ◆\r\n>> ◆\r\n\r\n< 犬がたくさんいるようだ。\r\n>> 犬が います。';
+    expect(splitByChunkSeparators(`${FURIGANA_0}\n\n${rewordedSecondChunk}`, [CHUNK_0, CHUNK_1])).toEqual([FURIGANA_0, rewordedSecondChunk]);
+  });
+
   it('Test_splitByChunkSeparators_ExtraChunkIsNotASplit', () => {
     expect(splitByChunkSeparators(`${FURIGANA_0}\n\n${FURIGANA_1}`, [CHUNK_0])).toBeUndefined();
   });
