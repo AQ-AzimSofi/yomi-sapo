@@ -112,7 +112,15 @@ describe('applySchema on Aurora DSQL', () => {
 
     await applySchema(client, 'dsql');
 
-    expect(statementsSent(unsafe)).toEqual(schemaStatementsFor('dsql'));
+    expect(statementsSent(unsafe).slice(0, schemaStatementsFor('dsql').length)).toEqual(schemaStatementsFor('dsql'));
+    expect(statementsSent(unsafe)).not.toContain(WAIT_FOR_JOB);
+  });
+
+  // A failed build leaves its index behind, invalid, and IF NOT EXISTS then skips it without a job.
+  it('fails while an index that a failed build left behind is invalid', async () => {
+    const { client } = fakeClient((statement) => (statement.includes('indisvalid') ? [{ index_name: 'idx_text_entries_library' }] : []));
+
+    await expect(applySchema(client, 'dsql')).rejects.toThrow(/idx_text_entries_library/);
   });
 
   it('fails when a job reports that the index was not built', async () => {
