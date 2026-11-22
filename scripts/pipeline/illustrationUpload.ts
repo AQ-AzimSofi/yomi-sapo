@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
-import { REPO_ROOT } from '../shared/repoPaths';
+import type { PreparedBook } from './runner';
 
 function runAwsS3(args: string[]): boolean {
   const result = spawnSync('aws', ['s3', ...args], { stdio: 'inherit' });
@@ -16,7 +16,7 @@ function runAwsS3(args: string[]): boolean {
 // their own; the reader loads them from this bucket through /api/book-assets.
 // Exact paths rather than --include filters: the CLI matches filters against the
 // unescaped absolute path, so a book name with [ or ] would make every filter miss.
-export function uploadBookImages(outputDir: string, bookName: string, isDryRun: boolean): void {
+export function uploadBookImages({ bookName, sourceDir }: PreparedBook, outputDir: string, isDryRun: boolean): void {
   const bucket = process.env.BOOK_IMAGES_BUCKET;
   if (!bucket) {
     console.warn('BOOK_IMAGES_BUCKET is not set in .env.local; skipping. Illustrations will not show until uploaded.');
@@ -24,9 +24,8 @@ export function uploadBookImages(outputDir: string, bookName: string, isDryRun: 
   }
 
   const bookPrefix = `${outputDir}/${bookName}`;
-  const localBookDir = path.join(REPO_ROOT, 'public', bookPrefix);
-  const imagesDir = path.join(localBookDir, 'images');
-  const metadataPath = path.join(localBookDir, `${bookName}.json`);
+  const imagesDir = path.join(sourceDir, 'images');
+  const metadataPath = path.join(sourceDir, `${bookName}.json`);
   const modeFlag = isDryRun ? '--dryrun' : '--only-show-errors';
 
   const uploads = [
