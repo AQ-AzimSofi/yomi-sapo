@@ -18,6 +18,7 @@ const APPLY_TIMEOUT_MS = 10 * 60 * 1000;
 const EXPECTED_INDEXES = [
   'bookmarks_file_name_directory_key',
   'bookmarks_pkey',
+  'idx_text_entries_library',
   'idx_vocabulary_entries_created_at',
   'idx_vocabulary_entries_file',
   'idx_vocabulary_entries_word',

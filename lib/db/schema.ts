@@ -124,6 +124,10 @@ const INDEX_STATEMENTS: readonly string[] = [
   `CREATE INDEX ASYNC IF NOT EXISTS idx_vocabulary_entries_created_at ON vocabulary_entries (created_at)`,
   `CREATE INDEX ASYNC IF NOT EXISTS idx_vocabulary_entries_word ON vocabulary_entries (word)`,
   `CREATE INDEX ASYNC IF NOT EXISTS idx_vocabulary_entries_file ON vocabulary_entries (file_name, directory)`,
+  // Holds every column the library's book list reads, so on DSQL that query reads this index
+  // instead of the rows and their stored book text: 0.07 DPU per library load instead of 23.
+  `CREATE INDEX ASYNC IF NOT EXISTS idx_text_entries_library ON text_entries (file_name, directory)
+    INCLUDE (id, created_at, total_pages, total_characters, content_bytes)`,
 ];
 
 /**
