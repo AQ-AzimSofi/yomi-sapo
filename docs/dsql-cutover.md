@@ -9,6 +9,7 @@ Steps marked **[owner]** need the owner's go-ahead: they create billable AWS res
 - `lib/db/connection.ts` connects to DSQL only when `DSQL_ENDPOINT` is set. `sst.config.ts` sets it (plus `DSQL_USER=yomi_app`, `DSQL_REGION` and `dsql:DbConnect` on the cluster) only when `PRODUCTION_DSQL_CLUSTER_ID` is not empty. `DATABASE_URL` (Neon) stays set either way, which is what makes rollback a redeploy.
 - `scripts/db/apply-schema-dsql.ts` applies `lib/db/schema.ts` as `admin`.
 - `scripts/db/copy-to-dsql.ts` copies every app table from PostgreSQL into DSQL, compares every row and moves the id sequences.
+- The ruby registry (the word lookup panel, its sticky notes and `/ruby-registry`) reads the `ruby_registry_entries` table, which Neon does not have. On Neon `/api/ruby-registry` answers `503 registry_unavailable` and the panel says the word list is not available yet. The copy leaves this table alone; `scripts/db/import-ruby-registry.ts` fills it from the books' `ruby-registry.json` files (step 7).
 - The local tools (`npm run db:sync`, the `npm run dev` sync, `/api/db-sync`, `clean-book-text --prod`) use DSQL when `PROD_DSQL_ENDPOINT` is set in `.env.local`, and `PROD_DATABASE_URL` (Neon) otherwise.
 
 ## Before you start
@@ -109,7 +110,7 @@ Step 6 takes the first backup on demand, once the cluster holds data.
 npx tsx scripts/db/apply-schema-dsql.ts --endpoint $ENDPOINT
 ```
 
-It runs each statement in its own transaction and waits for each `CREATE INDEX ASYNC` job. Running it again changes nothing. Change the schema only while the app sends no traffic to the cluster: after DDL, the next statement of an open app session can fail once with `OC001`.
+It creates the five tables (`bookmarks`, `text_entries`, `narration`, `vocabulary_entries` and `ruby_registry_entries`), runs each statement in its own transaction and waits for each `CREATE INDEX ASYNC` job. Running it again changes nothing. Change the schema only while the app sends no traffic to the cluster: after DDL, the next statement of an open app session can fail once with `OC001`.
 
 ## 4. Create the app role and its grants, before any traffic
 
@@ -120,11 +121,12 @@ dsql_psql <<EOF
 CREATE ROLE yomi_app WITH LOGIN;
 AWS IAM GRANT yomi_app TO '$SERVER_ROLE_ARN';
 GRANT SELECT, INSERT, UPDATE, DELETE ON bookmarks, text_entries, narration, vocabulary_entries TO yomi_app;
+GRANT SELECT, INSERT, UPDATE ON ruby_registry_entries TO yomi_app;
 GRANT USAGE ON SEQUENCE bookmarks_id_seq, text_entries_id_seq, narration_id_seq TO yomi_app;
 EOF
 ```
 
-`GRANT USAGE ON SCHEMA public` is not needed, and DSQL refuses it (`feature not supported on system entity`). `USAGE` on a sequence is enough for the `nextval()` id defaults. A table added to the schema later needs its own `GRANT`.
+`GRANT USAGE ON SCHEMA public` is not needed, and DSQL refuses it (`feature not supported on system entity`). `USAGE` on a sequence is enough for the `nextval()` id defaults. The app never deletes a registry row (deleting a word only hides it), and the registry has no id sequence. A table added to the schema later needs its own `GRANT`.
 
 Check:
 
@@ -136,13 +138,13 @@ SELECT t.name,
   has_table_privilege('yomi_app', t.name, 'INSERT') AS can_insert,
   has_table_privilege('yomi_app', t.name, 'UPDATE') AS can_update,
   has_table_privilege('yomi_app', t.name, 'DELETE') AS can_delete
-FROM (VALUES ('bookmarks'), ('text_entries'), ('narration'), ('vocabulary_entries')) AS t(name);
+FROM (VALUES ('bookmarks'), ('text_entries'), ('narration'), ('vocabulary_entries'), ('ruby_registry_entries')) AS t(name);
 SELECT s.name, has_sequence_privilege('yomi_app', s.name, 'USAGE') AS can_use
 FROM (VALUES ('bookmarks_id_seq'), ('text_entries_id_seq'), ('narration_id_seq')) AS s(name);
 EOF
 ```
 
-Every column must be `t`, and the mapping must name `$SERVER_ROLE_ARN`. If SST ever replaces the server role, its ARN changes and the `AWS IAM GRANT` has to be run again for the new one.
+Every column must be `t`, except `can_delete` for `ruby_registry_entries`, which must be `f`. The mapping must name `$SERVER_ROLE_ARN`. If SST ever replaces the server role, its ARN changes and the `AWS IAM GRANT` has to be run again for the new one.
 
 ## 5. Read-only checks on Neon **[owner]**
 
@@ -193,7 +195,7 @@ aws backup list-recovery-points-by-backup-vault --region $AWS_REGION --backup-va
   --query 'RecoveryPoints[].{created:CreationDate,status:Status}'
 ```
 
-Optional rehearsal **[owner]**: run the app locally against the new cluster as admin with `DSQL_ENDPOINT=$ENDPOINT DSQL_REGION=$AWS_REGION DSQL_USER=admin npx next dev --port 3333` (not `npm run dev`, whose sync would push to Neon), and read a few books. The copy in step 7 overwrites whatever this writes, such as the library's recounts, and deletes any row it adds.
+Optional rehearsal **[owner]**: run the app locally against the new cluster as admin with `DSQL_ENDPOINT=$ENDPOINT DSQL_REGION=$AWS_REGION DSQL_USER=admin npx next dev --port 3333` (not `npm run dev`, whose sync would push to Neon), and read a few books. The copy in step 7 overwrites whatever this writes, such as the library's recounts, and deletes any row it adds. It does not touch the ruby registry, so make no registry edits in the rehearsal.
 
 ## 7. Cut-over: final copy **[owner]**
 
@@ -204,7 +206,15 @@ Optional rehearsal **[owner]**: run the app locally against the new cluster as a
    SOURCE_URL="$NEON_DIRECT_URL" npx tsx scripts/db/copy-to-dsql.ts --endpoint $ENDPOINT --delete-extra
    ```
 
-   It writes only the rows that changed since the dry run. Go on only after `Every row is identical.` The row counts in its verification must match step 5 plus any rows added since.
+   It writes only the rows that changed since the dry run. Go on only after `Every row is identical.` The row counts in its verification must match step 5 plus any rows added since. It prints `ruby_registry_entries: not copied; fill it with npx tsx scripts/db/import-ruby-registry.ts`.
+3. Load the ruby registry from the books' `ruby-registry.json` files. They are only in the owner's main checkout (`public/` never deploys), so run this there. A dry run first, then the write:
+
+   ```bash
+   PROD_DSQL_ENDPOINT=$ENDPOINT npx tsx scripts/db/import-ruby-registry.ts public --prod
+   PROD_DSQL_ENDPOINT=$ENDPOINT npx tsx scripts/db/import-ruby-registry.ts public --prod --apply
+   ```
+
+   It prints one line per book and ends with `Inserted N of N new rows.` On 2026-11-22 the files held 1,538 words in 11 books. Running it again inserts nothing. Registry edits made in a local database are not carried: the dev sync does not sync this table.
 
 ## 8. Switch production to the cluster **[owner]**
 
@@ -235,7 +245,7 @@ Run these on https://yomi-sapo.click right after the deploy, signed in. The data
 | Bookmark written and read back | Move a bookmark in the reader, reload the page and land on it. In the database, `dsql_psql -c "SELECT directory, file_name, bookmark_page, updated_at FROM bookmarks ORDER BY updated_at DESC LIMIT 1"` shows that book with the new page and a fresh `updated_at` (UTC). |
 | Vocabulary add and delete | Add a word from the reader: it shows on `/vocabulary` and in `dsql_psql -c "SELECT word, created_at FROM vocabulary_entries ORDER BY created_at DESC LIMIT 1"`. Delete it: it is gone from both. |
 | Narration | Open the narrated book (`dsql_psql -c "SELECT directory, file_name FROM narration"`) and press play: the recording plays, not the TTS voice. |
-| Ruby lookup | Tap a word with ruby: the lookup sidebar shows its readings. |
+| Ruby lookup | Open ルビ検索 (`Ctrl+K`) in a book with a registry, such as 感謝脳: it lists the book's words, not the "not available" note. Star a word: the sticky note shows it with its reading. On `/ruby-registry`, add a note to a word, save, then clear it again. `dsql_psql -c "SELECT book_name, kanji, note, updated_at FROM ruby_registry_entries ORDER BY updated_at DESC NULLS LAST LIMIT 1"` shows that word with a fresh `updated_at`. |
 
 After the smoke tests, `npm run db:sync` must connect to the cluster and show its dashboard. Push only what it lists as local-only and wanted.
 
@@ -268,7 +278,7 @@ Until the soak ends, change the schema only with the app idle (step 3), and neve
 ## 11. Rollback **[owner]**
 
 1. Set `PRODUCTION_DSQL_CLUSTER_ID = ""` in `sst.config.ts`, open a pull request, merge. The deploy points the app at `DATABASE_URL` again: Neon, which nothing in this runbook wrote to.
-2. Writes made on DSQL since step 8 are not on Neon. To carry bookmarks, vocabulary and new books back, use the dev sync: with `PROD_DSQL_ENDPOINT` set, `npm run db:sync` and `[1] Pull all from prod -> local`; then remove `PROD_DSQL_ENDPOINT` from `.env.local`, so the tools use `PROD_DATABASE_URL` (Neon) again, and `npm run db:sync` with `[2] Push missing to prod`. The sync is last-write-wins on `updated_at`, does not copy deletions (a word deleted on DSQL comes back) and does not carry `narration`.
+2. Writes made on DSQL since step 8 are not on Neon. To carry bookmarks, vocabulary and new books back, use the dev sync: with `PROD_DSQL_ENDPOINT` set, `npm run db:sync` and `[1] Pull all from prod -> local`; then remove `PROD_DSQL_ENDPOINT` from `.env.local`, so the tools use `PROD_DATABASE_URL` (Neon) again, and `npm run db:sync` with `[2] Push missing to prod`. The sync is last-write-wins on `updated_at`, does not copy deletions (a word deleted on DSQL comes back) and does not carry `narration` or the ruby registry. Neon has no registry table, so after a rollback the word lookup panel says the word list is not available again, and registry edits made on DSQL stay only there.
 3. Leave the cluster as it is until the cause is understood.
 
 ## 12. After the soak: remove Neon **[owner]**
