@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import postgres from 'postgres';
-import { assertDirectSource, describeReport, main, parseCopyArgs, type CopyReport } from './copy-to-dsql';
+import { assertDirectSource, describeReport, main, parseCopyArgs, transactionGroups, type CopyReport } from './copy-to-dsql';
 
 vi.mock('postgres', () => ({ default: vi.fn() }));
 
@@ -80,5 +80,21 @@ describe('describeReport', () => {
       'Sequences: none',
       'Some rows differ. Fix the cause and run the copy again.',
     ]);
+  });
+});
+
+// DSQL refuses a transaction over 3,000 rows or 10 MiB; the copy stays at 1,000 rows and 4 MiB of text.
+describe('transactionGroups', () => {
+  const MIB = 1024 * 1024;
+  const bytesOfRow = (rowBytes: number) => rowBytes;
+
+  it('Test_transactionGroups_AtMost1000RowsATransaction', () => {
+    const rows = Array.from({ length: 2500 }, () => 1);
+    expect(transactionGroups(rows, bytesOfRow).map((group) => group.length)).toEqual([1000, 1000, 500]);
+  });
+
+  it('Test_transactionGroups_AtMost4MiBOfTextATransaction', () => {
+    const rows = Array.from({ length: 5 }, () => 1.5 * MIB);
+    expect(transactionGroups(rows, bytesOfRow).map((group) => group.length)).toEqual([2, 2, 1]);
   });
 });

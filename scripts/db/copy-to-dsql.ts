@@ -145,7 +145,7 @@ function assertRowsFit(shapes: readonly TableShape[], expectedRows: readonly Tex
   throw new Error(`Nothing was copied: the target cannot store ${refusals.length} row(s):\n  ${refusals.join('\n  ')}`);
 }
 
-function transactionGroups<T>(items: readonly T[], bytesOf: (item: T) => number): T[][] {
+export function transactionGroups<T>(items: readonly T[], bytesOf: (item: T) => number): T[][] {
   return groupBySize(items, bytesOf, MAX_TRANSACTION_TEXT_BYTES).flatMap((group) =>
     Array.from({ length: Math.ceil(group.length / MAX_TRANSACTION_ROWS) }, (_, groupI) =>
       group.slice(groupI * MAX_TRANSACTION_ROWS, (groupI + 1) * MAX_TRANSACTION_ROWS)
