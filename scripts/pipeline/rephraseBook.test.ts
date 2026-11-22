@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { splitParagraphs } from '../utils/claude-rephrase';
@@ -34,7 +35,7 @@ const KILL_LOOP_TIMEOUT_MS = 60_000;
 
 class KillSignal extends Error {}
 
-type ReplyToChunk = (chunk: string, chunkIndex: number) => ChunkOutput;
+type ReplyToChunk = (chunk: string, chunkIndex: number) => ChunkOutput | Promise<ChunkOutput>;
 
 function rephraseOf(chunk: string): string {
   return splitParagraphs(stripRubyTags(chunk)).map((line) => `< ${line}\n>> ${line}（やさしく）`).join('\n\n');
@@ -44,7 +45,7 @@ function fallbackOf(chunk: string): string {
   return splitParagraphs(stripRubyTags(chunk)).map((line) => `< ${line}\n>> ${line}`).join('\n\n');
 }
 
-const rephraseEveryChunk: ReplyToChunk = (chunk, chunkIndex) => ({
+const rephraseEveryChunk = (chunk: string, chunkIndex: number): ChunkOutput => ({
   rawText: `Chunk ${chunkIndex} reply\n${rephraseOf(chunk)}`,
   readerText: rephraseOf(chunk),
   attempts: 1,
@@ -62,14 +63,19 @@ interface FakeDeps {
   writtenPaths: string[];
 }
 
-function createFakeDeps(overrides: Partial<RephraseDeps> & { replyToChunk?: ReplyToChunk } = {}): FakeDeps {
+interface FakeOverrides extends Partial<RephraseDeps> {
+  replyToChunk?: ReplyToChunk;
+  maxConcurrency?: number;
+}
+
+function createFakeDeps(overrides: FakeOverrides = {}): FakeDeps {
   const rephrasedChunkIndexes: number[] = [];
   const writtenPaths: string[] = [];
   const replyToChunk = overrides.replyToChunk ?? rephraseEveryChunk;
   const writeFile = overrides.writeFile ?? writeFileAtomic;
   const deps: RephraseDeps = {
     createRephraser: () => ({
-      keyCount: 1,
+      maxConcurrency: overrides.maxConcurrency ?? 1,
       rephraseChunk: async (chunk, { chunkIndex }) => {
         rephrasedChunkIndexes.push(chunkIndex);
         return replyToChunk(chunk, chunkIndex);
@@ -302,6 +308,80 @@ describe('batchRephrase', () => {
     await batchRephrase(book, { ...OPTIONS, reset: true }, createFakeDeps().deps);
     expect(fs.existsSync(`${files.chunksDir}.bak`)).toBe(true);
     expect(fs.existsSync(`${files.furiganaPath}.bak`)).toBe(true);
+  });
+
+  describe('with several workers', () => {
+    // Later chunks answer sooner, so chunks finish in the reverse of the order they start in.
+    const replyLaterChunksFirst: ReplyToChunk = async (chunk, chunkIndex) => {
+      await sleep((CHUNK_COUNT - chunkIndex) * 5);
+      return rephraseEveryChunk(chunk, chunkIndex);
+    };
+
+    it('Test_batchRephrase_ChunksFinishingOutOfOrderGiveTheSameOutputs', async () => {
+      const reference = await runUninterrupted();
+      writeSource();
+      const parallel = createFakeDeps({ maxConcurrency: 3, replyToChunk: replyLaterChunksFirst });
+      expect(await batchRephrase(book, OPTIONS, parallel.deps)).toBe(true);
+      expect(readOutputs()).toEqual(reference);
+    });
+
+    it('Test_batchRephrase_RunsUpToMaxConcurrencyChunksAtOnce', async () => {
+      writeSource();
+      const inFlightCounts: number[] = [];
+      const inFlight = new Set<number>();
+      const tracked = createFakeDeps({
+        maxConcurrency: 2,
+        replyToChunk: async (chunk, chunkIndex) => {
+          inFlight.add(chunkIndex);
+          inFlightCounts.push(inFlight.size);
+          await sleep(5);
+          inFlight.delete(chunkIndex);
+          return rephraseEveryChunk(chunk, chunkIndex);
+        },
+      });
+      await batchRephrase(book, OPTIONS, tracked.deps);
+      expect(Math.max(...inFlightCounts)).toBe(2);
+      expect(tracked.rephrasedChunkIndexes).toEqual([...Array(CHUNK_COUNT).keys()]);
+    });
+
+    it('Test_batchRephrase_SyncsRunOneAtATimeAndTheLastHasTheWholeBook', async () => {
+      writeSource();
+      const syncedTexts: string[] = [];
+      const activeSyncs = new Set<number>();
+      const overlaps: number[] = [];
+      const { deps } = createFakeDeps({
+        maxConcurrency: 3,
+        replyToChunk: replyLaterChunksFirst,
+        syncToDatabase: async (target) => {
+          const syncNumber = syncedTexts.length;
+          overlaps.push(activeSyncs.size);
+          activeSyncs.add(syncNumber);
+          syncedTexts.push(fs.readFileSync(target.filePath, 'utf-8'));
+          await sleep(3);
+          activeSyncs.delete(syncNumber);
+          return true;
+        },
+      });
+      await batchRephrase(book, OPTIONS, deps);
+      expect(syncedTexts).toHaveLength(CHUNK_COUNT);
+      expect(new Set(overlaps)).toEqual(new Set([0]));
+      expect(syncedTexts.at(-1)).toBe(readOutputs().furiganaText);
+    });
+
+    it('Test_batchRephrase_FailureLetsChunksInFlightFinishAndStartsNoOther', async () => {
+      writeSource();
+      const failFirstChunk = createFakeDeps({
+        maxConcurrency: 2,
+        replyToChunk: async (chunk, chunkIndex) => {
+          if (chunkIndex === 0) throw new Error('No Gemini key has quota left');
+          await sleep(10);
+          return rephraseEveryChunk(chunk, chunkIndex);
+        },
+      });
+      await expect(batchRephrase(book, OPTIONS, failFirstChunk.deps)).rejects.toThrow('No Gemini key has quota left');
+      expect(failFirstChunk.rephrasedChunkIndexes).toEqual([0, 1]);
+      expect(readProgress().chunks.items.map((item) => item.status)).toEqual(['pending', 'completed', ...Array(CHUNK_COUNT - 2).fill('pending')]);
+    });
   });
 
   describe('a version 1 progress file', () => {

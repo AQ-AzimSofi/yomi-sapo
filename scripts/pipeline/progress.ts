@@ -128,8 +128,8 @@ export function countCompletedChunks(items: readonly ChunkProgress[]): number {
   return items.filter((item) => item.status === 'completed').length;
 }
 
-export function updateChunk(progress: ProgressFile, chunkIndex: number, changes: Partial<ChunkProgress>): ProgressFile {
-  const items = progress.chunks.items.map((item) => (item.index === chunkIndex ? { ...item, ...changes } : item));
+export function applyChunkChanges(progress: ProgressFile, changesByIndex: ReadonlyMap<number, Partial<ChunkProgress>>): ProgressFile {
+  const items = progress.chunks.items.map((item) => ({ ...item, ...changesByIndex.get(item.index) }));
   return { ...progress, chunks: { ...progress.chunks, completed: countCompletedChunks(items), items } };
 }
 

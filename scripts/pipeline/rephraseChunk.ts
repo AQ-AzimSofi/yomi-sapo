@@ -83,13 +83,15 @@ export interface ChunkOutput {
 
 export interface ChunkRequest {
   chunkIndex: number;
+  /** Below maxConcurrency; a Gemini worker starts each chunk on its own key. */
+  workerIndex: number;
   /** Ctrl+C: ends the request in flight and every wait at once; the chunk stays unsaved. */
   signal: AbortSignal;
 }
 
 export interface ChunkRephraser {
-  /** Free keys the delay between chunks is shared over; 1 when there is no key rotation. */
-  keyCount: number;
+  /** How many chunks may run at once. */
+  maxConcurrency: number;
   rephraseChunk: (chunk: string, request: ChunkRequest) => Promise<ChunkOutput>;
 }
 
@@ -145,16 +147,17 @@ async function generateText(key: ApiKey, prompt: string, request: ModelRequest):
 }
 
 // Each attempt moves to the next free key, so one key's transient errors do not sink the chunk.
+// The first attempt uses the worker's own key, so workers on different keys never share one.
 async function requestWithModel(request: ModelRequest, current: ModelAttempt): Promise<ModelResult> {
   const { keyPool } = request;
   const maxAttempts = VN_RETRY_CONFIG.MAX_ATTEMPTS;
   const requestCount = current.attempt - 1;
   if (current.attempt > maxAttempts) return { outcome: 'attempts-used-up', requestCount };
-  const key = pickKey(keyPool, request.chunkIndex + current.attempt - 1);
+  const key = pickKey(keyPool, request.workerIndex + current.attempt - 1);
   if (!key) return { outcome: 'out-of-keys', requestCount };
 
   await request.waitForKey(key, request.signal);
-  console.log(`    Attempt ${current.attempt}/${maxAttempts} (${key.envName})...`);
+  console.log(`    Chunk ${request.chunkIndex + 1}, attempt ${current.attempt}/${maxAttempts} (${key.envName})...`);
   const outcome = await generateText(key, current.instruction + request.cleanChunk, request).then(
     (text) => ({ text, error: undefined }),
     (error: unknown) => ({ text: undefined, error }),
@@ -272,7 +275,8 @@ export function createGeminiRephraser({ model, delaySeconds }: GeminiSettings, c
     return { rawText: result.response, readerText: sanitized.text, attempts: result.requestCount, isFallback: false };
   };
 
-  return { keyCount: Math.max(requestedModelPool.freeKeys.length, 1), rephraseChunk };
+  // One worker per free key; with only the paid key, one at a time.
+  return { maxConcurrency: Math.max(requestedModelPool.freeKeys.length, 1), rephraseChunk };
 }
 
 // A failed claude -p call (usage limit, sign-in) stops the run; this chunk stays unfinished, so rerunning resumes it.
@@ -292,6 +296,8 @@ async function rephraseChunkWithClaude(chunk: string, model: string, signal: Abo
   };
 }
 
+// One claude -p at a time: the subscription's usage limit is per account, so parallel calls would
+// only reach it sooner, and nothing shows that parallel headless sessions are safe on it.
 export function createClaudeRephraser(model: string): ChunkRephraser {
-  return { keyCount: 1, rephraseChunk: (chunk, { signal }) => rephraseChunkWithClaude(chunk, model, signal) };
+  return { maxConcurrency: 1, rephraseChunk: (chunk, { signal }) => rephraseChunkWithClaude(chunk, model, signal) };
 }

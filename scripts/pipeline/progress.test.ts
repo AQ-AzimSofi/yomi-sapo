@@ -9,7 +9,7 @@ import {
   resetChangedChunks,
   saveProgress,
   simpleHash,
-  updateChunk,
+  applyChunkChanges,
 } from './progress';
 
 const SETTINGS = { chunkSize: 5000, delaySeconds: 0, model: 'sonnet' };
@@ -50,22 +50,23 @@ describe('createProgress', () => {
   });
 });
 
-describe('updateChunk', () => {
-  it('Test_updateChunk_CountsOnlyCompletedChunks', () => {
-    const progress = updateChunk(updateChunk(createSampleProgress(), 0, { status: 'completed' }), 1, { status: 'fallback' });
+describe('applyChunkChanges', () => {
+  it('Test_applyChunkChanges_CountsOnlyCompletedChunks', () => {
+    const progress = applyChunkChanges(createSampleProgress(), new Map([[0, { status: 'completed' as const }], [1, { status: 'fallback' as const }]]));
     expect(progress.chunks.completed).toBe(1);
   });
 
-  it('Test_updateChunk_LeavesInputUnchanged', () => {
+  it('Test_applyChunkChanges_LeavesOtherChunksAndTheInputUnchanged', () => {
     const progress = createSampleProgress();
-    updateChunk(progress, 0, { status: 'completed' });
+    const updated = applyChunkChanges(progress, new Map([[0, { status: 'completed' as const }]]));
+    expect(updated.chunks.items[1]).toEqual(progress.chunks.items[1]);
     expect(progress.chunks.items[0].status).toBe('pending');
   });
 });
 
 describe('resetChangedChunks', () => {
   it('Test_resetChangedChunks_SavedChunkWithOtherSourceGoesBackToPending', () => {
-    const progress = updateChunk(createSampleProgress(), 1, { status: 'completed', attempts: 1, completedAt: 'then' });
+    const progress = applyChunkChanges(createSampleProgress(), new Map([[1, { status: 'completed' as const, attempts: 1, completedAt: 'then' }]]));
     const { progress: resetProgress, resetIndexes } = resetChangedChunks(progress, [CHUNKS[0], 'ひらがな']);
     expect(resetIndexes).toEqual([1]);
     expect(resetProgress.chunks.items[1]).toEqual({
@@ -74,7 +75,7 @@ describe('resetChangedChunks', () => {
   });
 
   it('Test_resetChangedChunks_MatchingChunksStay', () => {
-    const progress = updateChunk(createSampleProgress(), 0, { status: 'completed' });
+    const progress = applyChunkChanges(createSampleProgress(), new Map([[0, { status: 'completed' as const }]]));
     expect(resetChangedChunks(progress, CHUNKS)).toEqual({ progress, resetIndexes: [] });
   });
 });
