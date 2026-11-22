@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ownerSessionHeaders, TEST_SESSION_SECRET } from '@/lib/auth/testSession';
 import { sql } from '@/lib/db/connection';
-import { CREATE_TABLES_SQL, MIGRATIONS_SQL } from '@/lib/db/schema';
+import { SCHEMA_STATEMENTS } from '@/lib/db/schema';
 import {
   deleteVocabularyEntry,
   getVocabularyEntryById,
@@ -72,7 +72,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest(OWNER_HEADERS));
 
     expect(response.status).toBe(200);
-    expect(vi.mocked(sql.unsafe).mock.calls).toEqual([[CREATE_TABLES_SQL], [MIGRATIONS_SQL]]);
+    expect(vi.mocked(sql.unsafe).mock.calls).toEqual(SCHEMA_STATEMENTS.map((statement) => [statement]));
   });
 
   it.each(['test', 'staging'])('rejects a guest when NODE_ENV is %s', async (nodeEnv) => {
@@ -90,7 +90,7 @@ describe('GET /api/init-db', () => {
     const response = await initDb(initDbRequest());
 
     expect(response.status).toBe(200);
-    expect(vi.mocked(sql.unsafe).mock.calls).toEqual([[CREATE_TABLES_SQL], [MIGRATIONS_SQL]]);
+    expect(vi.mocked(sql.unsafe).mock.calls).toEqual(SCHEMA_STATEMENTS.map((statement) => [statement]));
   });
 });
 
