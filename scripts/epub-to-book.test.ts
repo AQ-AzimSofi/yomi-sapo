@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { parseCliOptions } from './epub-to-book';
+import { HELP_TEXT, parseCliOptions } from './epub-to-book';
 
 describe('parseCliOptions', () => {
   it('Test_parseCliOptions_Defaults', () => {
@@ -48,5 +48,30 @@ describe('parseCliOptions', () => {
     expect(options).not.toHaveProperty('apiUrl');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('--api-url http://localhost:3333 is ignored'));
     warnSpy.mockRestore();
+  });
+
+  it('Test_parseCliOptions_FlagsMayComeBeforeTheInput', () => {
+    expect(parseCliOptions(['--reset', 'book.epub']).inputPath).toBe(path.resolve('book.epub'));
+  });
+
+  it('Test_parseCliOptions_MissingInputThrows', () => {
+    expect(() => parseCliOptions(['--reset'])).toThrow('Pass the EPUB');
+  });
+
+  it('Test_parseCliOptions_BadChunkSizeThrows', () => {
+    expect(() => parseCliOptions(['book.epub', '--chunk-size', 'big'])).toThrow('--chunk-size must be a whole number of at least 1, got "big".');
+  });
+});
+
+describe('HELP_TEXT', () => {
+  it.each([
+    '--output-dir <dir>',
+    '(default: bookv2-furigana)',
+    '(default: 5000)',
+    '(default: sonnet)',
+    '(one of all, n3; default: all)',
+    '(default: DATABASE_URL, then POSTGRES_URL)',
+  ])('Test_HELP_TEXT_ShowsTheSchemaDefaults %s', (expectedText) => {
+    expect(HELP_TEXT).toContain(expectedText);
   });
 });

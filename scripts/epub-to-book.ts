@@ -13,7 +13,7 @@
  * 3. Rephrase chunk by chunk with Claude (claude -p, on the subscription) or the Gemini API,
  *    add furigana, and sync the reader's file to the local database after each chunk
  *
- * Usage: npx tsx scripts/epub-to-book.ts <book.epub | ocr folder> [options], options in HELP_TEXT below.
+ * Usage: npx tsx scripts/epub-to-book.ts <book.epub | ocr folder> [options]; --help lists the options and their defaults.
  */
 
 import * as fs from 'fs';
@@ -24,100 +24,66 @@ import { runSteps, type PipelineOptions, type PreparedBook } from './pipeline/ru
 import { assertPythonHasMeCab } from './shared/python';
 import { loadRepoEnv, REPO_ROOT } from './shared/repoPaths';
 import { isEntryPoint } from './shared/entryPoint';
+import { choiceFlag, formatHelp, isHelpRequested, numberFlag, parseCommandLine, switchFlag, textFlag } from './shared/cliSchema';
 
-const DEFAULT_REPHRASE_MODEL = 'sonnet';
+// ============================================================================
+// Command Line
+// ============================================================================
+
+export const BOOK_PIPELINE_FLAGS = {
+  outputDir: textFlag({ name: 'output-dir', valueName: 'dir', defaultValue: 'bookv2-furigana', description: 'Output directory in public/' }),
+  chunkSize: numberFlag({ name: 'chunk-size', valueName: 'n', defaultValue: 5000, isInteger: true, min: 1, description: 'Target characters per chunk' }),
+  delaySeconds: numberFlag({
+    name: 'delay',
+    valueName: 'n',
+    defaultValue: 120,
+    isInteger: true,
+    min: 0,
+    description: 'Seconds between Gemini chunks, divided by the number of free keys; Claude runs without delay',
+  }),
+  model: textFlag({ name: 'model', valueName: 'name', defaultValue: 'sonnet', description: 'Claude model (sonnet, opus) or a gemini-* model' }),
+  skipExtract: switchFlag({ name: 'skip-extract', description: 'Use public/<output-dir>/<book>/<book>.txt as it is; the input path only names the book' }),
+  skipRephrase: switchFlag({ name: 'skip-rephrase', description: "Only extract, don't rephrase" }),
+  skipImages: switchFlag({ name: 'skip-images', description: 'Has no effect: the EPUB extractor always writes the images' }),
+  filter: choiceFlag({ name: 'filter', valueName: 'level', choices: ['all', 'n3'], defaultValue: 'all', description: 'Kanji filter' }),
+  reset: switchFlag({ name: 'reset', description: 'Start fresh, ignore existing progress' }),
+  dryRun: switchFlag({ name: 'dry-run', description: 'Show plan without processing' }),
+  databaseUrl: textFlag({
+    name: 'database-url',
+    valueName: 'url',
+    defaultLabel: 'DATABASE_URL, then POSTGRES_URL',
+    description: 'Local database each chunk is synced to; other hosts are refused',
+  }),
+  apiUrl: textFlag({ name: 'api-url', valueName: 'url', description: 'Ignored: chunks are synced straight to the database (see --database-url)' }),
+};
+
+export const HELP_TEXT = formatHelp(BOOK_PIPELINE_FLAGS, {
+  summary: 'Book pipeline: EPUB or OCR text -> furigana, rephrase, local database',
+  usage: [
+    'npx tsx scripts/epub-to-book.ts <epub-file> [options]',
+    'npx tsx scripts/epub-to-book.ts <ocr-pages.ts output folder> [options]',
+    'npx tsx scripts/epub-to-book.ts <any path named after the book> --skip-extract [options]',
+  ],
+  examples: [
+    'npx tsx scripts/epub-to-book.ts "my-book.epub"',
+    'npx tsx scripts/epub-to-book.ts "my-book.epub" --delay 300 --filter n3',
+    'npx tsx scripts/epub-to-book.ts "my-book.epub" --skip-rephrase',
+    'npx tsx scripts/epub-to-book.ts "temp/books/my-book-ocr"',
+  ],
+});
+
+export function parseCliOptions(args: string[]): PipelineOptions {
+  const { flags, positionals } = parseCommandLine(BOOK_PIPELINE_FLAGS, args);
+  const { apiUrl, ...pipelineFlags } = flags;
+  if (apiUrl !== undefined) console.warn(`--api-url ${apiUrl} is ignored: chunks are synced straight to the database now (see --database-url).`);
+  const [inputArg] = positionals;
+  if (inputArg === undefined) throw new Error('Pass the EPUB, the OCR folder or, with --skip-extract, a path named after the book (see --help).');
+  return { inputPath: path.resolve(inputArg), ...pipelineFlags };
+}
 
 // ============================================================================
 // Main
 // ============================================================================
-
-const HELP_TEXT = `
-Book pipeline: EPUB or OCR text -> furigana, rephrase, local database
-
-Usage:
-  npx tsx scripts/epub-to-book.ts <epub-file> [options]
-  npx tsx scripts/epub-to-book.ts <ocr-pages.ts output folder> [options]
-  npx tsx scripts/epub-to-book.ts <any path named after the book> --skip-extract [options]
-
-Options:
-  --output-dir <dir>     Output directory in public/ (default: bookv2-furigana)
-  --chunk-size <n>       Target characters per chunk (default: 5000)
-  --delay <n>            Seconds between Gemini chunks (default: 120; Claude runs without delay)
-  --model <name>         Claude model (sonnet, opus) or a gemini-* model (default: sonnet)
-  --skip-extract         Use public/<output-dir>/<book>/<book>.txt as it is; the input path only names the book
-  --skip-rephrase        Only extract, don't rephrase
-  --skip-images          Has no effect: the EPUB extractor always writes the images
-  --filter <level>       Kanji filter: all, n3 (default: all)
-  --reset                Start fresh, ignore existing progress
-  --dry-run              Show plan without processing
-  --database-url <url>   Local database each chunk is synced to (default: DATABASE_URL); other hosts are refused
-
-Example:
-  npx tsx scripts/epub-to-book.ts "my-book.epub"
-  npx tsx scripts/epub-to-book.ts "my-book.epub" --delay 300 --filter n3
-  npx tsx scripts/epub-to-book.ts "my-book.epub" --skip-rephrase
-  npx tsx scripts/epub-to-book.ts "temp/books/my-book-ocr"
-`;
-
-export function parseCliOptions(args: string[]): PipelineOptions {
-  const options: PipelineOptions = {
-    inputPath: path.resolve(args[0]),
-    outputDir: 'bookv2-furigana',
-    chunkSize: 5000,
-    delaySeconds: 120, // Base delay (divided by number of API keys)
-    model: DEFAULT_REPHRASE_MODEL,
-    skipRephrase: false,
-    skipExtract: false,
-    skipImages: false,
-    filter: 'all',
-    reset: false,
-    dryRun: false,
-  };
-
-  // Parse options
-  for (let i = 1; i < args.length; i++) {
-    switch (args[i]) {
-      case '--output-dir':
-        options.outputDir = args[++i];
-        break;
-      case '--chunk-size':
-        options.chunkSize = parseInt(args[++i], 10);
-        break;
-      case '--delay':
-        options.delaySeconds = parseInt(args[++i], 10);
-        break;
-      case '--model':
-        options.model = args[++i];
-        break;
-      case '--skip-rephrase':
-        options.skipRephrase = true;
-        break;
-      case '--skip-extract':
-        options.skipExtract = true;
-        break;
-      case '--skip-images':
-        options.skipImages = true;
-        break;
-      case '--filter':
-        options.filter = args[++i] as 'all' | 'n3';
-        break;
-      case '--reset':
-        options.reset = true;
-        break;
-      case '--dry-run':
-        options.dryRun = true;
-        break;
-      case '--database-url':
-        options.databaseUrl = args[++i];
-        break;
-      case '--api-url':
-        console.warn(`--api-url ${args[++i]} is ignored: chunks are synced straight to the database now (see --database-url).`);
-        break;
-    }
-  }
-
-  return options;
-}
 
 function printBanner(options: PipelineOptions, source: BookSource): void {
   console.log(`
@@ -169,7 +135,7 @@ async function main(options: PipelineOptions) {
 }
 
 async function runCli(args: string[]): Promise<void> {
-  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+  if (args.length === 0 || isHelpRequested(args)) {
     console.log(HELP_TEXT);
     return;
   }
