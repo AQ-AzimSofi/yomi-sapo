@@ -21,24 +21,30 @@ from pathlib import Path
 import urllib.request
 import urllib.error
 
+
+# Progress goes to stderr so stdout carries only the result the pipeline reads.
+def log(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+
 try:
     import ebooklib
     from ebooklib import epub
     from bs4 import BeautifulSoup
 except ImportError as e:
-    print(f"Error: Missing required dependencies: {e}")
-    print("\nPlease install dependencies:")
-    print("  pip install -r scripts/requirements.txt")
-    print("\nOr install individually:")
-    print("  pip install ebooklib beautifulsoup4 lxml mecab-python3 unidic-lite")
+    log(f"Error: Missing required dependencies: {e}")
+    log("\nPlease install dependencies:")
+    log("  pip install -r scripts/requirements.txt")
+    log("\nOr install individually:")
+    log("  pip install ebooklib beautifulsoup4 lxml mecab-python3 unidic-lite")
     sys.exit(1)
 
 # Import local helper module
 try:
     from furigana_helper import FuriganaGenerator, preserve_existing_ruby
 except ImportError:
-    print("Error: Could not find furigana_helper.py")
-    print("Make sure you're running this script from the project root or scripts directory.")
+    log("Error: Could not find furigana_helper.py")
+    log("Make sure you're running this script from the project root or scripts directory.")
     sys.exit(1)
 
 
@@ -77,7 +83,7 @@ def extract_images_from_epub(book, output_dir, safe_title):
     # Count total images first for validation
     all_images = [item for item in book.get_items() if item.get_type() == ebooklib.ITEM_IMAGE]
     total_images = len(all_images)
-    print(f"  Found {total_images} images via ITEM_IMAGE filter")
+    log(f"  Found {total_images} images via ITEM_IMAGE filter")
 
     # Check for cover image specifically
     # Method 1: Look for 'cover' in filename among ITEM_IMAGE items
@@ -86,12 +92,12 @@ def extract_images_from_epub(book, output_dir, safe_title):
         original_name = item.get_name()
         if 'cover' in original_name.lower():
             cover_image = item
-            print(f"  [COVER] Detected cover image in ITEM_IMAGE: {original_name}")
+            log(f"  [COVER] Detected cover image in ITEM_IMAGE: {original_name}")
             break
 
     # Method 2: If not found, check all items (including non-ITEM_IMAGE)
     if not cover_image:
-        print(f"  [SEARCH] Cover not in ITEM_IMAGE list, checking all items...")
+        log(f"  [SEARCH] Cover not in ITEM_IMAGE list, checking all items...")
         for item in book.get_items():
             original_name = item.get_name()
             if 'cover' in original_name.lower() and (original_name.endswith('.jpg') or
@@ -99,7 +105,7 @@ def extract_images_from_epub(book, output_dir, safe_title):
                                                        original_name.endswith('.png')):
                 cover_image = item
                 total_images += 1  # Add to count since it wasn't in ITEM_IMAGE
-                print(f"  [COVER] Detected cover image in all items: {original_name}")
+                log(f"  [COVER] Detected cover image in all items: {original_name}")
                 break
 
     # Extract cover first with index 000 if found
@@ -109,7 +115,7 @@ def extract_images_from_epub(book, output_dir, safe_title):
         new_filename = f"illustration-000{ext}"
         image_path = images_dir / new_filename
 
-        print(f"  Processing: {original_name} → {new_filename}")
+        log(f"  Processing: {original_name} → {new_filename}")
         try:
             with open(image_path, 'wb') as img_file:
                 img_file.write(cover_image.get_content())
@@ -121,10 +127,10 @@ def extract_images_from_epub(book, output_dir, safe_title):
                 'originalName': original_name,
                 'altText': None
             })
-            print(f"  [OK] Extracted: {new_filename}")
+            log(f"  [OK] Extracted: {new_filename}")
         except Exception as e:
-            print(f"  [FAIL] ERROR saving cover image {original_name}:")
-            print(f"     Exception: {type(e).__name__}: {e}")
+            log(f"  [FAIL] ERROR saving cover image {original_name}:")
+            log(f"     Exception: {type(e).__name__}: {e}")
             failed_images.append(original_name)
 
     # Extract remaining images
@@ -139,7 +145,7 @@ def extract_images_from_epub(book, output_dir, safe_title):
         new_filename = f"illustration-{image_counter:03d}{ext}"
         image_path = images_dir / new_filename
 
-        print(f"  Processing: {original_name} → {new_filename}")
+        log(f"  Processing: {original_name} → {new_filename}")
         try:
             with open(image_path, 'wb') as img_file:
                 img_file.write(item.get_content())
@@ -151,22 +157,22 @@ def extract_images_from_epub(book, output_dir, safe_title):
                 'originalName': original_name,
                 'altText': None
             })
-            print(f"  [OK] Extracted: {new_filename}")
+            log(f"  [OK] Extracted: {new_filename}")
         except Exception as e:
-            print(f"  [FAIL] ERROR saving image {original_name}:")
-            print(f"     Exception: {type(e).__name__}: {e}")
+            log(f"  [FAIL] ERROR saving image {original_name}:")
+            log(f"     Exception: {type(e).__name__}: {e}")
             failed_images.append(original_name)
 
     # Validation
-    print(f"\n  Summary:")
-    print(f"    Total images in EPUB: {total_images}")
-    print(f"    Successfully extracted: {len(image_metadata)}")
+    log(f"\n  Summary:")
+    log(f"    Total images in EPUB: {total_images}")
+    log(f"    Successfully extracted: {len(image_metadata)}")
     if failed_images:
-        print(f"    [WARN]  Failed to extract: {len(failed_images)}")
+        log(f"    [WARN]  Failed to extract: {len(failed_images)}")
         for img in failed_images:
-            print(f"       - {img}")
+            log(f"       - {img}")
     if len(image_metadata) < total_images:
-        print(f"    [WARN]  WARNING: {total_images - len(image_metadata)} image(s) missing!")
+        log(f"    [WARN]  WARNING: {total_images - len(image_metadata)} image(s) missing!")
 
     return image_metadata
 
@@ -191,8 +197,8 @@ def upload_to_api(fileName, directory, content, api_url=None, api_key=None):
         api_key = os.environ.get('ADMIN_API_KEY')
 
     if not api_key:
-        print("Error: ADMIN_API_KEY environment variable not set")
-        print("Please set it with: export ADMIN_API_KEY=your-api-key")
+        log("Error: ADMIN_API_KEY environment variable not set")
+        log("Please set it with: export ADMIN_API_KEY=your-api-key")
         return False
 
     endpoint = f"{api_url}/api/admin?action=text-entries"
@@ -212,27 +218,27 @@ def upload_to_api(fileName, directory, content, api_url=None, api_key=None):
         data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(endpoint, data=data, headers=headers, method='POST')
 
-        print(f"  Uploading to API: {endpoint}")
+        log(f"  Uploading to API: {endpoint}")
         with urllib.request.urlopen(req, timeout=30) as response:
             response_data = json.loads(response.read().decode('utf-8'))
             if response_data.get('success'):
-                print(f"  [OK] Upload successful: {response_data.get('message', 'OK')}")
+                log(f"  [OK] Upload successful: {response_data.get('message', 'OK')}")
                 return True
             else:
-                print(f"  [FAIL] Upload failed: {response_data.get('message', 'Unknown error')}")
+                log(f"  [FAIL] Upload failed: {response_data.get('message', 'Unknown error')}")
                 return False
 
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
-        print(f"  [FAIL] HTTP Error {e.code}: {e.reason}")
-        print(f"     {error_body}")
+        log(f"  [FAIL] HTTP Error {e.code}: {e.reason}")
+        log(f"     {error_body}")
         return False
     except urllib.error.URLError as e:
-        print(f"  [FAIL] Connection Error: {e.reason}")
-        print(f"     Make sure the server is running at {api_url}")
+        log(f"  [FAIL] Connection Error: {e.reason}")
+        log(f"     Make sure the server is running at {api_url}")
         return False
     except Exception as e:
-        print(f"  [FAIL] Unexpected error: {e}")
+        log(f"  [FAIL] Unexpected error: {e}")
         return False
 
 
@@ -260,16 +266,16 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
     Returns:
         Path to created text file (file mode) or True/False (api mode)
     """
-    print(f"Processing EPUB: {epub_path}")
-    print(f"Filtering mode: {'N3+ only' if filter_n3_plus else 'All kanji'}")
-    print(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
-    print(f"Output mode: {output_mode}")
+    log(f"Processing EPUB: {epub_path}")
+    log(f"Filtering mode: {'N3+ only' if filter_n3_plus else 'All kanji'}")
+    log(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
+    log(f"Output mode: {output_mode}")
 
     # Read EPUB
     try:
         book = epub.read_epub(epub_path)
     except Exception as e:
-        print(f"Error reading EPUB: {e}")
+        log(f"Error reading EPUB: {e}")
         sys.exit(1)
 
     # Get book metadata
@@ -278,8 +284,8 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
     author = book.get_metadata('DC', 'creator')
     author = author[0][0] if author else 'Unknown'
 
-    print(f"Title: {title}")
-    print(f"Author: {author}")
+    log(f"Title: {title}")
+    log(f"Author: {author}")
 
     # Create output filename and directory structure
     safe_title = sanitize_filename(title)
@@ -290,14 +296,14 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
     output_dir = Path(output_dir)
 
     # Extract images first
-    print(f"\n{'='*60}")
-    print("Extracting images from EPUB...")
-    print(f"{'='*60}")
+    log(f"\n{'='*60}")
+    log("Extracting images from EPUB...")
+    log(f"{'='*60}")
     image_metadata = extract_images_from_epub(book, output_dir, safe_title)
-    print(f"  Extracted {len(image_metadata)} images")
+    log(f"  Extracted {len(image_metadata)} images")
 
     # PASS 1: Extract name dictionary from existing ruby tags
-    print("\nPass 1: Building name/term dictionary from EPUB...")
+    log("\nPass 1: Building name/term dictionary from EPUB...")
     from furigana_helper import extract_ruby_dictionary
 
     name_dictionary = {}
@@ -311,26 +317,26 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
                 # Skip chapters that fail to parse
                 continue
 
-    print(f"  Found {len(name_dictionary)} unique names/terms with furigana")
+    log(f"  Found {len(name_dictionary)} unique names/terms with furigana")
     if name_dictionary:
         # Show a few examples
         sample = list(name_dictionary.items())[:5]
         for kanji, reading in sample:
-            print(f"    {kanji} → {reading}")
+            log(f"    {kanji} → {reading}")
 
     # Initialize furigana generator with name dictionary and hiragana style
-    print("\nPass 2: Initializing MeCab and processing chapters...")
+    log("\nPass 2: Initializing MeCab and processing chapters...")
     try:
         generator = FuriganaGenerator(
             name_dictionary=name_dictionary,
             preserve_long_vowel=preserve_long_vowel
         )
     except RuntimeError as e:
-        print(f"Error: {e}")
+        log(f"Error: {e}")
         sys.exit(1)
 
     # Process chapters
-    print("\nExtracting chapters...")
+    log("\nExtracting chapters...")
     chapters = []
     chapter_count = 0
 
@@ -339,7 +345,7 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
         item = book.get_item_with_id(spine_id)
         if item and item.get_type() == ebooklib.ITEM_DOCUMENT:
             chapter_count += 1
-            print(f"  Processing chapter {chapter_count}...", end='', flush=True)
+            log(f"  Processing chapter {chapter_count}...", end='', flush=True)
 
             try:
                 # Get HTML content
@@ -369,23 +375,23 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
                 # Only add non-empty chapters with actual content
                 if processed and len(processed) > 10:  # Ignore nearly-empty chapters
                     chapters.append(processed)
-                    print(" [OK]")
+                    log(" [OK]")
                 else:
-                    print(" (empty, skipped)")
+                    log(" (empty, skipped)")
 
             except Exception as e:
-                print(f" [FAIL] Error: {e}")
+                log(f" [FAIL] Error: {e}")
                 # Continue processing other chapters
                 continue
 
     if not chapters:
-        print("\nError: No chapters could be extracted from the EPUB.")
+        log("\nError: No chapters could be extracted from the EPUB.")
         sys.exit(1)
 
-    print(f"\nSuccessfully processed {len(chapters)} chapters")
+    log(f"\nSuccessfully processed {len(chapters)} chapters")
 
     # Combine chapters
-    print("Combining chapters...")
+    log("Combining chapters...")
     output_text = f"Title: {title}\nAuthor: {author}\n\n"
     output_text += "\n\n".join(chapters)
 
@@ -399,10 +405,10 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
 
     # Save based on output mode
     if output_mode == 'api':
-        print(f"\nUploading to API...")
-        print(f"  File name: {safe_title}")
-        print(f"  Directory: bookv2-furigana")
-        print(f"  Content length: {len(output_text)} characters")
+        log(f"\nUploading to API...")
+        log(f"  File name: {safe_title}")
+        log(f"  Directory: bookv2-furigana")
+        log(f"  Content length: {len(output_text)} characters")
 
         success = upload_to_api(
             fileName=safe_title,
@@ -411,24 +417,24 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
         )
 
         if not success:
-            print("\n[FAIL] Failed to upload to API")
-            print("  You can still save to file by running without --output-mode api")
+            log("\n[FAIL] Failed to upload to API")
+            log("  You can still save to file by running without --output-mode api")
             sys.exit(1)
 
         # Calculate file size estimate
         file_size = len(output_text.encode('utf-8')) / 1024  # KB
 
-        print(f"\n{'='*60}")
-        print(f"[OK] Upload complete!")
-        print(f"{'='*60}")
-        print(f"File name: {safe_title}")
-        print(f"Directory: bookv2-furigana")
-        print(f"File size (estimate): {file_size:.1f} KB")
-        print(f"Chapters: {len(chapters)}")
-        print(f"Images: {len(image_metadata)} (saved to {book_dir})")
-        print(f"Filter mode: {'N3+ kanji only' if filter_n3_plus else 'All kanji'}")
-        print(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
-        print(f"{'='*60}")
+        log(f"\n{'='*60}")
+        log(f"[OK] Upload complete!")
+        log(f"{'='*60}")
+        log(f"File name: {safe_title}")
+        log(f"Directory: bookv2-furigana")
+        log(f"File size (estimate): {file_size:.1f} KB")
+        log(f"Chapters: {len(chapters)}")
+        log(f"Images: {len(image_metadata)} (saved to {book_dir})")
+        log(f"Filter mode: {'N3+ kanji only' if filter_n3_plus else 'All kanji'}")
+        log(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
+        log(f"{'='*60}")
 
         # Still save metadata JSON file for images reference
         metadata = {
@@ -446,24 +452,24 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
             'images': image_metadata
         }
 
-        print(f"\nSaving metadata to: {metadata_path}")
+        log(f"\nSaving metadata to: {metadata_path}")
         try:
             with open(metadata_path, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"Error saving metadata: {e}")
+            log(f"Error saving metadata: {e}")
             # Don't exit - metadata is not critical for API mode
 
         return True
 
     # File mode (default)
     # Save text file
-    print(f"\nSaving text to: {output_path}")
+    log(f"\nSaving text to: {output_path}")
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(output_text)
     except Exception as e:
-        print(f"Error saving file: {e}")
+        log(f"Error saving file: {e}")
         sys.exit(1)
 
     # Calculate file size
@@ -487,26 +493,26 @@ def process_epub_to_text(epub_path, filter_n3_plus=False, output_dir=None, prese
     }
 
     # Save metadata JSON
-    print(f"Saving metadata to: {metadata_path}")
+    log(f"Saving metadata to: {metadata_path}")
     try:
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"Error saving metadata: {e}")
+        log(f"Error saving metadata: {e}")
         sys.exit(1)
 
     # Print summary
-    print(f"\n{'='*60}")
-    print(f"[OK] Conversion complete!")
-    print(f"{'='*60}")
-    print(f"Output file: {output_path}")
-    print(f"Metadata: {metadata_path}")
-    print(f"File size: {file_size:.1f} KB")
-    print(f"Chapters: {len(chapters)}")
-    print(f"Images: {len(image_metadata)}")
-    print(f"Filter mode: {'N3+ kanji only' if filter_n3_plus else 'All kanji'}")
-    print(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
-    print(f"{'='*60}")
+    log(f"\n{'='*60}")
+    log(f"[OK] Conversion complete!")
+    log(f"{'='*60}")
+    log(f"Output file: {output_path}")
+    log(f"Metadata: {metadata_path}")
+    log(f"File size: {file_size:.1f} KB")
+    log(f"Chapters: {len(chapters)}")
+    log(f"Images: {len(image_metadata)}")
+    log(f"Filter mode: {'N3+ kanji only' if filter_n3_plus else 'All kanji'}")
+    log(f"Hiragana style: {'Long vowel marks (ー)' if preserve_long_vowel else 'Full hiragana (proper)'}")
+    log(f"{'='*60}")
 
     return output_path
 
@@ -572,13 +578,13 @@ Note: Existing furigana in the EPUB will always be preserved.
     # Validate input file
     epub_path = Path(args.epub_file)
     if not epub_path.exists():
-        print(f"Error: File not found: {epub_path}")
+        log(f"Error: File not found: {epub_path}")
         sys.exit(1)
 
     if not epub_path.suffix.lower() == '.epub':
-        print(f"Warning: File doesn't have .epub extension: {epub_path}")
-        response = input("Continue anyway? (y/n): ")
-        if response.lower() != 'y':
+        log(f"Warning: File doesn't have .epub extension: {epub_path}")
+        log("Continue anyway? (y/n): ", end='', flush=True)
+        if sys.stdin.readline().strip().lower() != 'y':
             sys.exit(0)
 
     # Process the EPUB
@@ -596,14 +602,14 @@ Note: Existing furigana in the EPUB will always be preserved.
 
     if output_mode == 'api':
         if result:
-            print("\n[OK] Done! Text uploaded to database via API.")
-            print("  Refresh your app to see the new book.")
+            log("\n[OK] Done! Text uploaded to database via API.")
+            log("  Refresh your app to see the new book.")
         else:
-            print("\n[FAIL] Failed to upload to API.")
+            log("\n[FAIL] Failed to upload to API.")
             sys.exit(1)
     else:
-        print("\n[OK] Done! You can now use this file in your Japanese reading app.")
-        print(f"  File saved to: {result}")
+        log("\n[OK] Done! You can now use this file in your Japanese reading app.")
+        log(f"  File saved to: {result}")
 
 
 if __name__ == '__main__':

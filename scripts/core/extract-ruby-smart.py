@@ -18,6 +18,12 @@ import sys
 from pathlib import Path
 from dataclasses import dataclass
 
+
+# Progress goes to stderr so stdout carries only the result the pipeline reads.
+def log(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+
 try:
     import ebooklib
     from ebooklib import epub
@@ -26,8 +32,8 @@ try:
     from bs4 import XMLParsedAsHTMLWarning
     warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 except ImportError as e:
-    print(f"Error: Missing dependencies: {e}")
-    print("Run: pip install ebooklib beautifulsoup4 lxml")
+    log(f"Error: Missing dependencies: {e}")
+    log("Run: pip install ebooklib beautifulsoup4 lxml")
     sys.exit(1)
 
 
@@ -241,21 +247,21 @@ def main():
 
     if dated_dir.exists():
         temp_dir = dated_dir
-        print(f"Using dated directory: {temp_dir}")
+        log(f"Using dated directory: {temp_dir}")
     elif temp_base.exists():
         temp_dir = temp_base
     else:
-        print(f"Error: temp directory not found at {temp_base}")
+        log(f"Error: temp directory not found at {temp_base}")
         sys.exit(1)
 
     epub_files = list(temp_dir.glob('*.epub'))
-    print(f"Found {len(epub_files)} EPUB files")
-    print("Using Smart Extraction: Kanji-Merge + Semantic Okurigana\n")
+    log(f"Found {len(epub_files)} EPUB files")
+    log("Using Smart Extraction: Kanji-Merge + Semantic Okurigana\n")
 
     total_books_updated = 0
 
     for epub_path in epub_files:
-        print(f"Processing: {epub_path.name}")
+        log(f"Processing: {epub_path.name}")
         try:
             book = epub.read_epub(str(epub_path))
             all_words = {}
@@ -267,7 +273,7 @@ def main():
                     chapter_words = extract_words_from_html(html)
                     all_words.update(chapter_words)
 
-            print(f"  -> Extracted {len(all_words)} unique vocabulary entries")
+            log(f"  -> Extracted {len(all_words)} unique vocabulary entries")
 
             book_dir = find_book_directory(epub_path, public_dir)
             if book_dir:
@@ -290,15 +296,15 @@ def main():
                 with open(registry_path, 'w', encoding='utf-8') as f:
                     json.dump(registry, f, ensure_ascii=False, indent=2)
 
-                print(f"  -> Registry updated: {registry_path}")
+                log(f"  -> Registry updated: {registry_path}")
                 total_books_updated += 1
             else:
-                print(f"  [!] Skipped: Could not find matching directory in public/")
+                log(f"  [!] Skipped: Could not find matching directory in public/")
 
         except Exception as e:
-            print(f"  [!] Error processing {epub_path.name}: {e}")
+            log(f"  [!] Error processing {epub_path.name}: {e}")
 
-    print(f"\nCompleted. Updated {total_books_updated} books.")
+    log(f"\nCompleted. Updated {total_books_updated} books.")
 
 
 if __name__ == '__main__':
