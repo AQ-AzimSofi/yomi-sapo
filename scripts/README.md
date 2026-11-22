@@ -32,7 +32,7 @@ npx tsx scripts/epub-to-book.ts --help    # every listed option and its default
 Steps:
 
 1. Extract the text, images and metadata from the EPUB into `public/bookv2-furigana/<book>/` (`core/epub-to-text-furigana.py`).
-2. Build `ruby-registry.json` from the EPUB's ruby (`core/extract-ruby-smart.py`).
+2. Build `ruby-registry.json` from the EPUB's ruby (`core/extract-ruby-smart.py`). The reader reads registries from the database, so load it afterwards with `npx tsx scripts/db/import-ruby-registry.ts --apply` (see [db/README.md](db/README.md)).
 3. Upload `images/` and the metadata JSON to the BookImages bucket when `BOOK_IMAGES_BUCKET` is set in `.env.local` (see "Book Illustrations" in the root README).
 4. Rephrase the text chunk by chunk.
 5. Add furigana to each rephrased chunk (`core/add-furigana-to-text.py`) and append it to `<book>-rephrase-furigana.txt`, the text the reader shows.

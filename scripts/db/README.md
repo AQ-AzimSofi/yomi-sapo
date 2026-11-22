@@ -37,7 +37,8 @@ SOURCE_URL='<postgres url>' npx tsx scripts/db/copy-to-dsql.ts --endpoint <clust
 ```
 
 - It reads the source only in `REPEATABLE READ READ ONLY` transactions, and refuses a Neon pooled (`-pooler`) host. It refuses any target but a DSQL endpoint, and connects there as `admin` with a token from the default AWS credentials.
-- It first checks that both databases hold the same columns for each table, and that the target has no table `COPY_TABLES` leaves out. A table added to the schema later (the ruby registry, say) needs an entry in `COPY_TABLES` before the copy runs again.
+- It first checks that both databases hold the same columns for each table, and that the target has no table that neither `COPY_TABLES` nor `IMPORTED_TABLES` names. A table added to the schema later needs an entry in one of them before the copy runs again.
+- It leaves the tables in `IMPORTED_TABLES` alone and names the script that fills each: `ruby_registry_entries`, which Neon does not have, comes from `import-ruby-registry.ts`.
 - Every value travels as text (`::text`) and is cast to the target column's type, so timestamps are not shifted by the machine's time zone and `jsonb` is not stored as a JSON string.
 - A book too large for one DSQL value stops it before anything is written. A book's `content_bytes` is copied only while it equals the size of its text, and as NULL otherwise, so the library recounts that book.
 - Rows are upserted on their `id` in transactions of at most 1,000 rows and 4 MiB of text, each run again on a write conflict (40001). Only rows that are missing or different in the target are written, so a second run sends just what changed.
@@ -45,6 +46,28 @@ SOURCE_URL='<postgres url>' npx tsx scripts/db/copy-to-dsql.ts --endpoint <clust
 - The verification reads every row of both databases again and compares a hash of each. It ends with `Every row is identical.` and exit code 0, or lists the keys of the missing, extra and different rows and exits 1.
 
 `copy-to-dsql.integration.test.ts` copies a database into a scratch schema of a DSQL test cluster, which it drops afterwards. It runs only when `COPY_TEST_SOURCE_URL` names a throwaway PostgreSQL database and `DSQL_TEST_ENDPOINT` names a DSQL test cluster.
+
+---
+
+## import-ruby-registry.ts
+
+Loads every `ruby-registry.json` under a folder (`public` by default) into `ruby_registry_entries`, the table the reader's word lookup panel, its sticky notes and the `/ruby-registry` page read through `/api/ruby-registry`. A file at `<folder>/bookv2-furigana/<book>/ruby-registry.json` becomes the registry with directory `bookv2-furigana` and book name `<book>`, the key the reader uses (`rubyRegistryKey` in `lib/books/bookRef.ts`). `public/` never deploys, so this is how a registry reaches production.
+
+```bash
+npx tsx scripts/db/import-ruby-registry.ts [folder]                  # local, dry run
+npx tsx scripts/db/import-ruby-registry.ts [folder] --apply          # local, write
+npx tsx scripts/db/import-ruby-registry.ts [folder] --prod --apply   # Aurora DSQL production, write
+```
+
+- It reads and checks every file before it connects, and stops at a file the table could not store: a word or reading longer than 255 characters, an unknown `source`, a word listed twice, or a file outside a book folder.
+- It only inserts the words the table lacks (`ON CONFLICT DO NOTHING`), in statements of at most 500 rows, each sent again on a write conflict (40001). It never overwrites a row: a reading the owner edited stays, and a word the owner deleted or ignored stays hidden, because those rows are kept with `ignored` set. Running it again inserts nothing.
+- It prints one line per book and the totals: new, unchanged, deleted or ignored by the owner, and different in the database (kept).
+- Without `--prod` it writes to `DATABASE_URL` and refuses any host but `localhost` or `127.0.0.1`. `--prod` needs `PROD_DSQL_ENDPOINT`: production on Neon has no registry table, so the script refuses it.
+- A database without the table gets a message to apply the schema first (`npm run db:migrate`, or `apply-schema-dsql.ts` on DSQL).
+
+The registry table is not part of the dev sync, so a registry edit stays in the database it was made in.
+
+`import-ruby-registry.integration.test.ts` imports into a scratch schema of a throwaway PostgreSQL database (`REGISTRY_IMPORT_TEST_LOCAL_URL`) and of a DSQL test cluster (`DSQL_TEST_ENDPOINT`). `lib/db/rubyRegistryQueries.integration.test.ts` runs the app's registry queries in a scratch schema, first without the table, on `DSQL_TEST_ENDPOINT` or else `REGISTRY_TEST_DATABASE_URL`.
 
 ---
 
