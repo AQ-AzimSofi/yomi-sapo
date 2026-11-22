@@ -72,6 +72,20 @@ async function getColumns(client: Client, tableName: string): Promise<string[]> 
   return result.rows.map((r: { column_name: string }) => r.column_name);
 }
 
+// A target that numbers its rows from a sequence (SERIAL, or Aurora DSQL's nextval default) has
+// to number a copied row itself. Sending the source's id would collide with a row the target
+// numbered (23505), and leave its sequence behind ids already taken, so the app's next insert
+// there would collide too. Rows are matched on their conflict key, never on id.
+async function targetNumbersIds(client: Client, tableName: string): Promise<boolean> {
+  const result = await client.query(
+    `SELECT column_default FROM information_schema.columns
+     WHERE table_name = $1 AND column_name = $2 AND table_schema = 'public'`,
+    [stripQuotes(tableName), SURROGATE_PK]
+  );
+  const columnDefault: unknown = result.rows[0]?.column_default;
+  return typeof columnDefault === 'string' && columnDefault.startsWith('nextval(');
+}
+
 async function getCount(client: Client, table: string): Promise<number | null> {
   const bare = stripQuotes(table);
   try {
@@ -349,8 +363,11 @@ export async function syncDirection(
   direction: SyncDirection
 ): Promise<SyncResult> {
   const tableName = stripQuotes(table.name);
-  const columns = await getColumns(source, table.name);
-  if (columns.length === 0) return { table: tableName, rows: 0, skipped: 0, failed: 0, direction };
+  const sourceColumns = await getColumns(source, table.name);
+  if (sourceColumns.length === 0) return { table: tableName, rows: 0, skipped: 0, failed: 0, direction };
+  const isIdConflictKey = conflictColumns(table.conflictKey).includes(SURROGATE_PK);
+  const isIdFromTarget = !isIdConflictKey && (await targetNumbersIds(target, table.name));
+  const columns = isIdFromTarget ? sourceColumns.filter((column) => column !== SURROGATE_PK) : sourceColumns;
 
   // Crash early on impossible state: if a future schema widens to where one
   // batch would exceed PG's hard parameter limit, the cause would otherwise
