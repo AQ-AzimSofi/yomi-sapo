@@ -112,6 +112,26 @@ describe('syncDirection', () => {
     expect(result).toEqual({ table: 'text_entries', rows: 2, skipped: 0, failed: 0, direction: 'local -> prod' });
   });
 
+  it('leaves the id out of a new row so a target that numbers rows from a sequence gives it its own', async () => {
+    const source = fakeClient({ columns: BOOK_COLUMNS, rows: [book('a', 'あ', { id: 516 })], idDefault: SERIAL_ID });
+    const target = fakeClient(emptyTarget(SERIAL_ID));
+
+    await syncDirection(source.client, target.client, TEXT_ENTRIES, 'local -> prod');
+
+    expect(insertedColumns(target.inserts[0])).toEqual(BOOK_COLUMNS.filter((column) => column !== 'id'));
+  });
+
+  it('copies the id of a table whose ids are not numbered by the target', async () => {
+    const vocabulary = TABLES.find((table) => table.name === 'vocabulary_entries') as TableConfig;
+    const word = { id: 'V1StGXR8_Z5jdHi6B-myT', word: '読む', created_at: UPDATED_AT, updated_at: UPDATED_AT };
+    const source = fakeClient({ columns: Object.keys(word), rows: [word], idDefault: null });
+    const target = fakeClient({ columns: Object.keys(word), rows: [], idDefault: null });
+
+    await syncDirection(source.client, target.client, vocabulary, 'local -> prod');
+
+    expect(insertedRows(target.inserts[0])).toEqual([word]);
+  });
+
   it('stops at an over-long message (08P01), which also drops the connection, instead of retrying row by row', async () => {
     const source = fakeClient({ columns: BOOK_COLUMNS, rows: [book('a', 'あ'), book('b', 'い', { id: 2 })], idDefault: SERIAL_ID });
     const target = fakeClient(emptyTarget(), [databaseError('08P01', 'invalid message length')]);
