@@ -1,4 +1,4 @@
-import { splitByChunkText } from './legacyOutputSplit';
+import { splitByChunkSeparators, splitByChunkText } from './legacyOutputSplit';
 import { countCompletedChunks, simpleHash, type ChunkProgress, type ChunkProgressV1, type ProgressFile, type ProgressFileV1 } from './progress';
 import { FALLBACK_ERROR } from './rephraseChunk';
 
@@ -34,17 +34,19 @@ function findOutOfOrderChunk(items: readonly ChunkProgressV1[], completedCount: 
     .find((item, offset) => item.status !== 'pending' && !(offset === 0 && item.status === 'processing'));
 }
 
-// A run stopped mid-chunk may have appended that chunk before it could mark it completed.
+// A run stopped mid-chunk may have appended that chunk before it could mark it completed. The
+// text check comes first as it is exact; the separators also split a reader file with a head
+// main could not restore.
 function splitLegacyOutput(text: string, chunks: readonly string[], chunkCounts: readonly number[]): string[] | undefined {
-  return chunkCounts
-    .map((chunkCount) => splitByChunkText(text, chunks.slice(0, chunkCount)))
+  return [splitByChunkText, splitByChunkSeparators]
+    .flatMap((split) => chunkCounts.map((chunkCount) => split(text, chunks.slice(0, chunkCount))))
     .find((chunkTexts) => chunkTexts !== undefined);
 }
 
 function describeUnsplittable(completedCount: number): string {
   return `-rephrase-furigana.txt is not the ${completedCount} completed chunk(s) the progress file lists `
-    + '(its < lines must hold the source text in order), so it cannot be split into chunk files. '
-    + '--reset starts the book over.';
+    + '(its < lines must hold the source text in order, or its chunks must be the ones main appended), '
+    + 'so it cannot be split into chunk files. --reset starts the book over.';
 }
 
 function toChunkProgress(item: ChunkProgressV1, chunk: string, isFound: boolean): ChunkProgress {

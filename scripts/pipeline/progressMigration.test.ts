@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { GEMINI_CHUNKS, GEMINI_READER_CHUNKS, GEMINI_REPLIES } from './fixtures/geminiV1Book';
+import {
+  GEMINI_CHUNKS, GEMINI_READER_CHUNKS, GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD, GEMINI_REPLIES, GEMINI_REPLIES_WITH_UNMATCHED_HEAD,
+} from './fixtures/geminiV1Book';
 import { simpleHash, type ChunkProgressV1, type ProgressFileV1 } from './progress';
 import { migrateV1Progress, type MigrationResult } from './progressMigration';
 import { FALLBACK_ERROR } from './rephraseChunk';
@@ -59,6 +61,32 @@ describe('migrateV1Progress', () => {
     const result = migrated(migrateV1Progress(v1Progress(['completed', 'completed', 'completed', 'processing']), GEMINI_CHUNKS, outputs));
     expect(result.progress.chunks.items.map((item) => item.status)).toEqual(['completed', 'completed', 'completed', 'pending']);
     expect(result.chunkTexts.map((chunkTexts) => chunkTexts.furiganaText)).toEqual(GEMINI_READER_CHUNKS);
+  });
+
+  it('Test_migrateV1Progress_GeminiBookWithAnUnmatchedHeadMovesOver', () => {
+    const outputs = { rawText: GEMINI_REPLIES_WITH_UNMATCHED_HEAD.join('\n\n'), furiganaText: GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD.join('\n\n') };
+    const result = migrated(migrateV1Progress(v1Progress(['completed', 'completed', 'completed', 'processing']), GEMINI_CHUNKS, outputs));
+    expect(result.progress.chunks.items.map((item) => item.status)).toEqual(['completed', 'completed', 'completed', 'pending']);
+    expect(result.chunkTexts.map((chunkTexts) => chunkTexts.furiganaText)).toEqual(GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD);
+    expect(result.shouldSetAsideRawOutput).toBe(true);
+  });
+
+  it('Test_migrateV1Progress_GeminiChunkWithAnUnmatchedHeadStoppedAfterBothWritesIsKept', () => {
+    const outputs = {
+      rawText: GEMINI_REPLIES_WITH_UNMATCHED_HEAD.slice(0, 2).join('\n\n'),
+      furiganaText: GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD.slice(0, 2).join('\n\n'),
+    };
+    const result = migrated(migrateV1Progress(v1Progress(['completed', 'processing', 'pending', 'pending']), GEMINI_CHUNKS, outputs));
+    expect(result.progress.chunks.items.map((item) => item.status)).toEqual(['completed', 'completed', 'pending', 'pending']);
+    expect(result.chunkTexts).toHaveLength(2);
+  });
+
+  it('Test_migrateV1Progress_ChunkAppendedTwiceIsAProblem', () => {
+    // Main redid a chunk it was killed in after appending it, then was stopped before appending the next.
+    const appendedTwice = <T>([first, second]: readonly T[]) => [first, second, second].join('\n\n');
+    const outputs = { rawText: appendedTwice(GEMINI_REPLIES_WITH_UNMATCHED_HEAD), furiganaText: appendedTwice(GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD) };
+    const result = migrateV1Progress(v1Progress(['completed', 'completed', 'processing', 'pending']), GEMINI_CHUNKS, outputs);
+    expect(result).toEqual({ problem: expect.stringContaining('-rephrase-furigana.txt is not the 2 completed chunk(s)') });
   });
 
   it('Test_migrateV1Progress_RepliesThatDoNotSplitAreSetAside', () => {

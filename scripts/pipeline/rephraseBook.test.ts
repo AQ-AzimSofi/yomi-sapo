@@ -7,7 +7,9 @@ import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { splitParagraphs } from '../utils/claude-rephrase';
 import { getBookFiles } from './chunkFiles';
 import { chunkText, stripRubyTags } from './chunking';
-import { GEMINI_CHUNKS, GEMINI_CHUNK_SIZE, GEMINI_READER_CHUNKS, GEMINI_REPLIES } from './fixtures/geminiV1Book';
+import {
+  GEMINI_CHUNKS, GEMINI_CHUNK_SIZE, GEMINI_READER_CHUNKS, GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD, GEMINI_REPLIES, GEMINI_REPLIES_WITH_UNMATCHED_HEAD,
+} from './fixtures/geminiV1Book';
 import { createProgress, type ProgressFile, type ProgressFileV1, type ProgressSettings } from './progress';
 import type { FuriganaResult } from './furigana';
 import { batchRephrase, type RephraseDeps, type RephraseOptions } from './rephraseBook';
@@ -162,7 +164,7 @@ describe('batchRephrase', () => {
   }
 
   // What the version 1 pipeline left for the Gemini book of fixtures/geminiV1Book, stopped in its last chunk.
-  function writeGeminiV1StoppedInLastChunk(): void {
+  function writeGeminiV1StoppedInLastChunk(outputs = { replies: GEMINI_REPLIES, readerChunks: GEMINI_READER_CHUNKS }): void {
     fs.rmSync(testRoot, { recursive: true, force: true });
     fs.mkdirSync(sourceDir, { recursive: true });
     const sourceText = GEMINI_CHUNKS.join('');
@@ -182,8 +184,8 @@ describe('batchRephrase', () => {
       },
     };
     fs.writeFileSync(files.progressPath, JSON.stringify(v1));
-    fs.writeFileSync(files.rawPath, GEMINI_REPLIES.join('\n\n'));
-    fs.writeFileSync(files.furiganaPath, GEMINI_READER_CHUNKS.join('\n\n'));
+    fs.writeFileSync(files.rawPath, outputs.replies.join('\n\n'));
+    fs.writeFileSync(files.furiganaPath, outputs.readerChunks.join('\n\n'));
   }
 
   function readSetAsideReplies(): string {
@@ -473,6 +475,16 @@ describe('batchRephrase', () => {
       const lastChunk = addFakeFurigana(rephraseOf(GEMINI_CHUNKS[3])).text;
       expect(readOutputs().furiganaText).toBe([...GEMINI_READER_CHUNKS, lastChunk].join('\n\n'));
       expect(readSetAsideReplies()).toBe(GEMINI_REPLIES.join('\n\n'));
+    });
+
+    it('Test_batchRephrase_V1GeminiProgressWithAnUnmatchedHeadResumesTheLastChunk', async () => {
+      writeGeminiV1StoppedInLastChunk({ replies: GEMINI_REPLIES_WITH_UNMATCHED_HEAD, readerChunks: GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD });
+      const resumed = createFakeDeps();
+      expect(await batchRephrase(book, OPTIONS, resumed.deps)).toBe(true);
+      expect(resumed.rephrasedChunkIndexes).toEqual([3]);
+      const lastChunk = addFakeFurigana(rephraseOf(GEMINI_CHUNKS[3])).text;
+      expect(readOutputs().furiganaText).toBe([...GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD, lastChunk].join('\n\n'));
+      expect(readSetAsideReplies()).toBe(GEMINI_REPLIES_WITH_UNMATCHED_HEAD.join('\n\n'));
     });
 
     it('Test_batchRephrase_V1GeminiProgressKilledWhileMovingOverKeepsTheReplies', async () => {

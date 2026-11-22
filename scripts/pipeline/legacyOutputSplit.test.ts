@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { GEMINI_CHUNKS, GEMINI_READER_CHUNKS } from './fixtures/geminiV1Book';
-import { splitByChunkText } from './legacyOutputSplit';
+import { GEMINI_CHUNKS, GEMINI_READER_CHUNKS, GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD } from './fixtures/geminiV1Book';
+import { splitByChunkSeparators, splitByChunkText } from './legacyOutputSplit';
 
 const CHUNK_0 = '<ruby>猫<rt>ねこ</rt></ruby>がいる。\n◆';
 const CHUNK_1 = '◆\n犬もいる。';
@@ -16,6 +16,11 @@ describe('splitByChunkText', () => {
   it('Test_splitByChunkText_SplitsGeminiChunksWithAHeadPerSentence', () => {
     const readerFile = GEMINI_READER_CHUNKS.join('\n\n');
     expect(splitByChunkText(readerFile, GEMINI_CHUNKS.slice(0, 3))).toEqual(GEMINI_READER_CHUNKS);
+  });
+
+  it('Test_splitByChunkText_UnmatchedGeminiHeadIsNotASplit', () => {
+    const readerFile = GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD.join('\n\n');
+    expect(splitByChunkText(readerFile, GEMINI_CHUNKS.slice(0, 3))).toBeUndefined();
   });
 
   it('Test_splitByChunkText_LineRepeatedAcrossChunksSplitsByLength', () => {
@@ -48,5 +53,33 @@ describe('splitByChunkText', () => {
   it('Test_splitByChunkText_NoChunkMatchesOnlyEmptyText', () => {
     expect(splitByChunkText('', [])).toEqual([]);
     expect(splitByChunkText('以下が要約です。', [])).toBeUndefined();
+  });
+});
+
+describe('splitByChunkSeparators', () => {
+  it('Test_splitByChunkSeparators_SplitsAppendedChunks', () => {
+    expect(splitByChunkSeparators(`${FURIGANA_0}\n\n${FURIGANA_1}`, [CHUNK_0, CHUNK_1])).toEqual([FURIGANA_0, FURIGANA_1]);
+  });
+
+  it('Test_splitByChunkSeparators_SplitsGeminiChunksWithAnUnmatchedHead', () => {
+    const readerFile = GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD.join('\n\n');
+    expect(splitByChunkSeparators(readerFile, GEMINI_CHUNKS.slice(0, 3))).toEqual(GEMINI_READER_CHUNKS_WITH_UNMATCHED_HEAD);
+  });
+
+  it('Test_splitByChunkSeparators_ExtraChunkIsNotASplit', () => {
+    expect(splitByChunkSeparators(`${FURIGANA_0}\n\n${FURIGANA_1}`, [CHUNK_0])).toBeUndefined();
+  });
+
+  it('Test_splitByChunkSeparators_BareLineBreakInsideAChunkIsNotASplit', () => {
+    const chunkWithoutFurigana = '< 犬もいる。\n>> 犬も います。';
+    expect(splitByChunkSeparators(`${FURIGANA_0}\n\n${chunkWithoutFurigana}`, [CHUNK_0, CHUNK_1])).toBeUndefined();
+  });
+
+  it('Test_splitByChunkSeparators_ChunkAppendedTwiceIsNotASplit', () => {
+    expect(splitByChunkSeparators(`${FURIGANA_0}\n\n${FURIGANA_0}`, [CHUNK_0, CHUNK_1])).toBeUndefined();
+  });
+
+  it('Test_splitByChunkSeparators_OtherTextIsNotASplit', () => {
+    expect(splitByChunkSeparators('< 別の本。\r\n>> 別。', [CHUNK_0])).toBeUndefined();
   });
 });
