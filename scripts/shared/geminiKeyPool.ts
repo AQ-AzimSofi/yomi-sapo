@@ -55,6 +55,18 @@ export function describeUnusableKey(error: unknown, model: string): string | und
   return undefined;
 }
 
+/** A per-minute rate limit, which clears by itself; a per-day quota does not (see describeUnusableKey). */
+export function isRateLimited(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 429 && !error.message.includes('PerDay');
+}
+
+/** The wait a rate-limit error's RetryInfo asks for, such as "retryDelay":"37s", in whole seconds. */
+export function readRetryDelaySecs(error: unknown): number | undefined {
+  const message = error instanceof Error ? error.message : '';
+  const match = /"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(message);
+  return match ? Math.ceil(Number(match[1])) : undefined;
+}
+
 export function isUnknownModel(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }

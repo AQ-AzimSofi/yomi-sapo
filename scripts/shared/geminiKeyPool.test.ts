@@ -1,6 +1,16 @@
 import { ApiError, type GoogleGenAI } from '@google/genai';
 import { describe, expect, it, vi } from 'vitest';
-import { createKeyPool, describeUnusableKey, isRetryable, isUnknownModel, listFreeKeyEnvNames, pickKey, retireKey } from './geminiKeyPool';
+import {
+  createKeyPool,
+  describeUnusableKey,
+  isRateLimited,
+  isRetryable,
+  isUnknownModel,
+  listFreeKeyEnvNames,
+  pickKey,
+  readRetryDelaySecs,
+  retireKey,
+} from './geminiKeyPool';
 
 const createFakeClient = (apiKey: string) => ({ apiKey }) as unknown as GoogleGenAI;
 
@@ -101,5 +111,38 @@ describe('isUnknownModel', () => {
 
   it('Test_isUnknownModel_RateLimitIsNot', () => {
     expect(isUnknownModel(new ApiError({ status: 429, message: '' }))).toBe(false);
+  });
+});
+
+const RATE_LIMIT_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    message: 'You exceeded your current quota.',
+    status: 'RESOURCE_EXHAUSTED',
+    details: [
+      { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' }] },
+      { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '36.5s' },
+    ],
+  },
+});
+
+describe('isRateLimited', () => {
+  it.each([
+    ['a per-minute 429', new ApiError({ status: 429, message: RATE_LIMIT_BODY }), true],
+    ['a per-day 429', new ApiError({ status: 429, message: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }), false],
+    ['a 503', new ApiError({ status: 503, message: 'overloaded' }), false],
+    ['a network error', new Error('fetch failed'), false],
+  ])('Test_isRateLimited %s', (_, error, expected) => {
+    expect(isRateLimited(error)).toBe(expected);
+  });
+});
+
+describe('readRetryDelaySecs', () => {
+  it('Test_readRetryDelaySecs_RoundsTheRetryInfoDelayUp', () => {
+    expect(readRetryDelaySecs(new ApiError({ status: 429, message: RATE_LIMIT_BODY }))).toBe(37);
+  });
+
+  it('Test_readRetryDelaySecs_NoRetryInfo', () => {
+    expect(readRetryDelaySecs(new ApiError({ status: 429, message: 'Resource exhausted' }))).toBeUndefined();
   });
 });
