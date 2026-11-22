@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const DB_DIR = fileURLToPath(new URL('.', import.meta.url));
-// sync-core writes through pg for the dev sync tools, and schema.ts is the DDL that init-db and db:migrate run.
-const NOT_APP_QUERY_MODULES = ['sync-core.ts', 'schema.ts', 'writeTransaction.ts'];
+// sync-core writes through pg for the dev sync tools, and schema.ts holds the statements that schemaRunner.ts applies.
+const NOT_APP_QUERY_MODULES = ['sync-core.ts', 'schema.ts', 'schemaRunner.ts', 'writeTransaction.ts'];
 const AUTOCOMMIT_WRITE = /\bsql`\s*(INSERT|UPDATE|DELETE)\b/gi;
 const UNRETRIED_TRANSACTION = /\bsql\.begin\(/g;
 

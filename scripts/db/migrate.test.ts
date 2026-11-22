@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CREATE_TABLES_SQL, MIGRATIONS_SQL } from '../../lib/db/schema';
+import { SCHEMA_STATEMENTS } from '../../lib/db/schema';
 import { main } from './migrate';
 
 vi.mock('fs', async (importOriginal) => ({ ...(await importOriginal<typeof import('fs')>()), readFileSync: vi.fn() }));
@@ -35,7 +35,7 @@ describe('migrate', () => {
     const client = await createFakeClient('postgres://postgres:123@localhost:5433/yomi_sapo', ['localhost']);
 
     await main();
-    expect(client.unsafe.mock.calls).toEqual([[CREATE_TABLES_SQL], [MIGRATIONS_SQL]]);
+    expect(client.unsafe.mock.calls).toEqual(SCHEMA_STATEMENTS.map((statement) => [statement]));
     expect(client.end).toHaveBeenCalled();
   });
 });
