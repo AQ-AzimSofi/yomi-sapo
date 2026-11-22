@@ -7,7 +7,7 @@
  *   npm run db:sync
  */
 
-import pg from 'pg';
+import type pg from 'pg';
 import readline from 'readline';
 import dotenv from 'dotenv';
 import {
@@ -18,6 +18,8 @@ import {
   type DiffResult,
   type SyncResult,
 } from '../../lib/db/sync-core';
+import { createPgClient } from '../../lib/db/pgClient';
+import { PROD_DATABASE_VARIABLES, prodClientConfig, prodHostOf, readProdDatabase } from '../../lib/db/prodDatabase';
 import { isEntryPoint } from '../shared/entryPoint';
 
 interface SyncSession {
@@ -163,19 +165,20 @@ async function fullSyncInteractive({ prod, local, ask }: SyncSession, diffs: Dif
 }
 
 async function main() {
-  const prodUrl = process.env.PROD_DATABASE_URL;
+  const prodDatabase = readProdDatabase(process.env);
   const localUrl = process.env.DATABASE_URL;
-  if (!prodUrl || !localUrl) {
-    console.error('Missing PROD_DATABASE_URL or DATABASE_URL in .env.local');
+  if (!prodDatabase || !localUrl) {
+    console.error(`Missing ${PROD_DATABASE_VARIABLES}, or DATABASE_URL, in .env.local`);
     process.exit(1);
   }
 
   console.log('=== Database Sync Tool ===\n');
+  console.log(`Prod: ${prodHostOf(prodDatabase)}`);
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const ask = (question: string) => new Promise<string>(resolve => rl.question(question, resolve));
-  const prod = new pg.Client({ connectionString: prodUrl, ssl: { rejectUnauthorized: false } });
-  const local = new pg.Client({ connectionString: localUrl });
+  const prod = createPgClient(prodClientConfig(prodDatabase), 'prod');
+  const local = createPgClient({ connectionString: localUrl }, 'local');
   const session: SyncSession = { prod, local, ask };
 
   try {
