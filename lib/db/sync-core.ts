@@ -1,6 +1,7 @@
 import type { Client } from 'pg';
 import { createPgClient } from './pgClient';
 import { prodClientConfig, type ProdDatabase } from './prodDatabase';
+import { retryOnSerializationFailure } from './writeTransaction';
 
 export type SyncDirection = 'prod -> local' | 'local -> prod';
 
@@ -364,7 +365,9 @@ export async function syncDirection(
     }
 
     try {
-      const result = await target.query(sql, values);
+      // pg waits for the commit of an autocommit statement, so a conflict Aurora DSQL raises at
+      // commit (40001) arrives here with nothing written, and the statement can be sent again.
+      const result = await retryOnSerializationFailure(() => target.query(sql, values));
       const affected = result.rowCount ?? 0;
       rows += affected;
       skipped += batch.length - affected;
@@ -381,7 +384,7 @@ export async function syncDirection(
       for (const row of batch) {
         const singleValues = columns.map(c => row[c]);
         try {
-          const result = await target.query(singleRowSql, singleValues);
+          const result = await retryOnSerializationFailure(() => target.query(singleRowSql, singleValues));
           const affected = result.rowCount ?? 0;
           rows += affected;
           skipped += 1 - affected;

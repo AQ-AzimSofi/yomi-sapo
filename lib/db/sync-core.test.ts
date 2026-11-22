@@ -119,4 +119,15 @@ describe('syncDirection', () => {
     await expect(syncDirection(source.client, target.client, TEXT_ENTRIES, 'local -> prod')).rejects.toThrow(/08P01/);
     expect(target.inserts).toHaveLength(1);
   });
+
+  it('sends a statement again after a write conflict (40001), which committed nothing', async () => {
+    const source = fakeClient({ columns: BOOK_COLUMNS, rows: [book('a', 'あ'), book('b', 'い', { id: 2 })], idDefault: SERIAL_ID });
+    const target = fakeClient(emptyTarget(), [databaseError('40001', 'change conflicts with another transaction (OC000)')]);
+
+    const result = await syncDirection(source.client, target.client, TEXT_ENTRIES, 'local -> prod');
+
+    expect(result.rows).toBe(2);
+    expect(target.inserts).toHaveLength(2);
+    expect(target.inserts[1]).toEqual(target.inserts[0]);
+  });
 });
