@@ -1,4 +1,6 @@
-import { Client } from 'pg';
+import type { Client } from 'pg';
+import { createPgClient } from './pgClient';
+import { prodClientConfig, type ProdDatabase } from './prodDatabase';
 
 export type SyncDirection = 'prod -> local' | 'local -> prod';
 
@@ -384,12 +386,12 @@ export async function syncDirection(
 }
 
 export async function withClients<T>(
-  prodUrl: string,
+  prodDatabase: ProdDatabase,
   localUrl: string,
   fn: (prod: Client, local: Client) => Promise<T>
 ): Promise<T> {
-  const prod = new Client({ connectionString: prodUrl, ssl: { rejectUnauthorized: false } });
-  const local = new Client({ connectionString: localUrl });
+  const prod = createPgClient(prodClientConfig(prodDatabase), 'prod');
+  const local = createPgClient({ connectionString: localUrl }, 'local');
 
   try {
     await Promise.all([prod.connect(), local.connect()]);
