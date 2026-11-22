@@ -49,7 +49,12 @@ function keyOf(row: Row, keyColumns: readonly string[]): string {
 // answered by the next queued outcome, or by "every row written".
 function fakeClient(table: FakeTable, insertOutcomes: (Error | null)[] = []) {
   const inserts: SentStatement[] = [];
+  const writes: SentStatement[] = [];
   const query = vi.fn(async (text: string, values: unknown[] = []) => {
+    if (text.includes('setval(')) {
+      writes.push({ text, values });
+      return { rows: [] };
+    }
     if (text.includes('information_schema.columns') && text.includes('column_default')) {
       return { rows: table.idDefault === null ? [] : [{ column_default: table.idDefault }] };
     }
@@ -70,6 +75,7 @@ function fakeClient(table: FakeTable, insertOutcomes: (Error | null)[] = []) {
     }
     if (text.startsWith('INSERT INTO')) {
       inserts.push({ text, values });
+      writes.push({ text, values });
       const outcome = insertOutcomes.shift() ?? null;
       if (outcome) throw outcome;
       const columnCount = /\(([^)]*)\) VALUES/.exec(text)?.[1].split(', ').length ?? 1;
@@ -77,7 +83,7 @@ function fakeClient(table: FakeTable, insertOutcomes: (Error | null)[] = []) {
     }
     throw new Error(`fake client got an unexpected statement: ${text}`);
   });
-  return { client: { query } as unknown as Client, inserts };
+  return { client: { query } as unknown as Client, inserts, writes };
 }
 
 function emptyTarget(idDefault: string | null = SERIAL_ID): FakeTable {
@@ -120,6 +126,18 @@ describe('syncDirection', () => {
     await syncDirection(source.client, target.client, TEXT_ENTRIES, 'local -> prod');
 
     expect(insertedColumns(target.inserts[0])).toEqual(BOOK_COLUMNS.filter((column) => column !== 'id'));
+  });
+
+  it('first moves the target sequence past its ids, which syncs that sent the source ids never moved', async () => {
+    const source = fakeClient({ columns: BOOK_COLUMNS, rows: [book('a', 'あ', { id: 4 })], idDefault: SERIAL_ID });
+    const target = fakeClient(emptyTarget(SERIAL_ID));
+
+    await syncDirection(source.client, target.client, TEXT_ENTRIES, 'local -> prod');
+
+    const [sequenceMove, insert] = target.writes;
+    expect(sequenceMove.text).toMatch(/SELECT setval\(\$1::regclass, max_id\)[\s\S]*WHERE coalesce\(pg_sequence_last_value\(\$1::regclass\), 0\) < max_id/);
+    expect(sequenceMove.values).toEqual(['text_entries_id_seq']);
+    expect(insert.text).toMatch(/^INSERT INTO/);
   });
 
   it('copies the id of a table whose ids are not numbered by the target', async () => {

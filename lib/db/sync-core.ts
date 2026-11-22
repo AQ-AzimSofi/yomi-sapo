@@ -87,18 +87,36 @@ async function getColumns(client: Client, tableName: string): Promise<string[]> 
   return result.rows.map((r: { column_name: string }) => r.column_name);
 }
 
+const NEXTVAL_DEFAULT = /^nextval\('((?:[^']|'')+)'::regclass\)$/;
+
 // A target that numbers its rows from a sequence (SERIAL, or Aurora DSQL's nextval default) has
 // to number a copied row itself. Sending the source's id would collide with a row the target
 // numbered (23505), and leave its sequence behind ids already taken, so the app's next insert
 // there would collide too. Rows are matched on their conflict key, never on id.
-async function targetNumbersIds(client: Client, tableName: string): Promise<boolean> {
+// Returns that sequence, or null when the target does not number the table's rows.
+async function findTargetIdSequence(client: Client, tableName: string): Promise<string | null> {
   const result = await client.query(
     `SELECT column_default FROM information_schema.columns
      WHERE table_name = $1 AND column_name = $2 AND table_schema = current_schema()`,
     [stripQuotes(tableName), SURROGATE_PK]
   );
   const columnDefault: unknown = result.rows[0]?.column_default;
-  return typeof columnDefault === 'string' && columnDefault.startsWith('nextval(');
+  const match = typeof columnDefault === 'string' ? NEXTVAL_DEFAULT.exec(columnDefault) : null;
+  return match ? match[1].replace(/''/g, "'") : null;
+}
+
+// Syncs before this one sent the source's ids, which never moved the target's sequence, so it can
+// lag behind ids already taken and hand one out again (23505). It is moved only when it lags, so a
+// sequence the app numbers rows from is never moved back.
+async function moveLaggingSequence(client: Client, tableName: string, sequence: string): Promise<void> {
+  await retryOnSerializationFailure(() =>
+    client.query(
+      `SELECT setval($1::regclass, max_id)
+       FROM (SELECT coalesce(max(${SURROGATE_PK}), 0) AS max_id FROM "${stripQuotes(tableName)}") AS target_ids
+       WHERE coalesce(pg_sequence_last_value($1::regclass), 0) < max_id`,
+      [sequence]
+    )
+  );
 }
 
 async function getCount(client: Client, table: string): Promise<number | null> {
@@ -387,8 +405,8 @@ export async function syncDirection(
   const sourceColumns = await getColumns(source, table.name);
   if (sourceColumns.length === 0) return { table: tableName, rows: 0, skipped: 0, failed: 0, direction };
   const isIdConflictKey = conflictColumns(table.conflictKey).includes(SURROGATE_PK);
-  const isIdFromTarget = !isIdConflictKey && (await targetNumbersIds(target, table.name));
-  const columns = isIdFromTarget ? sourceColumns.filter((column) => column !== SURROGATE_PK) : sourceColumns;
+  const targetIdSequence = isIdConflictKey ? null : await findTargetIdSequence(target, table.name);
+  const columns = targetIdSequence === null ? sourceColumns : sourceColumns.filter((column) => column !== SURROGATE_PK);
 
   // Crash early on impossible state: if a future schema widens to where one
   // batch would exceed PG's hard parameter limit, the cause would otherwise
@@ -419,6 +437,9 @@ export async function syncDirection(
   }
 
   const rowsToWrite = direction === 'local -> prod' ? selectRowsProdAccepts(table, sourceRows) : sourceRows;
+  if (targetIdSequence !== null) {
+    await withSyncContext(`${context} id sequence`, moveLaggingSequence(target, table.name, targetIdSequence));
+  }
   const singleRowSql = buildBatchUpsertSql(table, columns, 1);
   let rows = 0;
   let skipped = 0;
