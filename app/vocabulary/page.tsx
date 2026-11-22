@@ -158,7 +158,7 @@ export default function VocabularyPage() {
               まだ単語を保存していません
             </p>
             <p className="text-sm mb-6" style={{ color: COLORS.SECONDARY }}>
-              リーダーから単語を保存する機能は、今後のアップデートで戻ります
+              本を読みながら語句を選ぶと、「単語帳に保存」でここに残せます
             </p>
             <Link
               href={PAGE_ROUTES.LIBRARY}
