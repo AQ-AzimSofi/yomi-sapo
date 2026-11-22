@@ -20,7 +20,7 @@ const IS_CONFIGURED = Boolean(LOCAL_URL && DSQL_ENDPOINT);
 const SCRATCH_SCHEMA = `sync_core_test_${Date.now()}`;
 // The pull copies this run's new bookmark into the local database, so each run names its own.
 const NEW_BOOKMARK_DIRECTORY = `sync-test-${Date.now()}`;
-const SCHEMA_TABLES = ['bookmarks', 'narration', 'text_entries', 'vocabulary_entries'];
+const SCHEMA_TABLES = ['bookmarks', 'narration', 'ruby_registry_entries', 'text_entries', 'vocabulary_entries'];
 const SETUP_TIMEOUT_MS = 10 * 60 * 1000;
 const SYNC_TIMEOUT_MS = 3 * 60 * 1000;
 const DSQL_SETTINGS = { endpoint: DSQL_ENDPOINT, region: regionOfDsqlEndpoint(DSQL_ENDPOINT) ?? '', user: DSQL_ADMIN_USER };

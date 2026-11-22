@@ -95,6 +95,26 @@ const TABLE_STATEMENTS: readonly string[] = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )`,
+
+  // The readings the reader's word lookup lists for a book, keyed as the app keys a registry
+  // (rubyRegistryKey in lib/books/bookRef.ts). The primary key also serves the lookup by book.
+  // - A row without a reading is a suggestion: a word without a reading yet.
+  // - ignored hides a deleted entry or an ignored suggestion but keeps its row, so importing the
+  //   same ruby-registry.json again (scripts/db/import-ruby-registry.ts) does not bring it back.
+  // Production on Neon has no such table; the registry route answers that it is unavailable there.
+  `CREATE TABLE IF NOT EXISTS ruby_registry_entries (
+    directory VARCHAR(255) NOT NULL,
+    book_name VARCHAR(255) NOT NULL,
+    kanji VARCHAR(255) NOT NULL,
+    reading VARCHAR(255),
+    source VARCHAR(32) NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    occurrences INT,
+    ignored BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (directory, book_name, kanji)
+  )`,
 ];
 
 // Brings tables an older schema created on PostgreSQL up to date. A DSQL database starts from
