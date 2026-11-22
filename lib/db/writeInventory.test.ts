@@ -26,7 +26,7 @@ function findInQueryModules(pattern: RegExp): string[] {
 // so every write runs on the transaction runWriteTransaction hands out.
 describe('lib/db writes', () => {
   it('checks the app query modules', () => {
-    expect(appQueryModules()).toEqual(expect.arrayContaining(['queries.ts', 'libraryProgressQueries.sql.ts', 'narrationQueries.sql.ts', 'vocabularyQueries.sql.ts']));
+    expect(appQueryModules()).toEqual(expect.arrayContaining(['queries.ts', 'libraryProgressQueries.sql.ts', 'narrationQueries.sql.ts', 'rubyRegistryQueries.sql.ts', 'vocabularyQueries.sql.ts']));
   });
 
   it('recognises an autocommit write', () => {
