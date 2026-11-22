@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DsqlSigner } from '@aws-sdk/dsql-signer';
-import { buildDsqlOptions, iamTokenSource, readDatabaseUrl, readDsqlSettings, type DsqlSettings } from './connectionConfig';
+import {
+  buildDsqlOptions,
+  iamTokenSource,
+  readDatabaseUrl,
+  readDsqlSettings,
+  regionOfDsqlEndpoint,
+  type DsqlSettings,
+} from './connectionConfig';
 
 vi.mock('@aws-sdk/dsql-signer', () => ({
   DsqlSigner: vi.fn(() => ({
@@ -23,6 +30,16 @@ describe('readDatabaseUrl', () => {
 
   it('is empty when neither is set', () => {
     expect(readDatabaseUrl({})).toBe('');
+  });
+});
+
+describe('regionOfDsqlEndpoint', () => {
+  it('reads the region from a cluster endpoint', () => {
+    expect(regionOfDsqlEndpoint(ENDPOINT)).toBe('ap-northeast-1');
+  });
+
+  it.each(['ep-example.ap-southeast-1.aws.neon.tech', 'localhost', `${ENDPOINT}.evil.example`, ''])('is null for %j', (host) => {
+    expect(regionOfDsqlEndpoint(host)).toBeNull();
   });
 });
 
