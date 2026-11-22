@@ -8,7 +8,7 @@ import { splitParagraphs } from '../utils/claude-rephrase';
 import { getBookFiles } from './chunkFiles';
 import { chunkText, stripRubyTags } from './chunking';
 import { GEMINI_CHUNKS, GEMINI_CHUNK_SIZE, GEMINI_READER_CHUNKS, GEMINI_REPLIES } from './fixtures/geminiV1Book';
-import { createProgress, type ProgressFile, type ProgressFileV1 } from './progress';
+import { createProgress, type ProgressFile, type ProgressFileV1, type ProgressSettings } from './progress';
 import type { FuriganaResult } from './furigana';
 import { batchRephrase, type RephraseDeps, type RephraseOptions } from './rephraseBook';
 import { FALLBACK_ERROR, type ChunkOutput } from './rephraseChunk';
@@ -250,6 +250,29 @@ describe('batchRephrase', () => {
     const resumed = createFakeDeps();
     await batchRephrase(book, OPTIONS, resumed.deps);
     expect(resumed.rephrasedChunkIndexes).toEqual([...Array(CHUNK_COUNT).keys()].slice(1));
+  });
+
+  it('Test_batchRephrase_ResumeKeepsTheModelTheBookStartedWith', async () => {
+    writeSource();
+    const failOnSecondChunk = createFakeDeps({
+      replyToChunk: (chunk, chunkIndex) => {
+        if (chunkIndex === 1) throw new Error('No Gemini key has quota left');
+        return rephraseEveryChunk(chunk, chunkIndex);
+      },
+    });
+    await expect(batchRephrase(book, { ...OPTIONS, model: 'gemini-3-flash-preview', delaySeconds: 5 }, failOnSecondChunk.deps)).rejects.toThrow('quota');
+
+    const { deps } = createFakeDeps();
+    const createdFor: ProgressSettings[] = [];
+    const recordingDeps: RephraseDeps = {
+      ...deps,
+      createRephraser: (settings) => {
+        createdFor.push(settings);
+        return deps.createRephraser(settings);
+      },
+    };
+    await batchRephrase(book, { ...OPTIONS, model: 'sonnet', delaySeconds: 0 }, recordingDeps);
+    expect(createdFor).toEqual([expect.objectContaining({ model: 'gemini-3-flash-preview', delaySeconds: 5 })]);
   });
 
   it('Test_batchRephrase_FallbackChunkIsMarkedAndRetriedNextRun', async () => {
