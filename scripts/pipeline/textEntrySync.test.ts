@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDatabaseSync } from './textEntrySync';
 
 const REMOTE_URL = 'postgresql://user:pass@ep-x.neon.tech/yomi_sapo';
@@ -49,7 +49,12 @@ describe('createDatabaseSync', () => {
 describe.skipIf(!TEST_DATABASE_URL)('createDatabaseSync against the test database', () => {
   const databaseUrl = TEST_DATABASE_URL ?? '';
   const checkSql = postgres(databaseUrl, { max: 1 });
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yomi-chunk-sync-'));
+  // Made in beforeAll: the suite body is collected even when the suite is skipped.
+  const workDir = path.join(os.tmpdir(), `yomi-chunk-sync-${process.pid}`);
+
+  beforeAll(() => {
+    fs.mkdirSync(workDir, { recursive: true });
+  });
 
   afterAll(async () => {
     await checkSql`DELETE FROM text_entries WHERE directory = ${TEST_DIRECTORY}`;
