@@ -27,16 +27,18 @@ export const illustrationUploadStep: Step = {
 };
 
 /**
- * Runs the task with a signal that Ctrl+C aborts. Only the first Ctrl+C is caught, so a second
- * one kills the process the usual way should the stop itself hang.
+ * Runs the task with a signal that the first Ctrl+C aborts; a second one exits at once should the
+ * stop itself hang. The listener stays registered between the two: under npx tsx, a SIGINT that
+ * leaves the program no listener of its own makes tsx exit the process before the task can stop.
  */
-async function runUntilInterrupted<Result>(task: (signal: AbortSignal) => Promise<Result>): Promise<Result> {
+export async function runUntilInterrupted<Result>(task: (signal: AbortSignal) => Promise<Result>): Promise<Result> {
   const stopController = new AbortController();
   const onInterrupt = () => {
+    if (stopController.signal.aborted) process.exit(130);
     console.log('\n\nCtrl+C: stopping. Saved chunks are kept; a chunk in flight is redone on the next run.');
     stopController.abort();
   };
-  process.once('SIGINT', onInterrupt);
+  process.on('SIGINT', onInterrupt);
   try {
     return await task(stopController.signal);
   } finally {
