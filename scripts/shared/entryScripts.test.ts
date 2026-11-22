@@ -7,6 +7,7 @@ const ENTRY_SCRIPTS = [
   '../audio/build-narration.ts',
   '../db/sync.ts',
   '../db/sync-narration.ts',
+  '../db/sync-text-entry.ts',
   '../db/clean-book-text.ts',
   '../db/migrate.ts',
   '../dev-with-sync.ts',
