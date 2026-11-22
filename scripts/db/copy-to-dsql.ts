@@ -13,6 +13,7 @@
  * - A book too large for one DSQL value stops the copy before anything is written.
  * - A book's content_bytes is copied only while it matches its text; otherwise as NULL.
  * - Rows the target holds and the source does not are reported, and deleted with --delete-extra.
+ * - A table in IMPORTED_TABLES (the ruby registry) is not copied: its own import script fills it.
  *
  * It signs an admin IAM token with the default AWS credentials, and refuses any target but a DSQL
  * endpoint. Exits 1 unless every row is identical.
@@ -35,6 +36,7 @@ import {
   compareRows,
   COPY_TABLES,
   deleteRowSql,
+  IMPORTED_TABLES,
   isIdentical,
   planTableShapes,
   rowKey,
@@ -235,6 +237,9 @@ async function moveSequences(target: postgres.Sql, shapes: readonly TableShape[]
 export async function copyDatabase(source: postgres.Sql, target: postgres.Sql, options: CopyOptions): Promise<CopyReport> {
   const [sourceCatalog, targetCatalog] = await Promise.all([readCatalog(source), readCatalog(target)]);
   const shapes = planTableShapes(COPY_TABLES, sourceCatalog, targetCatalog);
+  IMPORTED_TABLES.filter((table) => targetCatalog.tables.includes(table.name)).forEach(({ name, importedBy }) =>
+    options.log(`${name}: not copied; fill it with ${importedBy}`)
+  );
   const expectedRows = await readExpectedRows(source, shapes);
   assertRowsFit(shapes, expectedRows);
 

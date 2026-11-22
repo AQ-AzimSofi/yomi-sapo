@@ -16,8 +16,8 @@ export interface CopyTableSpec {
 }
 
 /**
- * Every table the copy carries. The copy refuses to run while the target has a table that is not
- * listed here, so a table added to lib/db/schema.ts later (the ruby registry, say) cannot be left
+ * Every table the copy carries. The copy refuses to run while the target has a table that neither
+ * this list nor IMPORTED_TABLES names, so a table added to lib/db/schema.ts later cannot be left
  * behind: add an entry for it. The columns and their types come from the target's catalog.
  */
 export const COPY_TABLES: readonly CopyTableSpec[] = [
@@ -30,6 +30,19 @@ export const COPY_TABLES: readonly CopyTableSpec[] = [
   },
   { name: 'narration', keyColumns: ['id'] },
   { name: 'vocabulary_entries', keyColumns: ['id'] },
+];
+
+export interface ImportedTable {
+  name: string;
+  importedBy: string;
+}
+
+/**
+ * Tables the copy leaves alone, each with the tool that fills it in the target instead. Production
+ * on Neon has none of them, so there is nothing to copy; the cut-over runs the tool.
+ */
+export const IMPORTED_TABLES: readonly ImportedTable[] = [
+  { name: 'ruby_registry_entries', importedBy: 'npx tsx scripts/db/import-ruby-registry.ts' },
 ];
 
 export interface CatalogColumn {
@@ -94,11 +107,11 @@ function sequencesOf(columns: readonly CatalogColumn[]): TableShape['sequences']
  * databases hold the same tables and columns. Throws with every mismatch it finds.
  */
 export function planTableShapes(specs: readonly CopyTableSpec[], source: Catalog, target: Catalog): TableShape[] {
-  const specNames = specs.map((spec) => spec.name);
+  const knownNames = [...specs.map((spec) => spec.name), ...IMPORTED_TABLES.map((table) => table.name)];
   const problems = [
     ...target.tables
-      .filter((table) => !specNames.includes(table))
-      .map((table) => `the target has table ${table}, which COPY_TABLES in scripts/db/copyTables.ts does not list`),
+      .filter((table) => !knownNames.includes(table))
+      .map((table) => `the target has table ${table}, which neither COPY_TABLES nor IMPORTED_TABLES in scripts/db/copyTables.ts lists`),
     ...specs.flatMap((spec) => shapeProblems(spec, source, target)),
   ];
   if (problems.length > 0) throw new Error(`The databases do not match:\n  ${problems.join('\n  ')}`);

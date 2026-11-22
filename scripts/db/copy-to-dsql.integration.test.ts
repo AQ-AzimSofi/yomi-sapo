@@ -4,7 +4,7 @@ import { buildDsqlOptions, DSQL_ADMIN_USER, iamTokenSource, regionOfDsqlEndpoint
 import { applySchema } from '../../lib/db/schemaRunner';
 import { runWriteTransaction } from '../../lib/db/writeTransaction';
 import { copyDatabase, type CopyReport } from './copy-to-dsql';
-import { COPY_TABLES, isIdentical } from './copyTables';
+import { COPY_TABLES, IMPORTED_TABLES, isIdentical } from './copyTables';
 
 // Copies a PostgreSQL database into a scratch schema of an Aurora DSQL test cluster and drops the
 // schema afterwards. Runs only when both are configured:
@@ -17,6 +17,8 @@ const DSQL_ENDPOINT = process.env.DSQL_TEST_ENDPOINT ?? '';
 const IS_CONFIGURED = Boolean(SOURCE_URL && DSQL_ENDPOINT);
 const SCRATCH_SCHEMA = `copy_to_dsql_test_${Date.now()}`;
 const TABLES = COPY_TABLES.map((spec) => spec.name);
+// The schema also creates the tables the copy leaves to their import scripts.
+const SCHEMA_TABLES = [...TABLES, ...IMPORTED_TABLES.map((table) => table.name)];
 // DSQL builds each index of the schema in a background job, about 20 s apiece.
 const SETUP_TIMEOUT_MS = 10 * 60 * 1000;
 const COPY_TIMEOUT_MS = 5 * 60 * 1000;
@@ -57,7 +59,7 @@ describe.skipIf(!IS_CONFIGURED)('copyDatabase from PostgreSQL into a scratch sch
       SELECT indexname FROM pg_indexes WHERE schemaname = ${SCRATCH_SCHEMA} AND indexname LIKE 'idx_%'
     `;
     for (const { indexname } of indexes) await admin!.unsafe(`DROP INDEX ${SCRATCH_SCHEMA}.${indexname}`);
-    for (const table of TABLES) await admin!.unsafe(`DROP TABLE IF EXISTS ${SCRATCH_SCHEMA}.${table}`);
+    for (const table of SCHEMA_TABLES) await admin!.unsafe(`DROP TABLE IF EXISTS ${SCRATCH_SCHEMA}.${table}`);
     for (const table of TABLES) await admin!.unsafe(`DROP SEQUENCE IF EXISTS ${SCRATCH_SCHEMA}.${table}_id_seq`);
     await admin!.unsafe(`DROP SCHEMA ${SCRATCH_SCHEMA}`);
     await Promise.all([source!.end(), admin!.end(), target!.end()]);
