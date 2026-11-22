@@ -126,7 +126,8 @@ export async function getTextEntry(
 
 // Every write path stores LF text, so the reader, the library and narration
 // split a book into the same units. Text that might not fit in one Aurora DSQL
-// value throws BookTextTooLargeError before anything is written.
+// value throws BookTextTooLargeError before anything is written. Changed text
+// clears content_bytes, so the library recounts it even when the size is the same.
 export async function upsertTextEntry(
   fileName: string,
   rawContent: string,
@@ -142,6 +143,7 @@ export async function upsertTextEntry(
         ON CONFLICT (file_name, directory)
         DO UPDATE SET
           content = ${content},
+          content_bytes = CASE WHEN text_entries.content = EXCLUDED.content THEN text_entries.content_bytes END,
           updated_at = CURRENT_TIMESTAMP
       `;
     });

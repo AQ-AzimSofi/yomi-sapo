@@ -95,6 +95,19 @@ describe('upsertTextEntry', () => {
     expect(sql).not.toHaveBeenCalled();
     expect(sql.begin).toHaveBeenCalledTimes(1);
   });
+
+  // An edit that keeps the byte size would otherwise keep the old page counts.
+  it('marks the page counts uncounted when it changes the text', async () => {
+    const transaction = vi.fn().mockResolvedValue([]);
+    runTransactionsOn(transaction);
+
+    await upsertTextEntry('ほん', '本文', 'd');
+
+    const [strings] = transaction.mock.calls[0] as [TemplateStringsArray];
+    expect(strings.join('?').replace(/\s+/g, ' ')).toContain(
+      'content_bytes = CASE WHEN text_entries.content = EXCLUDED.content THEN text_entries.content_bytes END'
+    );
+  });
 });
 
 describe('initializeBookmarksForFiles', () => {
