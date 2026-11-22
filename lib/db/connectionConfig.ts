@@ -12,7 +12,9 @@ export const POSTGRES_URL_OPTIONS = {
 };
 
 export const DEFAULT_DSQL_USER = 'yomi_app';
-const DSQL_ADMIN_USER = 'admin';
+export const DSQL_ADMIN_USER = 'admin';
+
+const DSQL_ENDPOINT = /^[a-z0-9]+\.dsql\.([a-z0-9-]+)\.on\.aws$/;
 
 export interface DsqlSettings {
   endpoint: string;
@@ -24,6 +26,11 @@ export type TokenSource = () => Promise<string>;
 
 export function readDatabaseUrl(env: ConnectionEnv): string {
   return env.DATABASE_URL || env.POSTGRES_URL || '';
+}
+
+/** The region of an Aurora DSQL cluster endpoint, or null for anything that is not one. */
+export function regionOfDsqlEndpoint(endpoint: string): string | null {
+  return DSQL_ENDPOINT.exec(endpoint)?.[1] ?? null;
 }
 
 /** The Aurora DSQL cluster to connect to, or null when DSQL_ENDPOINT is not set. */

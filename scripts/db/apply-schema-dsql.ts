@@ -14,19 +14,24 @@
  */
 
 import postgres from 'postgres';
-import { buildDsqlOptions, iamTokenSource, type DsqlSettings } from '../../lib/db/connectionConfig';
+import {
+  buildDsqlOptions,
+  DSQL_ADMIN_USER,
+  iamTokenSource,
+  regionOfDsqlEndpoint,
+  type DsqlSettings,
+} from '../../lib/db/connectionConfig';
 import { applySchema } from '../../lib/db/schemaRunner';
 import { isEntryPoint } from '../shared/entryPoint';
 
-const DSQL_ENDPOINT = /^[a-z0-9]+\.dsql\.([a-z0-9-]+)\.on\.aws$/;
 const USAGE = 'usage: npx tsx scripts/db/apply-schema-dsql.ts --endpoint <cluster id>.dsql.<region>.on.aws';
 
 // Anything but an explicit DSQL endpoint is refused, so a typo never reaches another database.
 export function parseApplySchemaArgs(args: readonly string[]): DsqlSettings {
   const [flag, endpoint = '', ...rest] = args;
-  const match = DSQL_ENDPOINT.exec(endpoint);
-  if (flag !== '--endpoint' || !match || rest.length > 0) throw new Error(USAGE);
-  return { endpoint, region: match[1], user: 'admin' };
+  const region = regionOfDsqlEndpoint(endpoint);
+  if (flag !== '--endpoint' || !region || rest.length > 0) throw new Error(USAGE);
+  return { endpoint, region, user: DSQL_ADMIN_USER };
 }
 
 export async function main(args: readonly string[]): Promise<void> {
