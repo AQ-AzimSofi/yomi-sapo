@@ -65,7 +65,7 @@ async function getColumns(client: Client, tableName: string): Promise<string[]> 
   const bare = stripQuotes(tableName);
   const result = await client.query(
     `SELECT column_name FROM information_schema.columns
-     WHERE table_name = $1 AND table_schema = 'public'
+     WHERE table_name = $1 AND table_schema = current_schema()
      ORDER BY ordinal_position`,
     [bare]
   );
@@ -79,7 +79,7 @@ async function getColumns(client: Client, tableName: string): Promise<string[]> 
 async function targetNumbersIds(client: Client, tableName: string): Promise<boolean> {
   const result = await client.query(
     `SELECT column_default FROM information_schema.columns
-     WHERE table_name = $1 AND column_name = $2 AND table_schema = 'public'`,
+     WHERE table_name = $1 AND column_name = $2 AND table_schema = current_schema()`,
     [stripQuotes(tableName), SURROGATE_PK]
   );
   const columnDefault: unknown = result.rows[0]?.column_default;
