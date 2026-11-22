@@ -31,7 +31,7 @@ https://github.com/user-attachments/assets/16d81533-e417-4123-b764-a0066d0b6c84
 *   **Text-to-speech & audiobook mode** — read pages aloud with adjustable speed and voice, continuous playback, keyboard controls on desktop, and a replay-current-sentence button on mobile (Google Cloud TTS).
 
 ### Study
-*   **Vocabulary list** — browse, search and delete saved words, and open the book each word came from. Saving words from the reader returns in a later update.
+*   **Vocabulary list** — select a word while reading to save it with its reading and sentence; browse, search and delete saved words, and jump back to the page each word came from.
 *   **Ruby lookup** — per-book kanji→reading registry.
 
 ### Access

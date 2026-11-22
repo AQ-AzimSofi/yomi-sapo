@@ -4,7 +4,7 @@ Both requested features have been successfully implemented:
 
 ## Feature 1: Vocabulary Diary System
 
-A word diary that keeps saved words with their sentence context and a link back to the source. Saving words from the reader went away with the old vocabulary mode and returns in a later update; the vocabulary page lists, searches and deletes saved words.
+A word diary that keeps saved words with their sentence context and a link back to the source. Select a word while reading and press 単語帳に保存 to save it with its reading and sentence; the vocabulary page lists, searches and deletes saved words.
 
 ### Components Created:
 - **Vocabulary Page** (`app/vocabulary/page.tsx`): Full list of all saved words with search functionality
@@ -15,7 +15,7 @@ A word diary that keeps saved words with their sentence context and a link back 
 
 ### API Routes:
 - `GET /api/vocabulary` - List all vocabulary entries (with filters: word, fileName, directory, today)
-- `POST /api/vocabulary` - Create new vocabulary entry
+- `POST /api/vocabulary` - Create new vocabulary entry (the same word from the same sentence returns the stored one)
 - `GET /api/vocabulary/[id]` - Get specific entry
 - `PUT /api/vocabulary/[id]` - Update entry (mainly notes)
 - `DELETE /api/vocabulary/[id]` - Delete entry
@@ -30,12 +30,12 @@ A word diary that keeps saved words with their sentence context and a link back 
    - Open the book each word came from
 
 2. **Word Highlighting**:
-   - When the book opened from the vocabulary page shows the word on its first page
-   - Paragraph containing the word gets highlighted (orange glow)
-   - Highlight fades after 3 seconds
+   - 元の文章を見る opens the book on the page holding the saved sentence
+   - That unit flashes for 3 seconds and the word itself stays marked while the page is open
 
 ### How to Use:
-1. View all words at `/vocabulary` page (単語帳 in the shared `AppHeader`)
+1. Select a word in the reader and press 単語帳に保存
+2. View all words at `/vocabulary` page (単語帳 in the shared `AppHeader`)
 
 ---
 

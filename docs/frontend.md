@@ -100,12 +100,15 @@ The primary reading experience with distraction-free design.
 - \`ReaderSettings\` - Slide-out settings panel
 - \`ReadingContent\` - Content type detection and rendering
 - \`ReaderItem\` - One reading unit, for every content type
+- \`SaveWordAction\` - 単語帳に保存 next to a word the owner selects
 - \`ExplanationSidebar\` - AI sentence explanations
 
 **URL Parameters**:
 - \`directory\` - Book directory
 - \`fileName\` - Book file name
 - \`page\` - Current page number
+- \`highlight\` - A saved word the vocabulary list links to: its page opens, its unit flashes and the word is marked
+- \`sentence\` - The start of that word's sentence without furigana, which finds its unit
 
 **Tap Zones**:
 - Left 20%: Previous page
@@ -148,7 +151,8 @@ app/
         ├── ProgressBar.tsx        # Top progress line
         ├── ReaderFAB.tsx          # Floating action button
         ├── ReaderSettings.tsx     # Settings panel
-        └── ReadingContent.tsx     # Content renderer
+        ├── ReadingContent.tsx     # Content renderer
+        └── SaveWordAction.tsx     # 単語帳に保存 next to a selected word
 \`\`\`
 
 ### Key Components
@@ -207,6 +211,24 @@ Renders the parsed items of the current page. Format detection lives in \`lib/co
 - \`plain\`: anything else
 
 Every type renders with \`ReaderItem\`; rephrase units pass their sub-items.
+
+---
+
+#### \`SaveWordAction\`
+**File**: \`app/read/components/SaveWordAction.tsx\`
+
+Shown to the owner, never to a guest, when they select 1 to 30 characters inside one
+reading item's own text, by mouse, touch or keyboard. \`useWordSelection\` reads the
+selection once it settles, and \`wordDraftFor\` (\`lib/content/wordSelection.ts\`) turns it
+into the entry: the word without furigana, its reading when the word is exactly one or
+more whole ruby words (ruby or bracket form), the sentence it sits in with its furigana,
+and the unit's plain text. 単語帳に保存 posts it with \`saveVocabularyEntry\`; the same word
+from the same sentence comes back as the stored entry (保存済みです) instead of a copy.
+
+- Tab moves to the button; Escape dismisses it before the audiobook keyboard mode sees the key
+- Pressing the button keeps the selection; a triple click (the whole item) shows no action
+- Hidden while a panel is open; a click that ends a selection inside a sentence does not ask for its explanation
+- Its state stays in the component, so a selection never re-renders the reading items
 
 ---
 
