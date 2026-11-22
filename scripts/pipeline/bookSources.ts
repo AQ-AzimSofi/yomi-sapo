@@ -1,5 +1,7 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { extractEpub } from './epubExtraction';
+import { createOcrDirSource } from './ocrDirSource';
 import type { KanjiFilter, PipelineOptions, PreparedBook } from './runner';
 
 export interface SourceSettings {
@@ -40,6 +42,9 @@ export function createTextFileSource(inputPath: string): BookSource {
   };
 }
 
+/** --skip-extract keeps its old meaning whatever the path is; otherwise a folder is OCR output and a file an EPUB. */
 export function selectBookSource({ inputPath, skipExtract }: Pick<PipelineOptions, 'inputPath' | 'skipExtract'>): BookSource {
-  return skipExtract ? createTextFileSource(inputPath) : createEpubSource(inputPath);
+  if (skipExtract) return createTextFileSource(inputPath);
+  const isFolder = fs.statSync(inputPath, { throwIfNoEntry: false })?.isDirectory() ?? false;
+  return isFolder ? createOcrDirSource(inputPath) : createEpubSource(inputPath);
 }
