@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { isClaudeModel } from '../utils/claude-rephrase';
 import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { createKeyPool } from '../shared/geminiKeyPool';
@@ -19,6 +18,7 @@ import {
   type ChunkProgress,
   type ProgressFile,
   type ProgressFileV1,
+  type ProgressSettings,
 } from './progress';
 import { migrateV1Progress, type ChunkTexts } from './progressMigration';
 import { createClaudeRephraser, createGeminiRephraser, type ChunkRephraser } from './rephraseChunk';
@@ -34,7 +34,7 @@ export interface RephraseOptions {
   dryRun: boolean;
 }
 
-export type CreateRephraser = (model: string) => ChunkRephraser;
+export type CreateRephraser = (settings: ProgressSettings) => ChunkRephraser;
 
 export interface RephraseDeps {
   createRephraser: CreateRephraser;
@@ -83,8 +83,8 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-export function createRephraser(model: string): ChunkRephraser {
-  return isClaudeModel(model) ? createClaudeRephraser(model) : createGeminiRephraser(model, () => createKeyPool());
+export function createRephraser(settings: ProgressSettings): ChunkRephraser {
+  return isClaudeModel(settings.model) ? createClaudeRephraser(settings.model) : createGeminiRephraser(settings, () => createKeyPool());
 }
 
 /** The database sync depends on the run's --database-url and the stop on the process's Ctrl+C, so the caller adds both. */
@@ -157,11 +157,9 @@ function logRunPlan(start: RunStart, rephraser: ChunkRephraser, options: Rephras
   if (isClaudeModel(options.model)) {
     console.log(`Rephraser: claude -p (no delay between chunks)`);
   } else {
-    const keyCount = rephraser.keyCount;
-    const effectiveDelay = Math.ceil(progress.settings.delaySeconds / keyCount);
-    console.log(`API Keys: ${keyCount} (rotating for faster processing)`);
-    console.log(`Delay: ${effectiveDelay}s (${formatDuration(effectiveDelay)}) between chunks (base: ${progress.settings.delaySeconds}s / ${keyCount} keys)`);
-    console.log(`Estimated total time: ${formatDuration(chunks.length * effectiveDelay)}`);
+    const { delaySeconds } = progress.settings;
+    console.log(`API Keys: ${rephraser.keyCount} free (rotating for faster processing)`);
+    console.log(delaySeconds > 0 ? `Delay: at least ${delaySeconds}s between requests on one key` : 'Delay: none; a rate limit (429) is waited out');
   }
   console.log(`Model: ${options.model}`);
   console.log(`Furigana: enabled (adding after each chunk)`);
@@ -261,14 +259,8 @@ async function processChunk(run: ChunkRun, progress: ProgressFile, chunkIndex: n
   return updatedProgress;
 }
 
-// The stop ends the wait early; the loop then sees the aborted signal and starts no chunk.
-function waitUnlessStopped(waitMs: number, signal: AbortSignal): Promise<void> {
-  return sleep(waitMs, undefined, { signal }).catch(() => undefined);
-}
-
 async function processChunks(run: ChunkRun, startProgress: ProgressFile): Promise<ProgressFile> {
   const todoItems = startProgress.chunks.items.filter((item) => !isChunkFinished(item));
-  const { delaySeconds, model } = startProgress.settings;
   const { stopSignal } = run.deps;
   const startTime = Date.now();
   console.log('\n=== Starting Processing ===\n');
@@ -287,15 +279,7 @@ async function processChunks(run: ChunkRun, startProgress: ProgressFile): Promis
     const remainingCount = todoItems.length - processedCount;
     const avgTime = (Date.now() - startTime) / 1000 / processedCount;
     console.log(`  Done! (${updatedProgress.chunks.completed}/${updatedProgress.chunks.total})`);
-    console.log(`  ETA for remaining: ${formatDuration(remainingCount * Math.max(avgTime, delaySeconds))}`);
-
-    // Wait between Gemini requests (delay divided by number of API keys); Claude and furigana-only redos need none
-    const isWaitNeeded = !isClaudeModel(model) && !needsOnlyFurigana(item) && remainingCount > 0;
-    if (!isWaitNeeded) return updatedProgress;
-    const effectiveDelay = Math.ceil(delaySeconds / run.rephraser.keyCount);
-    console.log(`\n  Waiting ${formatDuration(effectiveDelay)} before next chunk...`);
-    console.log(`  (Press Ctrl+C to stop; saved chunks are kept)\n`);
-    await waitUnlessStopped(effectiveDelay * 1000, stopSignal);
+    console.log(`  ETA for remaining: ${formatDuration(remainingCount * avgTime)}`);
     return updatedProgress;
   }, Promise.resolve(startProgress));
 }
@@ -342,8 +326,8 @@ export async function batchRephrase(
     return false;
   }
   const { start } = plan;
-  // A resumed run keeps the model it started with, whatever --model says now
-  const rephraser = deps.createRephraser(start.progress.settings.model);
+  // A resumed run keeps the model and delay it started with, whatever --model and --delay say now
+  const rephraser = deps.createRephraser(start.progress.settings);
   logRunPlan(start, rephraser, options);
 
   if (options.dryRun) {

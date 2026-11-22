@@ -9,28 +9,35 @@ vi.mock('node:timers/promises', () => import('../shared/fakeTimersPromises'));
 const SOURCE = '吾輩は猫である。名前はまだ無い。';
 const VALID_RESPONSE = `< ${SOURCE}\n>> 私は猫です。名前はありません。`;
 const DAILY_QUOTA_ERROR = new ApiError({ status: 429, message: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' });
+const RATE_LIMIT_ERROR = new ApiError({ status: 429, message: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' });
+
+function rateLimitAsking(retryDelay: string): ApiError {
+  const body = { error: { code: 429, details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }] } };
+  return new ApiError({ status: 429, message: JSON.stringify(body) });
+}
 
 interface GeminiCall {
   apiKey: string;
   model: string;
   abortSignal?: AbortSignal;
+  atMs: number;
 }
 
 type ReplyToCall = (call: GeminiCall, callIndex: number) => string;
 
-function createFakeRephraser(env: NodeJS.ProcessEnv, replyToCall: ReplyToCall) {
+function createFakeRephraser(env: NodeJS.ProcessEnv, replyToCall: ReplyToCall, delaySeconds = 0) {
   const calls: GeminiCall[] = [];
   const createClient = (apiKey: string) =>
     ({
       models: {
         generateContent: async ({ model, config }: { model: string; config?: { abortSignal?: AbortSignal } }) => {
-          const call = { apiKey, model, abortSignal: config?.abortSignal };
+          const call = { apiKey, model, abortSignal: config?.abortSignal, atMs: Date.now() };
           calls.push(call);
           return { text: replyToCall(call, calls.length - 1) };
         },
       },
     }) as unknown as GoogleGenAI;
-  const rephraser = createGeminiRephraser('gemini-3.5-flash', () => createKeyPool(env, createClient));
+  const rephraser = createGeminiRephraser({ model: 'gemini-3.5-flash', delaySeconds }, () => createKeyPool(env, createClient));
   return { rephraser, calls };
 }
 
@@ -161,6 +168,73 @@ describe('createGeminiRephraser when attempts fail', () => {
     await vi.runAllTimersAsync();
     return { output: await pendingOutput, calls };
   }
+
+  function secondsBetweenCalls(calls: readonly GeminiCall[]): number[] {
+    return calls.slice(1).map((call, callIndex) => (call.atMs - calls[callIndex].atMs) / 1000);
+  }
+
+  it('Test_createGeminiRephraser_RateLimitWaitsAsLongAsGeminiAsksOnTheSameKey', async () => {
+    const { output, calls } = await rephraseWithTimers((_, callIndex) => {
+      if (callIndex === 0) throw rateLimitAsking('36.2s');
+      return VALID_RESPONSE;
+    });
+    expect(secondsBetweenCalls(calls)).toEqual([37]);
+    expect(calls.map((call) => call.apiKey)).toEqual(['free1', 'free1']);
+    expect(output).toMatchObject({ attempts: 1, isFallback: false });
+  });
+
+  it('Test_createGeminiRephraser_RateLimitWithoutRetryInfoBacksOffExponentially', async () => {
+    const { output, calls } = await rephraseWithTimers((_, callIndex) => {
+      if (callIndex < 3) throw RATE_LIMIT_ERROR;
+      return VALID_RESPONSE;
+    });
+    expect(secondsBetweenCalls(calls)).toEqual([10, 20, 40]);
+    expect(output).toMatchObject({ attempts: 1, isFallback: false });
+  });
+
+  it('Test_createGeminiRephraser_RateLimitThatNeverClearsEndsAsFallback', async () => {
+    const { output, calls } = await rephraseWithTimers(() => {
+      throw RATE_LIMIT_ERROR;
+    });
+    expect(output.isFallback).toBe(true);
+    expect(calls.length).toBeGreaterThan(VN_RETRY_CONFIG.MAX_ATTEMPTS);
+  });
+
+  it('Test_createGeminiRephraser_StopEndsARateLimitWaitAtOnce', async () => {
+    const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, () => {
+      throw RATE_LIMIT_ERROR;
+    });
+    const stopController = new AbortController();
+    const outcome = rephraser.rephraseChunk(SOURCE, chunkRequest(0, stopController.signal)).catch((error: Error) => error.name);
+    await vi.advanceTimersByTimeAsync(1000);
+    stopController.abort();
+    expect(await outcome).toBe('AbortError');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('Test_createGeminiRephraser_DelaySpacesRequestsOnTheSameKey', async () => {
+    const { rephraser, calls } = createFakeRephraser({ GEMINI_API_KEY: 'free1' }, () => VALID_RESPONSE, 60);
+    const outputs = Promise.all([rephraser.rephraseChunk(SOURCE, chunkRequest(0)), rephraser.rephraseChunk(SOURCE, chunkRequest(1))]);
+    await vi.runAllTimersAsync();
+    await outputs;
+    expect(secondsBetweenCalls(calls)).toEqual([60]);
+  });
+
+  it('Test_createGeminiRephraser_DelayDoesNotHoldBackOtherKeys', async () => {
+    const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, () => VALID_RESPONSE, 60);
+    const outputs = Promise.all([rephraser.rephraseChunk(SOURCE, chunkRequest(0)), rephraser.rephraseChunk(SOURCE, chunkRequest(1))]);
+    await vi.runAllTimersAsync();
+    await outputs;
+    expect(calls.map((call) => call.apiKey)).toEqual(['free1', 'free2']);
+    expect(secondsBetweenCalls(calls)).toEqual([0]);
+  });
+
+  it('Test_createGeminiRephraser_NoDelayByDefault', async () => {
+    const { rephraser, calls } = createFakeRephraser({ GEMINI_API_KEY: 'free1' }, () => VALID_RESPONSE);
+    await rephraser.rephraseChunk(SOURCE, chunkRequest(0));
+    await rephraser.rephraseChunk(SOURCE, chunkRequest(1));
+    expect(secondsBetweenCalls(calls)).toEqual([0]);
+  });
 
   it('Test_createGeminiRephraser_ServerErrorsKeepOriginalTextAsFallback', async () => {
     const { output } = await rephraseWithTimers(() => {

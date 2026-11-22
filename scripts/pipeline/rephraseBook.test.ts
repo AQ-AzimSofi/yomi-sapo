@@ -251,19 +251,17 @@ describe('batchRephrase', () => {
     expect(readOutputs()).toEqual(reference);
   });
 
-  it('Test_batchRephrase_StopEndsTheWaitBetweenChunksAtOnce', async () => {
+  it('Test_batchRephrase_StopAsAChunkFinishesKeepsItAndStartsNoOther', async () => {
     writeSource();
     const stopController = new AbortController();
     const { deps, rephrasedChunkIndexes } = createFakeDeps({
       stopSignal: stopController.signal,
       replyToChunk: (chunk, chunkIndex) => {
-        setTimeout(() => stopController.abort(), 10);
+        stopController.abort();
         return rephraseEveryChunk(chunk, chunkIndex);
       },
     });
-    const startMs = Date.now();
-    expect(await batchRephrase(book, { ...OPTIONS, model: 'gemini-3.5-flash', delaySeconds: 600 }, deps)).toBe(false);
-    expect(Date.now() - startMs).toBeLessThan(5000);
+    expect(await batchRephrase(book, { ...OPTIONS, model: 'gemini-3.5-flash' }, deps)).toBe(false);
     expect(rephrasedChunkIndexes).toEqual([0]);
     expect(readProgress().chunks.items.map((item) => item.status)).toEqual(['completed', ...Array(CHUNK_COUNT - 1).fill('pending')]);
   });

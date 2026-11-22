@@ -10,7 +10,7 @@ interface ProgressSource {
   hash: string;
 }
 
-interface ProgressSettings {
+export interface ProgressSettings {
   chunkSize: number;
   delaySeconds: number;
   model: string;

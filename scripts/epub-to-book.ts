@@ -36,10 +36,10 @@ export const BOOK_PIPELINE_FLAGS = {
   delaySeconds: numberFlag({
     name: 'delay',
     valueName: 'n',
-    defaultValue: 120,
+    defaultValue: 0,
     isInteger: true,
     min: 0,
-    description: 'Seconds between Gemini chunks, divided by the number of free keys; Claude runs without delay',
+    description: 'Gemini: least seconds between two requests on the same key, on top of waiting out rate limits (429); Claude ignores it',
   }),
   model: textFlag({ name: 'model', valueName: 'name', defaultValue: 'sonnet', description: 'Claude model (sonnet, opus) or a gemini-* model' }),
   skipExtract: switchFlag({ name: 'skip-extract', description: 'Use public/<output-dir>/<book>/<book>.txt as it is; the input path only names the book' }),
