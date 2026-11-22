@@ -20,7 +20,7 @@ function storedVoiceGender(): TTSVoiceGender {
 
 // Normal speed, as the audiobook asks for its clips, so both share fetchTTS's cache and a
 // speed change needs no new clip.
-function synthesizeClip(text: string): Promise<string | null> {
+export function synthesizeClip(text: string): Promise<string | null> {
   return fetchTTS({ text, speed: 1, voiceGender: storedVoiceGender() });
 }
 
