@@ -2,7 +2,7 @@
 
 // The production Aurora DSQL cluster id. Empty keeps the app on DATABASE_URL (Neon). Set,
 // it grants the server function dsql:DbConnect on that cluster and switches the app to it.
-const PRODUCTION_DSQL_CLUSTER_ID = "";
+const PRODUCTION_DSQL_CLUSTER_ID = "5juialyzixpnxydjk2txujwsui";
 
 export default $config({
   app(input) {
