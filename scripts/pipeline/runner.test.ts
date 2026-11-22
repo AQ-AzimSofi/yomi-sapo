@@ -13,7 +13,6 @@ const OPTIONS: PipelineOptions = {
   filter: 'all',
   reset: false,
   dryRun: false,
-  apiUrl: 'http://127.0.0.1:9',
 };
 const CONTEXT: PipelineContext = { options: OPTIONS, book: { bookName: 'book', sourceDir: 'public/bookv2-furigana/book' } };
 

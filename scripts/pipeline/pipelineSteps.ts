@@ -2,6 +2,7 @@ import { extractRubyRegistry } from './epubExtraction';
 import { uploadBookImages } from './illustrationUpload';
 import { batchRephrase, defaultRephraseDeps } from './rephraseBook';
 import type { Step } from './runner';
+import { createDatabaseSync } from './textEntrySync';
 
 // The reader works without a ruby registry, so a failure here warns instead of stopping the book.
 export const rubyRegistryStep: Step = {
@@ -29,7 +30,8 @@ export const rephraseStep: Step = {
   name: 'Rephrase',
   shouldRun: ({ options }) => !options.skipRephrase,
   run: async ({ options, book }) => {
-    const isComplete = await batchRephrase(book, options, defaultRephraseDeps);
+    const deps = { ...defaultRephraseDeps, syncToDatabase: createDatabaseSync(options.databaseUrl) };
+    const isComplete = await batchRephrase(book, options, deps);
     if (isComplete || options.dryRun) return;
     console.log('\nRephrasing incomplete. Run again to resume.');
   },

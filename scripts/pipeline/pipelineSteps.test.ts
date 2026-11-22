@@ -17,7 +17,6 @@ const OPTIONS: PipelineOptions = {
   filter: 'all',
   reset: false,
   dryRun: false,
-  apiUrl: 'http://127.0.0.1:9',
 };
 const TEXT_BOOK: PreparedBook = { bookName: 'book', sourceDir: 'public/bookv2-furigana/book' };
 const EPUB_BOOK: PreparedBook = { ...TEXT_BOOK, epubPath: 'book.epub' };

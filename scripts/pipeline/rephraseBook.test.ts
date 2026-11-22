@@ -10,6 +10,7 @@ import { createProgress, type ProgressFile, type ProgressFileV1 } from './progre
 import type { FuriganaResult } from './furigana';
 import { batchRephrase, type RephraseDeps, type RephraseOptions } from './rephraseBook';
 import { FALLBACK_ERROR, type ChunkOutput } from './rephraseChunk';
+import type { TextEntryTarget } from './textEntrySync';
 
 const BOOK_NAME = 'book';
 const SOURCE_TEXT = [
@@ -26,7 +27,6 @@ const OPTIONS: RephraseOptions = {
   model: 'sonnet',
   reset: false,
   dryRun: false,
-  apiUrl: 'http://127.0.0.1:9',
 };
 const CHUNK_COUNT = chunkText(SOURCE_TEXT, OPTIONS.chunkSize).chunks.length;
 // Two full runs per write the book makes, which a loaded machine can take well over the default 5s for.
@@ -76,7 +76,7 @@ function createFakeDeps(overrides: Partial<RephraseDeps> & { replyToChunk?: Repl
       },
     }),
     addFurigana: overrides.addFurigana ?? addFakeFurigana,
-    syncToDatabase: async () => true,
+    syncToDatabase: overrides.syncToDatabase ?? (async () => true),
     writeFile: (filePath, content) => {
       writtenPaths.push(filePath);
       writeFile(filePath, content);
@@ -160,6 +160,22 @@ describe('batchRephrase', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     fs.rmSync(testRoot, { recursive: true, force: true });
+  });
+
+  it('Test_batchRephrase_SyncsTheReaderFileAfterEachChunk', async () => {
+    writeSource();
+    const syncedTargets: TextEntryTarget[] = [];
+    const { deps } = createFakeDeps({
+      syncToDatabase: async (target) => {
+        syncedTargets.push(target);
+        return true;
+      },
+    });
+
+    await batchRephrase(book, OPTIONS, deps);
+
+    const readerFileTarget = { directory: `bookv2-furigana/${BOOK_NAME}`, fileName: `${BOOK_NAME}-rephrase-furigana`, filePath: files.furiganaPath };
+    expect(syncedTargets).toEqual(Array(CHUNK_COUNT).fill(readerFileTarget));
   });
 
   it('Test_batchRephrase_OutputsAreChunksInOrder', async () => {

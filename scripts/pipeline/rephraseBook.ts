@@ -22,6 +22,7 @@ import {
 import { migrateV1Progress, type ChunkTexts } from './progressMigration';
 import { createClaudeRephraser, createGeminiRephraser, sleep, type ChunkRephraser } from './rephraseChunk';
 import { findReaderMismatches } from './rephraseFormat';
+import type { SyncToDatabase, TextEntryTarget } from './textEntrySync';
 
 export interface RephraseOptions {
   outputDir: string;
@@ -30,13 +31,6 @@ export interface RephraseOptions {
   model: string;
   reset: boolean;
   dryRun: boolean;
-  apiUrl: string;
-}
-
-export interface TextEntryTarget {
-  apiUrl: string;
-  fileName: string;
-  directory: string;
 }
 
 export type CreateRephraser = (model: string) => ChunkRephraser;
@@ -44,7 +38,7 @@ export type CreateRephraser = (model: string) => ChunkRephraser;
 export interface RephraseDeps {
   createRephraser: CreateRephraser;
   addFurigana: (readerText: string) => FuriganaResult;
-  syncToDatabase: (target: TextEntryTarget) => Promise<boolean>;
+  syncToDatabase: SyncToDatabase;
   writeFile: WriteFile;
 }
 
@@ -87,39 +81,14 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-// ============================================================================
-// Database Sync
-// ============================================================================
-
-async function syncToDatabase({ apiUrl, fileName, directory }: TextEntryTarget): Promise<boolean> {
-  try {
-    const response = await fetch(`${apiUrl}/api/text-entries`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName, directory }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`    Database sync failed: ${response.status} - ${errorText}`);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error(`    Database sync error:`, error);
-    return false;
-  }
-}
-
 export function createRephraser(model: string): ChunkRephraser {
   return isClaudeModel(model) ? createClaudeRephraser(model) : createGeminiRephraser(model, () => createKeyPool());
 }
 
-export const defaultRephraseDeps: RephraseDeps = {
+/** The database sync depends on the run's --database-url, so the caller adds it. */
+export const defaultRephraseDeps: Omit<RephraseDeps, 'syncToDatabase'> = {
   createRephraser,
   addFurigana: addFuriganaWithPython,
-  syncToDatabase,
   writeFile: writeFileAtomic,
 };
 
@@ -193,7 +162,6 @@ function logRunPlan(start: RunStart, rephraser: ChunkRephraser, options: Rephras
     console.log(`Estimated total time: ${formatDuration(chunks.length * effectiveDelay)}`);
   }
   console.log(`Model: ${options.model}`);
-  console.log(`Database sync: ${options.apiUrl}`);
   console.log(`Furigana: enabled (adding after each chunk)`);
 }
 
@@ -371,7 +339,7 @@ export async function batchRephrase(
   }
 
   commitRunStart(files, start, deps.writeFile);
-  const textEntry = { apiUrl: options.apiUrl, fileName: `${bookName}-rephrase-furigana`, directory: `${options.outputDir}/${bookName}` };
+  const textEntry = { fileName: `${bookName}-rephrase-furigana`, directory: `${options.outputDir}/${bookName}`, filePath: files.furiganaPath };
   const stopController = new AbortController();
   const run: ChunkRun = { files, chunks: start.chunks, rephraser, deps, textEntry, shouldStop: () => stopController.signal.aborted };
 
