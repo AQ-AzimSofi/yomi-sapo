@@ -1,6 +1,6 @@
 # Scripts Directory
 
-Offline tools for preparing books, narration and the database. None of them run in the deployed app: `next.config.ts` keeps `scripts/` out of the bundle, and `npm run lint` skips it. `npm run typecheck:scripts` type-checks it, and CI runs that on every pull request. Run them from the project root, TypeScript with `npx tsx` and Python with Python 3.12 and MeCab.
+Offline tools for preparing books, narration and the database. None of them run in the deployed app: `next.config.ts` keeps `scripts/` out of the bundle, and `npm run lint` skips it. `npm run typecheck:scripts` type-checks it, and CI runs that on every pull request. Run them from the project root, TypeScript with `npx tsx` and Python with Python 3.12 and MeCab. `epub-to-book.ts`, `ocr/ocr-pages.ts` and `audio/build-narration.ts` define their flags in one schema each (`shared/cliSchema.ts`), and `--help` prints them with their defaults; this README does not repeat the defaults.
 
 ## Contents
 
@@ -13,7 +13,7 @@ Offline tools for preparing books, narration and the database. None of them run 
 | `core/furigana_helper.py` | MeCab furigana generation shared by the three scripts above |
 | `utils/claude-rephrase.ts`, `prompts/claude-rephrase.md` | The Claude rephraser: runs `claude -p` with the prompt file as its system prompt |
 | `utils/rephrase-output.ts` | Parses a Gemini reply and aligns it with the source chunk |
-| `ocr/ocr-pages.ts` | OCRs a folder of page images into text with Gemini, for books with no EPUB (usage in the file header) |
+| `ocr/ocr-pages.ts` | OCRs a folder of page images into text with Gemini, for books with no EPUB (`--help` lists its options and their defaults) |
 | `kindle/page-turner.ts` | Turns Kindle Cloud Reader pages and saves screenshots, see [kindle/README.md](./kindle/README.md) |
 | `covers/fetch-covers.py` | Collects book covers for the BookCovers bucket, see "Book Covers" in the root README |
 | `audio/` | Audiobook narration, see [Audiobook Narration](#audiobook-narration-audio) |
@@ -112,7 +112,8 @@ recording plus a transcript of it — not the ebook text, it must match what is 
 # 1. Align transcript to audio -> .srt (for eyeballing) + .timings.json
 python scripts/audio/align-transcript.py "book.m4b" "book.txt"
 
-# 2. Map those cues onto reader units -> a build artifact (cue positions only)
+# 2. Map those cues onto reader units -> a build artifact (cue positions only);
+#    --help lists the options, including the --min-coverage gate
 npx tsx scripts/audio/build-narration.ts \
   --timings "book.timings.json" \
   --text "public/bookv2-furigana/<book>/<book>.txt" \
