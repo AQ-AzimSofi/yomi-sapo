@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolvePython, type PythonLookup } from './python';
+import { resolvePython, runPython, type PythonLookup } from './python';
 import { REPO_ROOT } from './repoPaths';
 
 function createLookup(overrides: Partial<PythonLookup>): PythonLookup {
@@ -31,5 +31,20 @@ describe('resolvePython', () => {
 
   it('Test_resolvePython_Python3Elsewhere', () => {
     expect(resolvePython(createLookup({ platform: 'darwin' }))).toEqual({ command: 'python3', launcherArgs: [] });
+  });
+});
+
+describe('runPython', () => {
+  it('Test_runPython_ReturnsStdout', () => {
+    expect(runPython(['-c', 'print("ok")']).trim()).toBe('ok');
+  });
+
+  it('Test_runPython_JapaneseStdoutStaysIntact', () => {
+    expect(runPython(['-c', 'print("漢字")']).trim()).toBe('漢字');
+  });
+
+  it('Test_runPython_NonZeroExitThrowsWithCapturedStderr', () => {
+    const failingScript = 'import sys; sys.stderr.write("broken"); sys.exit(3)';
+    expect(() => runPython(['-c', failingScript], { isStderrCaptured: true })).toThrow(/exited with 3: broken/);
   });
 });

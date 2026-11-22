@@ -65,7 +65,6 @@ export interface CLIOptions {
 function extractEpub(epubPath: string, outputDir: string, filter: string): string | null {
   console.log('\n=== Step 1: Extracting EPUB ===\n');
 
-  const python = resolvePython();
   const scriptArgs = [
     path.join(CORE_SCRIPTS_DIR, 'epub-to-text-furigana.py'),
     epubPath,
@@ -73,19 +72,10 @@ function extractEpub(epubPath: string, outputDir: string, filter: string): strin
     '--output', path.join(REPO_ROOT, 'public', outputDir),
   ];
 
-  console.log(`Running: ${describePython(python)} ${scriptArgs.join(' ')}\n`);
+  console.log(`Running: ${describePython(resolvePython())} ${scriptArgs.join(' ')}\n`);
 
   try {
-    const result = runPython(python, scriptArgs, {
-      cwd: REPO_ROOT,
-      encoding: 'utf-8',
-      stdio: 'inherit',
-    });
-
-    if (result.status !== 0) {
-      console.error('EPUB extraction failed');
-      return null;
-    }
+    runPython(scriptArgs);
 
     // Find the created book directory
     const baseDir = path.join(REPO_ROOT, 'public', outputDir);
@@ -139,20 +129,11 @@ function extractRubyRegistry(epubPath: string): boolean {
   console.log(`Copied EPUB to: ${tempEpubPath}`);
 
   try {
-    const result = runPython(resolvePython(), [path.join(CORE_SCRIPTS_DIR, 'extract-ruby-smart.py')], {
-      cwd: REPO_ROOT,
-      encoding: 'utf-8',
-      stdio: 'inherit',
-    });
+    runPython([path.join(CORE_SCRIPTS_DIR, 'extract-ruby-smart.py')]);
 
     // Clean up temp file
     if (fs.existsSync(tempEpubPath)) {
       fs.unlinkSync(tempEpubPath);
-    }
-
-    if (result.status !== 0) {
-      console.error('Ruby registry extraction failed');
-      return false;
     }
 
     return true;
@@ -304,7 +285,7 @@ async function main(options: CLIOptions) {
   }
 
   const needsPython = !options.skipExtract || !options.skipRephrase;
-  if (needsPython) assertPythonHasMeCab(resolvePython());
+  if (needsPython) assertPythonHasMeCab();
 
   console.log(`
 ============================================================
