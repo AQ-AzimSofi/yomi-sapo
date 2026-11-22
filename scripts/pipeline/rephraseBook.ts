@@ -375,8 +375,6 @@ export async function batchRephrase(
   options: RephraseOptions,
   deps: RephraseDeps
 ): Promise<boolean> {
-  console.log('\n=== Step 4: Batch Rephrasing ===\n');
-
   const files = getBookFiles(sourceDir, bookName);
   if (!fs.existsSync(files.sourcePath)) {
     console.error(`Source file not found: ${files.sourcePath}`);

@@ -17,8 +17,6 @@ function runAwsS3(args: string[]): boolean {
 // Exact paths rather than --include filters: the CLI matches filters against the
 // unescaped absolute path, so a book name with [ or ] would make every filter miss.
 export function uploadBookImages(outputDir: string, bookName: string, isDryRun: boolean): void {
-  console.log('\n=== Step 3: Uploading Illustrations ===\n');
-
   const bucket = process.env.BOOK_IMAGES_BUCKET;
   if (!bucket) {
     console.warn('BOOK_IMAGES_BUCKET is not set in .env.local; skipping. Illustrations will not show until uploaded.');
