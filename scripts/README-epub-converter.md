@@ -69,10 +69,7 @@ The reader parses these tags with `lib/utils/furiganaParser.ts`.
 
 ## Getting the Book Into the App
 
-The library and the reader read book text from the database (`text_entries`), not from `public/`, which is gitignored and never deployed. Running the extractor alone does not load anything there. Either:
-
-- run the whole pipeline, `npx tsx scripts/epub-to-book.ts`, which syncs the text to the local database through the dev server, or
-- run the extractor with `--output-mode api`. It still writes the images and metadata JSON, but posts the text to `/api/admin?action=text-entries` as `bookv2-furigana/<title>` instead of writing the `.txt` file. It needs `ADMIN_API_KEY` in the environment and a running server at `API_URL` (default `http://localhost:3333`)
+The library and the reader read book text from the database (`text_entries`), not from `public/`, which is gitignored and never deployed. Running the extractor alone does not load anything there: run the whole pipeline, `npx tsx scripts/epub-to-book.ts`, which syncs the text to the local database.
 
 Illustrations reach production only through the BookImages bucket (see "Book Illustrations" in the root README).
 
