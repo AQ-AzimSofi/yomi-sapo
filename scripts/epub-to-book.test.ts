@@ -8,7 +8,7 @@ describe('parseCliOptions', () => {
       inputPath: path.resolve('book.epub'),
       outputDir: 'bookv2-furigana',
       chunkSize: 5000,
-      delaySeconds: 120,
+      delaySeconds: 0,
       model: 'sonnet',
       skipRephrase: false,
       skipExtract: false,

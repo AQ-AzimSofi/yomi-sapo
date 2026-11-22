@@ -6,10 +6,12 @@ import { findFormatProblem, sanitizeRephraseResponse, type SanitizedRephrase } f
 import {
   describeError,
   describeUnusableKey,
+  isRateLimited,
   isRetryable,
   isUnknownModel,
   PAID_API_KEY_ENV_NAME,
   pickKey,
+  readRetryDelaySecs,
   retireKey,
   type ApiKey,
   type KeyPool,
@@ -64,6 +66,11 @@ export const FALLBACK_ERROR = 'Used original text (rephrase failed)';
 const RESUME_HINT = 'Progress is saved. Run the same command again to resume from this chunk.';
 const CORRECTION_PREFIX = '回答のフォーマットが正しくありません。もう一度やり直してください。必ず下記の構成に従ってください。\n';
 const MAX_RETRY_WAIT_SECS = 30;
+const FIRST_RATE_LIMIT_WAIT_SECS = 10;
+const MAX_RATE_LIMIT_WAIT_SECS = 120;
+// A per-minute limit clears within a minute, so this many waits ride out several in a row
+// before the attempt counts as failed.
+const MAX_RATE_LIMIT_WAITS = 6;
 
 export interface ChunkOutput {
   rawText: string;
@@ -86,15 +93,32 @@ export interface ChunkRephraser {
   rephraseChunk: (chunk: string, request: ChunkRequest) => Promise<ChunkOutput>;
 }
 
+export interface GeminiSettings {
+  model: string;
+  /** --delay: the least seconds between two requests on the same key; 0 leaves the pace to the rate limits. */
+  delaySeconds: number;
+}
+
+/** Resolves once the key may take another request. */
+type WaitForKey = (key: ApiKey, signal: AbortSignal) => Promise<void>;
+
 interface ModelRequest extends ChunkRequest {
   model: string;
   keyPool: KeyPool;
   cleanChunk: string;
+  waitForKey: WaitForKey;
 }
 
 interface ModelAttempt {
   attempt: number;
   instruction: string;
+  /** Rate-limit waits so far for this chunk; up to MAX_RATE_LIMIT_WAITS they use up no attempt. */
+  rateLimitWaits: number;
+}
+
+interface RequestFailure {
+  key: ApiKey;
+  error: unknown;
 }
 
 // out-of-keys and model-unavailable stop the run rather than save original text for every chunk that follows.
@@ -104,6 +128,17 @@ type ModelResult =
   | { outcome: 'out-of-keys'; requestCount: number }
   | { outcome: 'model-unavailable'; requestCount: number };
 
+/** Each request reserves its key's next slot before waiting for it, so requests that share a key queue up. */
+function createKeyPacer(minSpacingMs: number): WaitForKey {
+  const nextFreeAtMsByKey = new Map<string, number>();
+  return async (key, signal) => {
+    const nowMs = Date.now();
+    const startAtMs = Math.max(nowMs, nextFreeAtMsByKey.get(key.envName) ?? nowMs);
+    nextFreeAtMsByKey.set(key.envName, startAtMs + minSpacingMs);
+    if (startAtMs > nowMs) await sleep(startAtMs - nowMs, undefined, { signal });
+  };
+}
+
 async function generateText(key: ApiKey, prompt: string, request: ModelRequest): Promise<string> {
   const response = await key.client.models.generateContent({ model: request.model, contents: prompt, config: { abortSignal: request.signal } });
   return response.text || '';
@@ -111,13 +146,14 @@ async function generateText(key: ApiKey, prompt: string, request: ModelRequest):
 
 // Each attempt moves to the next free key, so one key's transient errors do not sink the chunk.
 async function requestWithModel(request: ModelRequest, current: ModelAttempt): Promise<ModelResult> {
-  const { model, keyPool } = request;
+  const { keyPool } = request;
   const maxAttempts = VN_RETRY_CONFIG.MAX_ATTEMPTS;
   const requestCount = current.attempt - 1;
   if (current.attempt > maxAttempts) return { outcome: 'attempts-used-up', requestCount };
   const key = pickKey(keyPool, request.chunkIndex + current.attempt - 1);
   if (!key) return { outcome: 'out-of-keys', requestCount };
 
+  await request.waitForKey(key, request.signal);
   console.log(`    Attempt ${current.attempt}/${maxAttempts} (${key.envName})...`);
   const outcome = await generateText(key, current.instruction + request.cleanChunk, request).then(
     (text) => ({ text, error: undefined }),
@@ -128,24 +164,41 @@ async function requestWithModel(request: ModelRequest, current: ModelAttempt): P
     if (!formatProblem) return { outcome: 'rephrased', response: outcome.text, requestCount: current.attempt };
     console.log(`    Invalid format (${formatProblem}), retrying with correction prompt...`);
     console.log('    Response preview:', outcome.text.slice(0, 200).replace(/\n/g, '\\n'));
-    return requestWithModel(request, { attempt: current.attempt + 1, instruction: CORRECTION_PREFIX + ai_instructions });
+    return requestWithModel(request, { ...current, attempt: current.attempt + 1, instruction: CORRECTION_PREFIX + ai_instructions });
   }
+  return retryAfterError(request, current, { key, error: outcome.error });
+}
 
+// The same attempt goes again on the same key: the limit is that key's, and moving on would only
+// take another worker's key.
+async function waitOutRateLimit(request: ModelRequest, current: ModelAttempt, { key, error }: RequestFailure): Promise<ModelResult> {
+  const backoffSecs = FIRST_RATE_LIMIT_WAIT_SECS * 2 ** current.rateLimitWaits;
+  const waitSecs = Math.min(MAX_RATE_LIMIT_WAIT_SECS, readRetryDelaySecs(error) ?? backoffSecs);
+  console.log(`    ${key.envName} is rate limited; trying it again in ${waitSecs}s...`);
+  await sleep(waitSecs * 1000, undefined, { signal: request.signal });
+  return requestWithModel(request, { ...current, rateLimitWaits: current.rateLimitWaits + 1 });
+}
+
+async function retryAfterError(request: ModelRequest, current: ModelAttempt, failure: RequestFailure): Promise<ModelResult> {
+  const { model, keyPool } = request;
+  const { key, error } = failure;
+  const maxAttempts = VN_RETRY_CONFIG.MAX_ATTEMPTS;
   request.signal.throwIfAborted();
-  console.error(`    API error on attempt ${current.attempt}:`, describeError(outcome.error));
+  console.error(`    API error on attempt ${current.attempt}:`, describeError(error));
   const isFreeKey = key !== keyPool.paidKey;
-  const unusableKeyReason = describeUnusableKey(outcome.error, model);
+  const unusableKeyReason = describeUnusableKey(error, model);
   // A retired key does not use up an attempt: the next key gets the same one.
   if (unusableKeyReason && isFreeKey) {
     retireKey(keyPool, key, unusableKeyReason);
     return requestWithModel(request, current);
   }
   if (unusableKeyReason) return { outcome: 'out-of-keys', requestCount: current.attempt };
-  if (isUnknownModel(outcome.error)) {
+  if (isUnknownModel(error)) {
     console.log(`    Model ${model} unavailable, trying next fallback...`);
     return { outcome: 'model-unavailable', requestCount: current.attempt };
   }
-  if (!isRetryable(outcome.error) || current.attempt >= maxAttempts) {
+  if (isRateLimited(error) && current.rateLimitWaits < MAX_RATE_LIMIT_WAITS) return waitOutRateLimit(request, current, failure);
+  if (!isRetryable(error) || current.attempt >= maxAttempts) {
     return { outcome: 'attempts-used-up', requestCount: current.attempt };
   }
   const waitSecs = Math.min(MAX_RETRY_WAIT_SECS, current.attempt * 10);
@@ -174,11 +227,12 @@ function createFallbackOutput(cleanChunk: string, requestCount: number): ChunkOu
 
 /**
  * Free keys first, then GEMINI_API_KEY_PAID on the same model. A key out of daily quota hands the
- * request to the next key; a per-minute limit or a server error waits and retries. Only an unknown
- * model moves on to the next model in the fallback order. Daily quotas are per model, so every
- * model keeps its own pool of retired keys.
+ * request to the next key. A per-minute limit (429) waits as long as Gemini asks, or backs off, and
+ * retries on the same key without using up an attempt; a server error waits and retries on the
+ * next key. Only an unknown model moves on to the next model in the fallback order. Daily quotas
+ * are per model, so every model keeps its own pool of retired keys.
  */
-export function createGeminiRephraser(model: string, createPool: () => KeyPool): ChunkRephraser {
+export function createGeminiRephraser({ model, delaySeconds }: GeminiSettings, createPool: () => KeyPool): ChunkRephraser {
   const poolsByModel = new Map<string, KeyPool>();
   const getPool = (poolModel: string): KeyPool => {
     const existingPool = poolsByModel.get(poolModel);
@@ -188,6 +242,7 @@ export function createGeminiRephraser(model: string, createPool: () => KeyPool):
     return newPool;
   };
   const requestedModelPool = getPool(model);
+  const waitForKey = createKeyPacer(delaySeconds * 1000);
 
   const rephraseChunk = async (chunk: string, chunkRequest: ChunkRequest): Promise<ChunkOutput> => {
     const cleanChunk = stripRubyTags(chunk);
@@ -196,8 +251,8 @@ export function createGeminiRephraser(model: string, createPool: () => KeyPool):
         const earlier = await previous;
         if (earlier.outcome !== 'model-unavailable') return earlier;
         console.log(`    Trying model: ${currentModel}`);
-        const request = { ...chunkRequest, model: currentModel, keyPool: getPool(currentModel), cleanChunk };
-        const modelResult = await requestWithModel(request, { attempt: 1, instruction: ai_instructions });
+        const request = { ...chunkRequest, model: currentModel, keyPool: getPool(currentModel), cleanChunk, waitForKey };
+        const modelResult = await requestWithModel(request, { attempt: 1, instruction: ai_instructions, rateLimitWaits: 0 });
         return { ...modelResult, requestCount: earlier.requestCount + modelResult.requestCount, usedModel: currentModel };
       },
       Promise.resolve({ outcome: 'model-unavailable', requestCount: 0, usedModel: model }),
