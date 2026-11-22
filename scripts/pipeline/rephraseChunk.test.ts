@@ -4,6 +4,8 @@ import { VN_RETRY_CONFIG } from '../../lib/constants';
 import { createKeyPool } from '../shared/geminiKeyPool';
 import { createGeminiRephraser } from './rephraseChunk';
 
+vi.mock('node:timers/promises', () => import('../shared/fakeTimersPromises'));
+
 const SOURCE = '吾輩は猫である。名前はまだ無い。';
 const VALID_RESPONSE = `< ${SOURCE}\n>> 私は猫です。名前はありません。`;
 const DAILY_QUOTA_ERROR = new ApiError({ status: 429, message: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' });
@@ -11,6 +13,7 @@ const DAILY_QUOTA_ERROR = new ApiError({ status: 429, message: 'GenerateRequests
 interface GeminiCall {
   apiKey: string;
   model: string;
+  abortSignal?: AbortSignal;
 }
 
 type ReplyToCall = (call: GeminiCall, callIndex: number) => string;
@@ -20,8 +23,8 @@ function createFakeRephraser(env: NodeJS.ProcessEnv, replyToCall: ReplyToCall) {
   const createClient = (apiKey: string) =>
     ({
       models: {
-        generateContent: async ({ model }: { model: string }) => {
-          const call = { apiKey, model };
+        generateContent: async ({ model, config }: { model: string; config?: { abortSignal?: AbortSignal } }) => {
+          const call = { apiKey, model, abortSignal: config?.abortSignal };
           calls.push(call);
           return { text: replyToCall(call, calls.length - 1) };
         },
@@ -29,6 +32,10 @@ function createFakeRephraser(env: NodeJS.ProcessEnv, replyToCall: ReplyToCall) {
     }) as unknown as GoogleGenAI;
   const rephraser = createGeminiRephraser('gemini-3.5-flash', () => createKeyPool(env, createClient));
   return { rephraser, calls };
+}
+
+function chunkRequest(chunkIndex: number, signal = new AbortController().signal) {
+  return { chunkIndex, signal };
 }
 
 const FREE_AND_PAID_KEYS = { GEMINI_API_KEY: 'free1', GEMINI_API_KEY2: 'free2', GEMINI_API_KEY_PAID: 'paid' };
@@ -46,13 +53,20 @@ describe('createGeminiRephraser', () => {
 
   it('Test_createGeminiRephraser_SpreadsChunksOverFreeKeys', async () => {
     const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, () => VALID_RESPONSE);
-    await rephraser.rephraseChunk(SOURCE, 1);
-    expect(calls).toEqual([{ apiKey: 'free2', model: 'gemini-3.5-flash' }]);
+    await rephraser.rephraseChunk(SOURCE, chunkRequest(1));
+    expect(calls).toMatchObject([{ apiKey: 'free2', model: 'gemini-3.5-flash' }]);
+  });
+
+  it('Test_createGeminiRephraser_RequestCarriesTheStopSignal', async () => {
+    const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, () => VALID_RESPONSE);
+    const stopController = new AbortController();
+    await rephraser.rephraseChunk(SOURCE, chunkRequest(0, stopController.signal));
+    expect(calls[0].abortSignal).toBe(stopController.signal);
   });
 
   it('Test_createGeminiRephraser_ValidReplyIsAlignedToSource', async () => {
     const { rephraser } = createFakeRephraser(FREE_AND_PAID_KEYS, () => `以下が要約です。\n${VALID_RESPONSE}`);
-    const output = await rephraser.rephraseChunk(SOURCE, 0);
+    const output = await rephraser.rephraseChunk(SOURCE, chunkRequest(0));
     expect(output).toEqual({ rawText: `以下が要約です。\n${VALID_RESPONSE}`, readerText: VALID_RESPONSE, attempts: 1, isFallback: false });
   });
 
@@ -61,7 +75,7 @@ describe('createGeminiRephraser', () => {
       if (call.apiKey === 'free1') throw DAILY_QUOTA_ERROR;
       return VALID_RESPONSE;
     });
-    const output = await rephraser.rephraseChunk(SOURCE, 0);
+    const output = await rephraser.rephraseChunk(SOURCE, chunkRequest(0));
     expect(calls.map((call) => call.apiKey)).toEqual(['free1', 'free2']);
     expect(output.attempts).toBe(1);
   });
@@ -71,8 +85,8 @@ describe('createGeminiRephraser', () => {
       if (call.apiKey !== 'paid') throw DAILY_QUOTA_ERROR;
       return VALID_RESPONSE;
     });
-    await rephraser.rephraseChunk(SOURCE, 0);
-    expect(calls.at(-1)).toEqual({ apiKey: 'paid', model: 'gemini-3.5-flash' });
+    await rephraser.rephraseChunk(SOURCE, chunkRequest(0));
+    expect(calls.at(-1)).toMatchObject({ apiKey: 'paid', model: 'gemini-3.5-flash' });
   });
 
   it('Test_createGeminiRephraser_RetiredKeyStaysRetiredForLaterChunks', async () => {
@@ -80,8 +94,8 @@ describe('createGeminiRephraser', () => {
       if (call.apiKey === 'free1') throw DAILY_QUOTA_ERROR;
       return VALID_RESPONSE;
     });
-    await rephraser.rephraseChunk(SOURCE, 0);
-    await rephraser.rephraseChunk(SOURCE, 2);
+    await rephraser.rephraseChunk(SOURCE, chunkRequest(0));
+    await rephraser.rephraseChunk(SOURCE, chunkRequest(2));
     expect(calls.map((call) => call.apiKey)).toEqual(['free1', 'free2', 'free2']);
   });
 
@@ -90,13 +104,13 @@ describe('createGeminiRephraser', () => {
       if (call.model === 'gemini-3.5-flash') throw new ApiError({ status: 404, message: 'model not found' });
       return VALID_RESPONSE;
     });
-    await rephraser.rephraseChunk(SOURCE, 0);
+    await rephraser.rephraseChunk(SOURCE, chunkRequest(0));
     expect(calls.map((call) => call.model)).toEqual(['gemini-3.5-flash', 'gemini-3-flash-preview']);
   });
 
   it('Test_createGeminiRephraser_InvalidFormatRetriesWithNextKey', async () => {
     const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, (_, callIndex) => (callIndex === 0 ? 'no pairs here' : VALID_RESPONSE));
-    const output = await rephraser.rephraseChunk(SOURCE, 0);
+    const output = await rephraser.rephraseChunk(SOURCE, chunkRequest(0));
     expect(calls.map((call) => call.apiKey)).toEqual(['free1', 'free2']);
     expect(output.attempts).toBe(2);
   });
@@ -105,7 +119,7 @@ describe('createGeminiRephraser', () => {
     const { rephraser, calls } = createFakeRephraser({ GEMINI_API_KEY: 'free1' }, () => {
       throw DAILY_QUOTA_ERROR;
     });
-    await expect(rephraser.rephraseChunk(SOURCE, 0)).rejects.toThrow('No Gemini key has quota left for gemini-3.5-flash');
+    await expect(rephraser.rephraseChunk(SOURCE, chunkRequest(0))).rejects.toThrow('No Gemini key has quota left for gemini-3.5-flash');
     expect(calls.map((call) => call.model)).toEqual(['gemini-3.5-flash']);
   });
 
@@ -113,20 +127,20 @@ describe('createGeminiRephraser', () => {
     const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, () => {
       throw DAILY_QUOTA_ERROR;
     });
-    await expect(rephraser.rephraseChunk(SOURCE, 0)).rejects.toThrow('No Gemini key has quota left');
+    await expect(rephraser.rephraseChunk(SOURCE, chunkRequest(0))).rejects.toThrow('No Gemini key has quota left');
     expect(new Set(calls.map((call) => call.model))).toEqual(new Set(['gemini-3.5-flash']));
   });
 
   it('Test_createGeminiRephraser_SuccessIsNotAFallback', async () => {
     const { rephraser } = createFakeRephraser(FREE_AND_PAID_KEYS, () => VALID_RESPONSE);
-    expect((await rephraser.rephraseChunk(SOURCE, 0)).isFallback).toBe(false);
+    expect((await rephraser.rephraseChunk(SOURCE, chunkRequest(0))).isFallback).toBe(false);
   });
 
   it('Test_createGeminiRephraser_UnknownModelEverywhereStopsTheRun', async () => {
     const { rephraser } = createFakeRephraser(FREE_AND_PAID_KEYS, () => {
       throw new ApiError({ status: 404, message: 'model not found' });
     });
-    await expect(rephraser.rephraseChunk(SOURCE, 0)).rejects.toThrow('No Gemini model could be reached');
+    await expect(rephraser.rephraseChunk(SOURCE, chunkRequest(0))).rejects.toThrow('No Gemini model could be reached');
   });
 });
 
@@ -143,7 +157,7 @@ describe('createGeminiRephraser when attempts fail', () => {
 
   async function rephraseWithTimers(replyToCall: ReplyToCall) {
     const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, replyToCall);
-    const pendingOutput = rephraser.rephraseChunk(SOURCE, 0);
+    const pendingOutput = rephraser.rephraseChunk(SOURCE, chunkRequest(0));
     await vi.runAllTimersAsync();
     return { output: await pendingOutput, calls };
   }
@@ -170,6 +184,19 @@ describe('createGeminiRephraser when attempts fail', () => {
     });
     expect(calls.map((call) => call.model)).toEqual(['gemini-3.5-flash', 'gemini-3.5-flash']);
     expect(output.isFallback).toBe(false);
+  });
+
+  it('Test_createGeminiRephraser_StopEndsARetryWaitAtOnce', async () => {
+    const { rephraser, calls } = createFakeRephraser(FREE_AND_PAID_KEYS, () => {
+      throw new ApiError({ status: 503, message: 'overloaded' });
+    });
+    const stopController = new AbortController();
+    const pendingOutput = rephraser.rephraseChunk(SOURCE, chunkRequest(0, stopController.signal));
+    const outcome = pendingOutput.catch((error: Error) => error.name);
+    await vi.advanceTimersByTimeAsync(1000);
+    stopController.abort();
+    expect(await outcome).toBe('AbortError');
+    expect(calls).toHaveLength(1);
   });
 
   it('Test_createGeminiRephraser_InvalidFormatEveryTimeStaysOnTheRequestedModel', async () => {

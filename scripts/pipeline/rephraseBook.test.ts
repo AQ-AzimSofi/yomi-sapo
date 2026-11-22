@@ -70,13 +70,14 @@ function createFakeDeps(overrides: Partial<RephraseDeps> & { replyToChunk?: Repl
   const deps: RephraseDeps = {
     createRephraser: () => ({
       keyCount: 1,
-      rephraseChunk: async (chunk, chunkIndex) => {
+      rephraseChunk: async (chunk, { chunkIndex }) => {
         rephrasedChunkIndexes.push(chunkIndex);
         return replyToChunk(chunk, chunkIndex);
       },
     }),
     addFurigana: overrides.addFurigana ?? addFakeFurigana,
     syncToDatabase: overrides.syncToDatabase ?? (async () => true),
+    stopSignal: overrides.stopSignal ?? new AbortController().signal,
     writeFile: (filePath, content) => {
       writtenPaths.push(filePath);
       writeFile(filePath, content);
@@ -247,6 +248,42 @@ describe('batchRephrase', () => {
     const redo = createFakeDeps();
     expect(await batchRephrase(book, OPTIONS, redo.deps)).toBe(true);
     expect(redo.rephrasedChunkIndexes).toEqual([]);
+    expect(readOutputs()).toEqual(reference);
+  });
+
+  it('Test_batchRephrase_StopEndsTheWaitBetweenChunksAtOnce', async () => {
+    writeSource();
+    const stopController = new AbortController();
+    const { deps, rephrasedChunkIndexes } = createFakeDeps({
+      stopSignal: stopController.signal,
+      replyToChunk: (chunk, chunkIndex) => {
+        setTimeout(() => stopController.abort(), 10);
+        return rephraseEveryChunk(chunk, chunkIndex);
+      },
+    });
+    const startMs = Date.now();
+    expect(await batchRephrase(book, { ...OPTIONS, model: 'gemini-3.5-flash', delaySeconds: 600 }, deps)).toBe(false);
+    expect(Date.now() - startMs).toBeLessThan(5000);
+    expect(rephrasedChunkIndexes).toEqual([0]);
+    expect(readProgress().chunks.items.map((item) => item.status)).toEqual(['completed', ...Array(CHUNK_COUNT - 1).fill('pending')]);
+  });
+
+  it('Test_batchRephrase_StopDuringAChunkDropsItAndKeepsTheSavedOnes', async () => {
+    const reference = await runUninterrupted();
+    writeSource();
+    const stopController = new AbortController();
+    const stopInSecondChunk = createFakeDeps({
+      stopSignal: stopController.signal,
+      replyToChunk: (chunk, chunkIndex) => {
+        if (chunkIndex === 0) return rephraseEveryChunk(chunk, chunkIndex);
+        stopController.abort();
+        throw new Error('claude -p exited with null: killed by Ctrl+C');
+      },
+    });
+    expect(await batchRephrase(book, OPTIONS, stopInSecondChunk.deps)).toBe(false);
+    expect(readProgress().chunks.items.map((item) => item.status)).toEqual(['completed', ...Array(CHUNK_COUNT - 1).fill('pending')]);
+
+    expect(await batchRephrase(book, OPTIONS, createFakeDeps().deps)).toBe(true);
     expect(readOutputs()).toEqual(reference);
   });
 

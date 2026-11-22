@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { isClaudeModel } from '../utils/claude-rephrase';
 import { writeFileAtomic, type WriteFile } from '../shared/atomicFile';
 import { createKeyPool } from '../shared/geminiKeyPool';
@@ -20,7 +21,7 @@ import {
   type ProgressFileV1,
 } from './progress';
 import { migrateV1Progress, type ChunkTexts } from './progressMigration';
-import { createClaudeRephraser, createGeminiRephraser, sleep, type ChunkRephraser } from './rephraseChunk';
+import { createClaudeRephraser, createGeminiRephraser, type ChunkRephraser } from './rephraseChunk';
 import { findReaderMismatches } from './rephraseFormat';
 import type { SyncToDatabase, TextEntryTarget } from './textEntrySync';
 
@@ -40,6 +41,8 @@ export interface RephraseDeps {
   addFurigana: (readerText: string) => FuriganaResult;
   syncToDatabase: SyncToDatabase;
   writeFile: WriteFile;
+  /** Ctrl+C: no chunk starts after it, and the chunk in flight is dropped (it is redone on the next run). */
+  stopSignal: AbortSignal;
 }
 
 interface BookLocation {
@@ -69,7 +72,6 @@ interface ChunkRun {
   rephraser: ChunkRephraser;
   deps: RephraseDeps;
   textEntry: TextEntryTarget;
-  shouldStop: () => boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -85,8 +87,8 @@ export function createRephraser(model: string): ChunkRephraser {
   return isClaudeModel(model) ? createClaudeRephraser(model) : createGeminiRephraser(model, () => createKeyPool());
 }
 
-/** The database sync depends on the run's --database-url, so the caller adds it. */
-export const defaultRephraseDeps: Omit<RephraseDeps, 'syncToDatabase'> = {
+/** The database sync depends on the run's --database-url and the stop on the process's Ctrl+C, so the caller adds both. */
+export const defaultRephraseDeps: Omit<RephraseDeps, 'syncToDatabase' | 'stopSignal'> = {
   createRephraser,
   addFurigana: addFuriganaWithPython,
   writeFile: writeFileAtomic,
@@ -224,7 +226,7 @@ function addFuriganaToChunkFile(run: ChunkRun, chunkIndex: number, readerText: s
 }
 
 async function rephraseToChunkFiles(run: ChunkRun, chunkIndex: number): Promise<Partial<ChunkProgress>> {
-  const output = await run.rephraser.rephraseChunk(run.chunks[chunkIndex], chunkIndex);
+  const output = await run.rephraser.rephraseChunk(run.chunks[chunkIndex], { chunkIndex, signal: run.deps.stopSignal });
   run.deps.writeFile(getChunkPath(run.files.chunksDir, chunkIndex, 'rephrase'), output.rawText);
   // Kept so a failed furigana step can be redone later without asking the model again.
   run.deps.writeFile(getChunkPath(run.files.chunksDir, chunkIndex, 'reader'), output.readerText);
@@ -259,16 +261,27 @@ async function processChunk(run: ChunkRun, progress: ProgressFile, chunkIndex: n
   return updatedProgress;
 }
 
+// The stop ends the wait early; the loop then sees the aborted signal and starts no chunk.
+function waitUnlessStopped(waitMs: number, signal: AbortSignal): Promise<void> {
+  return sleep(waitMs, undefined, { signal }).catch(() => undefined);
+}
+
 async function processChunks(run: ChunkRun, startProgress: ProgressFile): Promise<ProgressFile> {
   const todoItems = startProgress.chunks.items.filter((item) => !isChunkFinished(item));
   const { delaySeconds, model } = startProgress.settings;
+  const { stopSignal } = run.deps;
   const startTime = Date.now();
   console.log('\n=== Starting Processing ===\n');
 
   return todoItems.reduce(async (previous, item, todoPosition) => {
     const progress = await previous;
-    if (run.shouldStop()) return progress;
-    const updatedProgress = await processChunk(run, progress, item.index);
+    if (stopSignal.aborted) return progress;
+    // A chunk cut short by the stop is not saved, and the error the cut caused is not the run's.
+    const updatedProgress = await processChunk(run, progress, item.index).catch((error: unknown) => {
+      if (stopSignal.aborted) return progress;
+      throw error;
+    });
+    if (stopSignal.aborted) return updatedProgress;
 
     const processedCount = todoPosition + 1;
     const remainingCount = todoItems.length - processedCount;
@@ -277,12 +290,12 @@ async function processChunks(run: ChunkRun, startProgress: ProgressFile): Promis
     console.log(`  ETA for remaining: ${formatDuration(remainingCount * Math.max(avgTime, delaySeconds))}`);
 
     // Wait between Gemini requests (delay divided by number of API keys); Claude and furigana-only redos need none
-    const isWaitNeeded = !isClaudeModel(model) && !needsOnlyFurigana(item) && remainingCount > 0 && !run.shouldStop();
+    const isWaitNeeded = !isClaudeModel(model) && !needsOnlyFurigana(item) && remainingCount > 0;
     if (!isWaitNeeded) return updatedProgress;
     const effectiveDelay = Math.ceil(delaySeconds / run.rephraser.keyCount);
     console.log(`\n  Waiting ${formatDuration(effectiveDelay)} before next chunk...`);
-    console.log(`  (Press Ctrl+C to stop and save progress)\n`);
-    await sleep(effectiveDelay * 1000);
+    console.log(`  (Press Ctrl+C to stop; saved chunks are kept)\n`);
+    await waitUnlessStopped(effectiveDelay * 1000, stopSignal);
     return updatedProgress;
   }, Promise.resolve(startProgress));
 }
@@ -340,8 +353,7 @@ export async function batchRephrase(
 
   commitRunStart(files, start, deps.writeFile);
   const textEntry = { fileName: `${bookName}-rephrase-furigana`, directory: `${options.outputDir}/${bookName}`, filePath: files.furiganaPath };
-  const stopController = new AbortController();
-  const run: ChunkRun = { files, chunks: start.chunks, rephraser, deps, textEntry, shouldStop: () => stopController.signal.aborted };
+  const run: ChunkRun = { files, chunks: start.chunks, rephraser, deps, textEntry };
 
   // An earlier run stopped after saving a chunk but before rebuilding the outputs
   if (rebuildOutputs(files, listSavedChunkIndexes(start.progress), deps.writeFile)) {
@@ -349,16 +361,7 @@ export async function batchRephrase(
     await syncReaderFile(run);
   }
 
-  const onInterrupt = () => {
-    console.log('\n\nReceived SIGINT. Saving progress and exiting...');
-    stopController.abort();
-  };
-  process.on('SIGINT', onInterrupt);
-  try {
-    const finalProgress = await processChunks(run, start.progress);
-    printSummary(files, finalProgress);
-    return finalProgress.chunks.items.every(isChunkFinished);
-  } finally {
-    process.off('SIGINT', onInterrupt);
-  }
+  const finalProgress = await processChunks(run, start.progress);
+  printSummary(files, finalProgress);
+  return finalProgress.chunks.items.every(isChunkFinished);
 }
